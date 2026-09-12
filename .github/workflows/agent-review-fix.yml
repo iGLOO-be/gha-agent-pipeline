@@ -62,35 +62,6 @@ jobs:
         with:
           token: ${{ steps.setup.outputs.app_token }}
 
-      - name: Add agent-working label on issue
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
-        with:
-          action: add
-          token: ${{ steps.setup.outputs.app_token }}
-          issue_number: ${{ github.event.inputs.issue_number }}
-
-      - name: Add agent-working label on PR
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
-        with:
-          action: add
-          token: ${{ steps.setup.outputs.app_token }}
-          pr_number: ${{ github.event.inputs.pr_number }}
-
-      - name: Clear agent resume labels
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/clear-agent-resume-labels@main
-        with:
-          token: ${{ steps.setup.outputs.app_token }}
-          issue_number: ${{ github.event.inputs.issue_number }}
-          pr_number: ${{ github.event.inputs.pr_number }}
-
-      - name: Post startup comment on PR
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/post-agent-startup-comment@main
-        with:
-          phase: review-fix
-          target_type: pr
-          target_number: ${{ github.event.inputs.pr_number }}
-          token: ${{ steps.setup.outputs.app_token }}
-
       - name: Run review fix agent
         id: run-agent
         env:
@@ -101,6 +72,9 @@ jobs:
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
           AGENT_BRANCH: ${{ github.event.inputs.head_ref }}
           REVIEW_FEEDBACK: ${{ github.event.inputs.review_feedback }}
+          COMMENT_ID: ${{ github.event.inputs.comment_id }}
+          REACTION_TARGET: ${{ github.event.inputs.reaction_target }}
+          SUCCESS_REACTION: rocket
         run: ${{ steps.pipeline.outputs.bin }} review-fix
 
       - name: Fallback failure comment
@@ -113,40 +87,11 @@ jobs:
           target_number: ${{ github.event.inputs.pr_number }}
           source_issue_number: ${{ github.event.inputs.issue_number }}
 
-      - name: React to trigger
-        if: success()
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/react-agent-trigger@main
-        with:
-          token: ${{ steps.setup.outputs.app_token }}
-          reaction_target: ${{ github.event.inputs.reaction_target }}
-          comment_id: ${{ github.event.inputs.comment_id }}
-          pr_number: ${{ github.event.inputs.pr_number }}
-          outcome: success
-          success_reaction: rocket
-
-      - name: React to trigger on failure
-        if: failure()
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/react-agent-trigger@main
-        with:
-          token: ${{ github.token }}
-          reaction_target: ${{ github.event.inputs.reaction_target }}
-          comment_id: ${{ github.event.inputs.comment_id }}
-          pr_number: ${{ github.event.inputs.pr_number }}
-          outcome: failure
-          success_reaction: rocket
-
-      - name: Remove agent-working label on issue
+      - name: Remove agent-working label
         if: always()
         uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
         with:
           action: remove
           token: ${{ steps.setup.outputs.app_token || github.token }}
           issue_number: ${{ github.event.inputs.issue_number }}
-
-      - name: Remove agent-working label on PR
-        if: always()
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
-        with:
-          action: remove
-          token: ${{ steps.setup.outputs.app_token || github.token }}
           pr_number: ${{ github.event.inputs.pr_number }}

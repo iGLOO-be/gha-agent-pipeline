@@ -65,22 +65,6 @@ jobs:
         with:
           token: ${{ steps.setup.outputs.app_token }}
 
-      - name: Add agent-working label on issue
-        if: steps.pr.outputs.skip != 'true'
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
-        with:
-          action: add
-          token: ${{ steps.setup.outputs.app_token }}
-          issue_number: ${{ steps.pr.outputs.issue_number }}
-
-      - name: Add agent-working label on PR
-        if: steps.pr.outputs.skip != 'true'
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
-        with:
-          action: add
-          token: ${{ steps.setup.outputs.app_token }}
-          pr_number: ${{ steps.pr.outputs.pr_number }}
-
       - name: Restore CI round counter
         if: steps.pr.outputs.skip != 'true'
         id: cache-restore
@@ -179,14 +163,6 @@ jobs:
           path: .agent-state/ci-round
           key: agent-ci-round-${{ steps.pr.outputs.pr_number }}-${{ steps.rounds.outputs.round }}
 
-      - name: Clear agent resume labels
-        if: steps.pr.outputs.skip != 'true' && steps.rounds.outputs.blocked != 'true'
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/clear-agent-resume-labels@main
-        with:
-          token: ${{ steps.app_token.outputs.token }}
-          issue_number: ${{ steps.pr.outputs.issue_number }}
-          pr_number: ${{ steps.pr.outputs.pr_number }}
-
       - name: Run CI fix agent
         id: run-agent
         if: steps.pr.outputs.skip != 'true' && steps.rounds.outputs.blocked != 'true'
@@ -210,18 +186,11 @@ jobs:
           target_number: ${{ steps.pr.outputs.pr_number }}
           source_issue_number: ${{ steps.pr.outputs.issue_number }}
 
-      - name: Remove agent-working label on issue
+      - name: Remove agent-working label
         if: always() && (steps.pr.outputs.issue_number || steps.pr.outputs.pr_number)
         uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
         with:
           action: remove
           token: ${{ steps.setup.outputs.app_token || steps.app_token.outputs.token }}
           issue_number: ${{ steps.pr.outputs.issue_number }}
-
-      - name: Remove agent-working label on PR
-        if: always() && (steps.pr.outputs.issue_number || steps.pr.outputs.pr_number)
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
-        with:
-          action: remove
-          token: ${{ steps.setup.outputs.app_token || steps.app_token.outputs.token }}
           pr_number: ${{ steps.pr.outputs.pr_number }}

@@ -32,6 +32,9 @@ export const AGENT_COMMENT_MARKERS = {
   blocked: "agent-blocked",
 } as const;
 
+/** Lifecycle label applied while an agent phase is running. */
+export const AGENT_WORKING_LABEL = "agent-working";
+
 export type AgentCommentMarker =
   (typeof AGENT_COMMENT_MARKERS)[keyof typeof AGENT_COMMENT_MARKERS];
 
@@ -612,6 +615,54 @@ export async function removeLabelFromIssue(
     repo,
     issue_number: issueNumber,
     name: labelName,
+  });
+  return data;
+}
+
+export type ReactionContent =
+  "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes";
+
+export async function addReactionToIssueComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  commentId: number,
+  content: ReactionContent,
+) {
+  const { data } = await octokit.reactions.createForIssueComment({
+    owner,
+    repo,
+    comment_id: commentId,
+    content,
+  });
+  return data;
+}
+
+export async function addReactionToPullRequestReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+  content: ReactionContent,
+) {
+  const { data: reviewComments } = await octokit.pulls.listCommentsForReview({
+    owner,
+    repo,
+    pull_number: prNumber,
+    review_id: reviewId,
+  });
+  if (reviewComments.length === 0) {
+    console.log(
+      "No review comments available to react to; GitHub does not support reactions on pull request reviews directly.",
+    );
+    return null;
+  }
+  const { data } = await octokit.reactions.createForPullRequestReviewComment({
+    owner,
+    repo,
+    comment_id: reviewComments[0].id,
+    content,
   });
   return data;
 }

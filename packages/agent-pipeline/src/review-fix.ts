@@ -14,6 +14,7 @@ import {
 } from "./git/sync.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
+import { runAgentPhase } from "./lifecycle.js";
 import {
   clearAgentResumeLabels,
   createOctokit,
@@ -204,4 +205,18 @@ Branch: ${env.AGENT_BRANCH}`,
   }
 }
 
-runAgentMain(main);
+const env = loadReviewFixEnv();
+const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
+const octokit = createOctokit(env.GITHUB_TOKEN);
+
+runAgentMain(() =>
+  runAgentPhase({
+    phase: "review-fix",
+    octokit,
+    owner,
+    repo,
+    issueNumber: env.ISSUE_NUMBER,
+    prNumber: env.PR_NUMBER,
+    main,
+  }),
+);

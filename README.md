@@ -108,6 +108,20 @@ After changing app permissions, accept the updated installation request on each 
 
 The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gitignored; agent commits must not include that path (runtime excludes it from `git add`).
 
+## Phase environment contract
+
+The CLI phases read the following environment variables. Common variables (`OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`) are required by all phases.
+
+| Phase        | Required                                                       | Optional / routing                                                                             |
+| ------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `plan`       | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
+| `implement`  | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
+| `yolo`       | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
+| `review-fix` | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH`, `REVIEW_FEEDBACK` | `COMMENT_ID`, `REACTION_TARGET` (`issue_comment` or `pull_request_review`), `SUCCESS_REACTION` |
+| `ci-fix`     | `ISSUE_NUMBER`, `PR_NUMBER`, `HEAD_SHA`, `AGENT_BRANCH`        | (none — no trigger comment/reaction)                                                           |
+
+Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript wrapper before and after the phase `main()`.
+
 ## Related docs
 
 - [gha-agent-demo reusable architecture](https://github.com/iGLOO-be/gha-agent-demo/blob/main/docs/reusable-architecture.md)

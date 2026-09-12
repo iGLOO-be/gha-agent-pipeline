@@ -14,6 +14,7 @@ import {
 } from "./git/sync.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
+import { runAgentPhase } from "./lifecycle.js";
 import {
   clearAgentResumeLabels,
   createOctokit,
@@ -172,4 +173,18 @@ Repository: ${env.GITHUB_REPOSITORY}`,
   }
 }
 
-runAgentMain(main);
+const env = loadCiFixEnv();
+const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
+const octokit = createOctokit(env.GITHUB_TOKEN);
+
+runAgentMain(() =>
+  runAgentPhase({
+    phase: "ci-fix",
+    octokit,
+    owner,
+    repo,
+    issueNumber: env.ISSUE_NUMBER,
+    prNumber: env.PR_NUMBER,
+    main,
+  }),
+);

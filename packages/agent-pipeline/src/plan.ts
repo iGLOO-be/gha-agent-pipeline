@@ -9,6 +9,7 @@ import {
 import { safeFormatUsageMarkdown } from "./gha-log.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
+import { runAgentPhase } from "./lifecycle.js";
 import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
@@ -288,4 +289,17 @@ ${conversation}`,
   }
 }
 
-runAgentMain(main);
+const env = loadAgentEnv();
+const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
+const octokit = createOctokit(env.GITHUB_TOKEN);
+
+runAgentMain(() =>
+  runAgentPhase({
+    phase: "plan",
+    octokit,
+    owner,
+    repo,
+    issueNumber: env.ISSUE_NUMBER,
+    main,
+  }),
+);
