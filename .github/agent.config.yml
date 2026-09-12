@@ -11,9 +11,9 @@ git:
 
 models:
   plan: deepseek/deepseek-v4-pro
-  implement: moonshotai/kimi-k2.7-code
-  ci-fix: moonshotai/kimi-k2.7-code
-  review-fix: moonshotai/kimi-k2.7-code
+  implement: deepseek/deepseek-v4-pro
+  ci-fix: deepseek/deepseek-v4-pro
+  review-fix: deepseek/deepseek-v4-pro
 
 prompts:
   plan:
