@@ -13,7 +13,7 @@ Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/i
 - `packages/agent-pipeline/` — Cline agent harness (migrated from demo `tools/agent/`)
 - `schema/agent.config.v1.schema.json` — config contract for consumers
 - `.github/agent.config.yml` — agent config for dogfooding on this monorepo
-- `.github/workflows/` — `dispatch.yml` (slash router), `agent.yml` + phase jobs (dogfood), `ci.yml`, `poc-callable.yml`
+- `.github/workflows/` — `dispatch.yml` (slash router), `agent.yml` + phase jobs (dogfood), `ci.yml`
 - `.github/actions/` — shared composites (`install-agent-pipeline`, labels, comments, …) plus **`setup-pr-environment`** (local copy for dogfood only; other consumers keep their own)
 
 ## Dev commands
