@@ -73,3 +73,10 @@ runs:
       shell: bash
       run: |
         git remote set-url origin https://x-access-token:${{ steps.app_token.outputs.token }}@github.com/${{ github.repository }}.git
+
+    - name: Install graphify
+      if: inputs.setup_environment == 'true'
+      shell: bash
+      run: |
+        pip install graphifyy -q 2>/dev/null || pip install graphifyy -q --break-system-packages 2>/dev/null
+        which graphify && graphify --version || echo "graphify not available"
