@@ -1,4 +1,4 @@
-name: Agent CI Fix
+name: Agent CI Success
 
 on:
   workflow_run:
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ci-fix:
-    if: github.event.workflow_run.conclusion == 'failure'
-    uses: ./.github/workflows/agent-ci-fix-reusable.yml
+  comment:
+    if: github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/agent-ci-success-reusable.yml
     secrets: inherit
