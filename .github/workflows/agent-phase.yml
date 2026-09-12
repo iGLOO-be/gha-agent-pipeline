@@ -1,0 +1,173 @@
+name: Agent Phase
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Agent phase to run
+        required: true
+        type: choice
+        options:
+          - plan
+          - implement
+          - yolo
+          - review-fix
+      comment_id:
+        description: Comment or review ID that triggered the workflow
+        required: true
+        type: string
+      issue_number:
+        description: Issue number
+        required: true
+        type: string
+      author_association:
+        description: Comment author association
+        required: false
+        type: string
+      checkout_ref:
+        description: Git ref to checkout (overrides head_ref when provided)
+        required: false
+        type: string
+      pr_number:
+        description: Pull request number (required for review-fix)
+        required: false
+        type: string
+      head_ref:
+        description: PR head branch (required for review-fix)
+        required: false
+        type: string
+      review_feedback:
+        description: Review feedback text for the agent (required for review-fix)
+        required: false
+        type: string
+      reaction_target:
+        description: issue_comment or pull_request_review (required for review-fix)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+run-name: "Agent ${{ inputs.phase }} / Issue #${{ inputs.issue_number }}"
+
+concurrency:
+  group: agent-issue-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    steps:
+      - name: Setup environment
+        id: setup
+        uses: ./.github/actions/setup-pr-environment
+        with:
+          ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
+          setup_environment: true
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Install agent pipeline
+        id: pipeline
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+
+      - name: Add agent-working label on issue
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+        with:
+          action: add
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          issue_number: ${{ inputs.issue_number }}
+
+      - name: Add agent-working label on PR
+        if: inputs.phase == 'review-fix'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+        with:
+          action: add
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          pr_number: ${{ inputs.pr_number }}
+
+      - name: Post startup comment
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/post-agent-startup-comment@main
+        with:
+          phase: ${{ inputs.phase }}
+          target_type: ${{ inputs.phase == 'review-fix' && 'pr' || 'issue' }}
+          target_number: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.issue_number }}
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+
+      - name: Clear agent resume labels on issue
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/clear-agent-resume-labels@main
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          issue_number: ${{ inputs.issue_number }}
+
+      - name: Clear agent resume labels on PR
+        if: inputs.phase == 'review-fix'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/clear-agent-resume-labels@main
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          issue_number: ${{ inputs.pr_number }}
+
+      - name: Run agent
+        id: run-agent
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ steps.setup.outputs.app_token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          PR_NUMBER: ${{ inputs.phase == 'review-fix' && inputs.pr_number || '' }}
+          AGENT_BRANCH: ${{ inputs.phase == 'review-fix' && inputs.head_ref || '' }}
+          REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
+        run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
+
+      - name: Fallback failure comment
+        if: failure() && steps.run-agent.outcome != 'success'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/report-failure-fallback@main
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          phase: ${{ inputs.phase }}
+          target_type: ${{ inputs.phase == 'review-fix' && 'pr' || 'issue' }}
+          target_number: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.issue_number }}
+          source_issue_number: ${{ inputs.phase == 'review-fix' && inputs.issue_number || '' }}
+
+      - name: React success
+        if: success() && steps.run-agent.outcome == 'success'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/react-agent-trigger@main
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          comment_id: ${{ inputs.comment_id }}
+          pr_number: ${{ inputs.phase == 'review-fix' && inputs.pr_number || '' }}
+          reaction_target: ${{ inputs.reaction_target || 'issue_comment' }}
+          outcome: success
+          success_reaction: ${{ inputs.phase == 'plan' && '+1' || 'rocket' }}
+
+      - name: React failure
+        if: failure() && steps.run-agent.outcome == 'failure'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/react-agent-trigger@main
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          comment_id: ${{ inputs.comment_id }}
+          pr_number: ${{ inputs.phase == 'review-fix' && inputs.pr_number || '' }}
+          reaction_target: ${{ inputs.reaction_target || 'issue_comment' }}
+          outcome: failure
+          success_reaction: ${{ inputs.phase == 'plan' && '+1' || 'rocket' }}
+
+      - name: Remove agent-working label on PR
+        if: always() && inputs.phase == 'review-fix'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+        with:
+          action: remove
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          pr_number: ${{ inputs.pr_number }}
+
+      - name: Remove agent-working label on issue
+        if: always()
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+        with:
+          action: remove
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          issue_number: ${{ inputs.issue_number }}

@@ -4,16 +4,16 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 ## Status (Phase 2)
 
-| Piece              | Location                                                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                             |
-| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                  |
-| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) (slash router) + **dogfood** phase jobs (`agent-plan.yml`, …) on this repo |
-| Composite actions  | `install-agent-pipeline`, labels, comments, reactions, failure fallback, PR resolution helpers                                |
+| Piece              | Location                                                                                                                                                          |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                 |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                      |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) (slash router) + **dogfood** phase job ([`agent-phase.yml`](./.github/workflows/agent-phase.yml)) on this repo |
+| Composite actions  | `install-agent-pipeline`, labels, comments, reactions, failure fallback, PR resolution helpers                                                                    |
 
 **Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Phase jobs reference library actions via `owner/repo/.github/actions/...@ref`.
 
-**This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflows, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
+**This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflow, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
 
 **Private repo:** keep this repository private. The consumer’s GitHub App must be **installed on this repo** (Contents read is enough) and the app token must list `gha-agent-pipeline` in `create-github-app-token` `repositories` (see demo `setup-pr-environment`).
 
@@ -53,11 +53,20 @@ jobs:
 ```
 
 ```yaml
-# .github/workflows/agent-plan.yml (consumer) — excerpt
-steps:
-  - uses: ./.github/actions/setup-pr-environment
-  - uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
-  - run: ${{ steps.pipeline.outputs.bin }} plan
+# .github/workflows/agent-phase.yml (consumer) — excerpt
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        required: true
+        type: choice
+        options: [plan, implement, yolo, review-fix]
+jobs:
+  agent:
+    steps:
+      - uses: ./.github/actions/setup-pr-environment
+      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
+      - run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
 ```
 
 **Runs and `github.repository` are always the consumer.** Pin `@main` or a release tag on pipeline actions/workflows.
