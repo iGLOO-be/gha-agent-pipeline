@@ -88,18 +88,33 @@ export async function shouldForceMergeFromGitHub(
 }
 
 const AGENT_HARNESS_STASH_MESSAGE = "agent-harness-overlay";
+const LEGACY_HARNESS_PATH = "tools/agent";
+
+/**
+ * Consumer repos that embed the harness under `tools/agent` (e.g. gha-agent-demo).
+ * Library dogfood consumers install the CLI from a nested checkout instead — skip overlay.
+ */
+async function hasLegacyHarnessOnBase(baseBranch: string): Promise<boolean> {
+  const result = await runShell(
+    `git rev-parse --verify "origin/${baseBranch}:${LEGACY_HARNESS_PATH}^{tree}"`,
+  );
+  return result.exitCode === 0;
+}
 
 /** Overlay `tools/agent` from the base branch (CI sync step runs before merge). */
 export async function overlayAgentHarnessFromBase(
   baseBranch: string,
 ): Promise<void> {
   await fetchBase(baseBranch);
+  if (!(await hasLegacyHarnessOnBase(baseBranch))) {
+    return;
+  }
   const result = await runShell(
-    `git checkout origin/${baseBranch} -- tools/agent`,
+    `git checkout origin/${baseBranch} -- ${LEGACY_HARNESS_PATH}`,
   );
   if (result.exitCode !== 0) {
     throw new Error(
-      `Failed to overlay tools/agent from origin/${baseBranch}: ${result.stderr || result.stdout}`,
+      `Failed to overlay ${LEGACY_HARNESS_PATH} from origin/${baseBranch}: ${result.stderr || result.stdout}`,
     );
   }
 }
@@ -114,7 +129,10 @@ async function hasAgentHarnessWorkingTreeChanges(): Promise<boolean> {
  * GHA fix jobs overlay `tools/agent` from main before the runner merges base.
  * Stash that overlay so `git merge` is not blocked by local changes.
  */
-async function stashAgentHarnessOverlay(): Promise<boolean> {
+async function stashAgentHarnessOverlay(baseBranch: string): Promise<boolean> {
+  if (!(await hasLegacyHarnessOnBase(baseBranch))) {
+    return false;
+  }
   if (!(await hasAgentHarnessWorkingTreeChanges())) {
     return false;
   }
@@ -154,7 +172,7 @@ export async function syncWithBaseBranch(
     return `(branch is up to date with ${baseBranch})`;
   }
 
-  const stashedHarness = await stashAgentHarnessOverlay();
+  const stashedHarness = await stashAgentHarnessOverlay(baseBranch);
   let sync: SyncResult;
   try {
     sync = await mergeBase(baseBranch);
