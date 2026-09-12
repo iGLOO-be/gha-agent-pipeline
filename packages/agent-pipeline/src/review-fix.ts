@@ -13,6 +13,11 @@ import {
   syncWithBaseBranch,
 } from "./git/sync.js";
 import { reportPhaseFailure } from "./report-failure.js";
+import {
+  appendRunFrictionStepSummary,
+  appendRunFrictionToMarkdown,
+  createRunFrictionCollector,
+} from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
@@ -28,6 +33,7 @@ import {
   readPullRequestComments,
 } from "./tools/github.js";
 import { createReviewFixTools } from "./tools/index.js";
+import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 
 function buildConflictPriorityHint(
   prState: Awaited<ReturnType<typeof getPullRequestMergeState>>,
@@ -105,12 +111,16 @@ async function main() {
       config.git.base_branch,
     );
 
-    const tools = await createReviewFixTools(
-      octokit,
-      owner,
-      repo,
-      env.ISSUE_NUMBER,
-      env.PR_NUMBER,
+    const runFriction = createRunFrictionCollector();
+    const tools = await withReportRunFrictionTool(
+      await createReviewFixTools(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        env.PR_NUMBER,
+      ),
+      runFriction,
     );
 
     await runAgentSession({
@@ -118,6 +128,7 @@ async function main() {
       modelId: REVIEW_FIX_MODEL,
       systemPrompt: buildPhaseSystemPrompt("review-fix", config),
       tools,
+      runFriction,
       sessionMetadata: {
         phase: "review-fix",
         issueNumber: env.ISSUE_NUMBER,
@@ -145,6 +156,8 @@ Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
     });
 
+    appendRunFrictionStepSummary(runFriction, "review-fix");
+
     await prepareResolvedMergeForCommit();
 
     const pushResult = await commitAndPushBranch(
@@ -158,7 +171,10 @@ Branch: ${env.AGENT_BRANCH}`,
         owner,
         repo,
         env.PR_NUMBER,
-        `<!-- agent-review-fix -->\nNo commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
+        `<!-- agent-review-fix -->\n${appendRunFrictionToMarkdown(
+          `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
+          runFriction,
+        )}`,
       );
       console.log(
         `\nReview fix completed with no changes on branch ${env.AGENT_BRANCH}`,
@@ -179,7 +195,10 @@ Branch: ${env.AGENT_BRANCH}`,
       owner,
       repo,
       env.PR_NUMBER,
-      `<!-- agent-review-fix -->\nPushed review fixes for PR #${env.PR_NUMBER}.`,
+      `<!-- agent-review-fix -->\n${appendRunFrictionToMarkdown(
+        `Pushed review fixes for PR #${env.PR_NUMBER}.`,
+        runFriction,
+      )}`,
     );
 
     await clearAgentResumeLabels(octokit, owner, repo, {

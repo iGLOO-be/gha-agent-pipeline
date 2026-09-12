@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
 import { FILE_EDIT_SYSTEM_HINT } from "./prompts/file-edits.js";
+import { RUN_FRICTION_SYSTEM_HINT } from "./prompts/run-friction.js";
 
 export const agentConfigSchema = z
   .object({
@@ -173,6 +174,8 @@ Workflow:
 
 ${FILE_EDIT_SYSTEM_HINT}
 
+${RUN_FRICTION_SYSTEM_HINT}
+
 Do not commit, push, or open a PR yourself. The runner will handle git operations after you finish.
 
 Never announce completion or post comments on the GitHub issue. The runner will post the summary comment after pushing and opening the PR.`;
@@ -187,6 +190,8 @@ Workflow:
 
 ${FILE_EDIT_SYSTEM_HINT}
 
+${RUN_FRICTION_SYSTEM_HINT}
+
 Do not commit or push. The runner will handle git operations after you finish.`;
 
 const yoloPromptBody = `Implement the GitHub issue using the instructions in the issue description.
@@ -198,6 +203,8 @@ Workflow:
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
 
 ${FILE_EDIT_SYSTEM_HINT}
+
+${RUN_FRICTION_SYSTEM_HINT}
 
 Do not commit, push, or open a PR yourself. The runner will handle git operations after you finish.
 
@@ -225,6 +232,8 @@ Merge handling:
 - Do not run git commands yourself and do not abort the merge.
 
 ${FILE_EDIT_SYSTEM_HINT}
+
+${RUN_FRICTION_SYSTEM_HINT}
 
 Do not commit or push. The runner will handle git operations after you finish.`;
 }
