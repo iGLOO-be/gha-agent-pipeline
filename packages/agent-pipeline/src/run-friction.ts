@@ -117,6 +117,10 @@ export class RunFrictionCollector {
       category,
       summary: `${toolName}: ${errorMessage}`,
       context,
+      mitigation:
+        category === "tool_limit"
+          ? "Prefer apply_patch for large files; split editor old_text/new_text under 6000 chars or use insert_line in steps."
+          : undefined,
     });
   }
 }

@@ -1,8 +1,17 @@
+import { access } from "node:fs/promises";
 import { loadClineSdk } from "../cline.js";
 import {
   isMissingOldTextEditorError,
   missingOldTextRecoveryMessage,
 } from "./editor-old-text-recovery.js";
+import {
+  editorBypassSuccessResult,
+  exceedsEditorArgLimit,
+  isEditorInputTooLargeError,
+  isOversizedNewFileEditorWrite,
+  oversizedEditorRecoveryMessage,
+  writeNewFileBypassingEditorLimit,
+} from "./editor-size-recovery.js";
 import { getActiveRunFrictionCollector } from "../run-friction.js";
 import { resolveWorkspaceFilePath } from "./resolve-workspace-path.js";
 
@@ -18,6 +27,24 @@ function editorResultError(result: unknown): string | null {
     return record.error;
   }
   return null;
+}
+
+async function pathExists(absolutePath: string): Promise<boolean> {
+  try {
+    await access(absolutePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function editorFailureResult(displayPath: string, error: string) {
+  return {
+    success: false as const,
+    query: `edit:${displayPath}`,
+    result: "",
+    error,
+  };
 }
 
 /**
@@ -42,13 +69,67 @@ export async function createWorkspaceScopedEditorExecutor(
     cwd: string,
     context: AgentToolContext,
   ) => {
+    const displayPath = input.path;
     const resolvedPath = resolveWorkspaceFilePath(workspaceRoot, input.path);
     const normalizedInput = { ...input, path: resolvedPath };
+    const fileExists = await pathExists(resolvedPath);
+
+    if (exceedsEditorArgLimit(normalizedInput)) {
+      if (isOversizedNewFileEditorWrite(normalizedInput, fileExists)) {
+        await writeNewFileBypassingEditorLimit(
+          resolvedPath,
+          normalizedInput.new_text,
+        );
+        return editorBypassSuccessResult(
+          displayPath,
+          normalizedInput.new_text.length,
+        );
+      }
+
+      const recovery = oversizedEditorRecoveryMessage(
+        displayPath,
+        normalizedInput,
+      );
+      getActiveRunFrictionCollector()?.recordRuntimeToolError(
+        "editor",
+        recovery,
+        resolvedPath,
+      );
+      return editorFailureResult(displayPath, recovery);
+    }
 
     try {
       const result = await inner(normalizedInput, cwd, context);
       const toolError = editorResultError(result);
       if (toolError) {
+        if (isEditorInputTooLargeError(toolError)) {
+          const existsAfter = await pathExists(resolvedPath);
+          if (isOversizedNewFileEditorWrite(normalizedInput, existsAfter)) {
+            await writeNewFileBypassingEditorLimit(
+              resolvedPath,
+              normalizedInput.new_text,
+            );
+            return editorBypassSuccessResult(
+              displayPath,
+              normalizedInput.new_text.length,
+            );
+          }
+
+          const recovery = oversizedEditorRecoveryMessage(
+            displayPath,
+            normalizedInput,
+          );
+          getActiveRunFrictionCollector()?.recordRuntimeToolError(
+            "editor",
+            recovery,
+            resolvedPath,
+          );
+          if (result && typeof result === "object") {
+            return { ...result, error: recovery };
+          }
+          return editorFailureResult(displayPath, recovery);
+        }
+
         getActiveRunFrictionCollector()?.recordRuntimeToolError(
           "editor",
           toolError,
