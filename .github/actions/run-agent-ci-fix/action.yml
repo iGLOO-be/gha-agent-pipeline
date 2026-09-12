@@ -1,0 +1,190 @@
+name: Run agent CI fix
+description: |
+  Shared runner for the ci-fix phase on workflow_run CI failures. It sets up the
+  PR environment, installs the agent pipeline, enforces the CI fix round limit,
+  runs the ci-fix agent, reports a fallback failure if needed, and removes the
+  agent-working label.
+
+inputs:
+  app_id:
+    description: GitHub App ID used to authenticate API and git operations.
+    required: true
+  app_private_key:
+    description: GitHub App private key used to authenticate.
+    required: true
+  openrouter_api_key:
+    description: OpenRouter API key for the agent.
+    required: true
+  issue_number:
+    description: Linked issue number parsed from the agent branch.
+    required: true
+  pr_number:
+    description: Agent pull request number.
+    required: true
+  head_ref:
+    description: Agent branch to check out.
+    required: true
+  head_sha:
+    description: Head SHA that triggered the CI workflow run.
+    required: true
+  max_rounds:
+    description: Maximum number of CI fix attempts before blocking the PR.
+    required: false
+    default: "3"
+  pipeline_repository:
+    description: Repository (owner/name) that hosts the agent pipeline library.
+    required: false
+    default: iGLOO-be/gha-agent-pipeline
+  pipeline_ref:
+    description: Git ref of the agent pipeline library to install.
+    required: false
+    default: main
+
+runs:
+  using: composite
+  steps:
+    - name: Setup environment
+      id: setup
+      uses: ./.github/actions/setup-pr-environment
+      with:
+        ref: ${{ inputs.head_ref }}
+        setup_environment: "true"
+        app_id: ${{ inputs.app_id }}
+        app_private_key: ${{ inputs.app_private_key }}
+
+    - name: Install agent pipeline
+      id: pipeline
+      uses: ./.github/actions/install-agent-pipeline
+      with:
+        token: ${{ steps.setup.outputs.app_token }}
+        pipeline_repository: ${{ inputs.pipeline_repository }}
+        pipeline_ref: ${{ inputs.pipeline_ref }}
+
+    - name: Restore CI round counter
+      id: cache-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: .agent-state/ci-round
+        key: agent-ci-round-${{ inputs.pr_number }}-latest
+        restore-keys: |
+          agent-ci-round-${{ inputs.pr_number }}-
+
+    - name: Enforce CI fix round limit
+      id: rounds
+      uses: actions/github-script@v7
+      env:
+        CI_MAX_ROUNDS: ${{ inputs.max_rounds }}
+      with:
+        github-token: ${{ steps.setup.outputs.app_token }}
+        script: |
+          const fs = require('fs')
+          const owner = context.repo.owner
+          const repo = context.repo.repo
+          const prNumber = Number('${{ inputs.pr_number }}')
+          const issueNumberRaw = '${{ inputs.issue_number }}'
+          const issueNumber = issueNumberRaw ? Number(issueNumberRaw) : NaN
+          const marker = '<!-- agent-blocked -->'
+          const maxRounds = Number(process.env.CI_MAX_ROUNDS) || 3
+          const roundPath = '.agent-state/ci-round'
+
+          const comments = await github.rest.issues.listComments({
+            owner,
+            repo,
+            issue_number: prNumber,
+            per_page: 100
+          })
+
+          if (comments.data.some((c) => c.body?.includes(marker))) {
+            core.setOutput('blocked', 'true')
+            return
+          }
+
+          let count = 0
+          if (fs.existsSync(roundPath)) {
+            const raw = fs.readFileSync(roundPath, 'utf8').trim()
+            const parsed = Number.parseInt(raw, 10)
+            if (Number.isFinite(parsed) && parsed >= 0) count = parsed
+          }
+
+          if (count >= maxRounds) {
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `${marker}\n⛔ CI auto-fix stopped after ${maxRounds} attempts on this PR. Please fix manually or delete the cache entries starting with \`agent-ci-round-${prNumber}-\`.`
+            })
+
+            if (Number.isFinite(issueNumber)) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: 'agent-waiting-human' })
+              } catch (labelError) {
+                if (labelError.status === 404) {
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name: 'agent-waiting-human',
+                    color: 'f9d0c4',
+                    description: 'Waiting for human decision on this issue.'
+                  })
+                } else {
+                  throw labelError
+                }
+              }
+
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                labels: ['agent-waiting-human']
+              })
+            }
+
+            core.setOutput('blocked', 'true')
+            return
+          }
+
+          count += 1
+          fs.mkdirSync('.agent-state', { recursive: true })
+          fs.writeFileSync(roundPath, String(count))
+          core.setOutput('blocked', 'false')
+          core.setOutput('round', String(count))
+
+    - name: Save CI round counter
+      if: always() && steps.rounds.outcome == 'success' && steps.rounds.outputs.blocked != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .agent-state/ci-round
+        key: agent-ci-round-${{ inputs.pr_number }}-${{ steps.rounds.outputs.round }}
+
+    - name: Run CI fix agent
+      id: run-agent
+      if: steps.rounds.outputs.blocked != 'true'
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter_api_key }}
+        GITHUB_TOKEN: ${{ steps.setup.outputs.app_token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+        AGENT_BRANCH: ${{ inputs.head_ref }}
+      run: ${{ steps.pipeline.outputs.bin }} ci-fix
+
+    - name: Fallback failure comment
+      if: failure() && steps.run-agent.outcome != 'success'
+      uses: ./.github/actions/report-failure-fallback
+      with:
+        token: ${{ steps.setup.outputs.app_token || github.token }}
+        phase: ci-fix
+        target_type: pr
+        target_number: ${{ inputs.pr_number }}
+        source_issue_number: ${{ inputs.issue_number }}
+
+    - name: Remove agent-working label
+      if: always() && (inputs.issue_number || inputs.pr_number)
+      uses: ./.github/actions/manage-agent-working-label
+      with:
+        action: remove
+        token: ${{ steps.setup.outputs.app_token || github.token }}
+        issue_number: ${{ inputs.issue_number }}
+        pr_number: ${{ inputs.pr_number }}

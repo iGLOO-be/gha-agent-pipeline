@@ -19,21 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Generate GitHub App token
-        id: app_token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: |
-            ${{ github.event.repository.name }}
-            gha-agent-pipeline
-
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ steps.app_token.outputs.token }}
-
       - name: Resolve agent PR
         id: pr
         uses: ./.github/actions/get-pr-from-workflow-run
@@ -42,11 +27,20 @@ jobs:
         if: steps.pr.outputs.skip == 'true'
         run: echo "Skipping agent CI success comment"
 
+      - name: Setup environment
+        if: steps.pr.outputs.skip != 'true'
+        id: setup
+        uses: ./.github/actions/setup-pr-environment
+        with:
+          setup_environment: "false"
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Comment on agent PR when CI succeeds
         if: steps.pr.outputs.skip != 'true'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ steps.app_token.outputs.token }}
+          github-token: ${{ steps.setup.outputs.app_token }}
           script: |
             const owner = context.repo.owner
             const repo = context.repo.repo
