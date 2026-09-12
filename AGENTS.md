@@ -6,7 +6,7 @@ Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/i
 
 ## Role of this repo
 
-**Library** — agent runtime (`packages/agent-pipeline`), reusable GitHub Actions workflows, and the consumer config JSON Schema. No application code.
+**Library** — agent runtime (`packages/agent-pipeline`), reusable GitHub Actions workflows, and the consumer config JSON Schema. No application code. Library composites (`install-agent-pipeline`, `agent-phase-run`, labels, comments, …) provide post-setup orchestration only; **environment setup (checkout, package manager, Node, app token) is never part of the library contract**.
 
 **Dogfood consumer** — this repo also wires slash commands on itself ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `.github/agent.config.yml`, `agent.yml`, phase workflow ([`agent-phase.yml`](./.github/workflows/agent-phase.yml)), and local `setup-pr-environment`. Other consumers (e.g. [`gha-agent-demo`](https://github.com/iGLOO-be/gha-agent-demo)) keep their own copy of the consumer layer.
 
@@ -16,7 +16,7 @@ Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/i
 - `schema/agent.config.v1.schema.json` — config contract for consumers
 - `.github/agent.config.yml` — agent config for dogfooding on this monorepo
 - `.github/workflows/` — `dispatch.yml` (slash router), `agent.yml` + phase job (dogfood), `ci.yml`
-- `.github/actions/` — shared composites (`install-agent-pipeline`, labels, comments, …) plus **`setup-pr-environment`** (local copy for dogfood only; other consumers keep their own)
+- `.github/actions/` — shared composites (`install-agent-pipeline`, `agent-phase-run` (post-setup orchestration), labels, comments, …) plus **`setup-pr-environment`** (local copy for dogfood only; other consumers keep their own)
 
 ## Dev commands
 

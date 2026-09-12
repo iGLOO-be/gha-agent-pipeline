@@ -64,10 +64,27 @@ on:
 jobs:
   agent:
     steps:
-      - uses: ./.github/actions/setup-pr-environment
-      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
-      - run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
+      - id: setup
+        uses: ./.github/actions/setup-pr-environment
+        with:
+          ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@main
+        with:
+          phase: ${{ inputs.phase }}
+          app_token: ${{ steps.setup.outputs.app_token }}
+          comment_id: ${{ inputs.comment_id }}
+          issue_number: ${{ inputs.issue_number }}
+          pr_number: ${{ inputs.pr_number }}
+          head_ref: ${{ inputs.head_ref }}
+          review_feedback: ${{ inputs.review_feedback }}
+          reaction_target: ${{ inputs.reaction_target }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
+
+**Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
 
 **Runs and `github.repository` are always the consumer.** Pin `@main` or a release tag on pipeline actions/workflows.
 
