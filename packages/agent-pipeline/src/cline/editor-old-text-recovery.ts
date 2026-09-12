@@ -1,4 +1,10 @@
-/** Matches @cline/core editor executor until cline/cline#13970 ships in npm. */
+/**
+ * Cline `editor` on an **existing** file without `old_text` (or `insert_line`).
+ *
+ * Separate from the 6000-char limit — see `editor-size-recovery.ts` for that.
+ * Matches @cline/core until cline/cline#13970 ships in npm; we throw a clearer
+ * message from `workspace-scoped-editor.ts` when this error is raised.
+ */
 export function isMissingOldTextEditorError(message: string): boolean {
   return (
     message.includes("`old_text`") &&

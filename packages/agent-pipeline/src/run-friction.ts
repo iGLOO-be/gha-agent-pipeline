@@ -1,3 +1,9 @@
+/**
+ * Suboptimal moments during an agent phase (retries, tool limits, self-reported
+ * friction). Appended to GitHub issue comments and job step summaries so humans
+ * see why a run was expensive without treating these as hard failures.
+ *
+ */
 import { appendStepSummary, redactSensitiveStrings } from "./gha-log.js";
 
 export const RUN_FRICTION_CATEGORIES = [
@@ -102,19 +108,15 @@ export class RunFrictionCollector {
     return { accepted: true, index: this.notes.length - 1 };
   }
 
+  /** Generic runtime tool failure; use `record()` when category/mitigation are known. */
   recordRuntimeToolError(
     toolName: string,
     errorMessage: string,
     context?: string,
   ): void {
-    const category: RunFrictionCategory = errorMessage.includes(
-      "Editor input too large",
-    )
-      ? "tool_limit"
-      : "tool_error";
     this.record({
       source: "runtime",
-      category,
+      category: "tool_error",
       summary: `${toolName}: ${errorMessage}`,
       context,
     });
