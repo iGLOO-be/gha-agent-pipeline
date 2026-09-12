@@ -123,7 +123,7 @@ The CLI phases read the following environment variables. Common variables (`OPEN
 | `review-fix` | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH`, `REVIEW_FEEDBACK` | `COMMENT_ID`, `REACTION_TARGET` (`issue_comment` or `pull_request_review`), `SUCCESS_REACTION` |
 | `ci-fix`     | `ISSUE_NUMBER`, `PR_NUMBER`, `HEAD_SHA`, `AGENT_BRANCH`        | (none — no trigger comment/reaction)                                                           |
 
-Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript wrapper before and after the phase `main()`.
+Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript `runAgentPhase()` wrapper before and after the phase `main()`. The `agent-phase.yml` workflow must not repeat those steps (it only runs the CLI and keeps `always()` label cleanup as a safety net).
 
 ## Related docs
 
