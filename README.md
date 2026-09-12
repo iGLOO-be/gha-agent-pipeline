@@ -13,6 +13,8 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 **Consumer-owned:** checkout, `pnpm install` for the app, GitHub App token, and `setup-pr-environment` (or equivalent). Phase jobs (`agent-plan.yml`, etc.) live on the consumer and reference actions here via `owner/repo/.github/actions/...@ref`.
 
+**Private repo:** keep this repository private. The consumer’s GitHub App must be **installed on this repo** (Contents read is enough) and the app token must list `gha-agent-pipeline` in `create-github-app-token` `repositories` (see demo `setup-pr-environment`).
+
 ## Development
 
 ```bash
