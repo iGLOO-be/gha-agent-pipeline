@@ -7,6 +7,7 @@ import type { SessionAccumulatedUsage } from "./types/usage.js";
 
 const DEFAULT_MAX_TOOL_LENGTH = 2000;
 const MIN_SECRET_LENGTH = 8;
+const DEFAULT_REASONING_TRUNCATE = 2000;
 
 export function isGitHubActions(): boolean {
   return (
@@ -116,6 +117,166 @@ function getDefaultMaxToolLength(): number {
   return parsed;
 }
 
+function isVerboseTools(): boolean {
+  return process.env.AGENT_LOG_VERBOSE_TOOLS === "1";
+}
+
+function shouldShowReasoning(): boolean {
+  return process.env.AGENT_LOG_REASONING === "1";
+}
+
+/**
+ * Parse a single NDJSON line from the agent stream.
+ * Returns the parsed object or null if the line is not valid JSON.
+ */
+function parseChunkLine(line: string): Record<string, unknown> | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === "object" && parsed !== null) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** One-line summary of a tool input for GHA operator readability. */
+function summarizeToolInput(toolName: string, input: unknown): string {
+  if (input == null) return `${toolName}`;
+  const obj = input as Record<string, unknown> | undefined;
+  switch (toolName) {
+    case "editor": {
+      const filePath = obj?.path ?? obj?.filePath ?? "?";
+      const op = obj?.old_text
+        ? "edit"
+        : obj?.insert_line
+          ? "insert"
+          : (obj?.operation ?? "write");
+      return `${toolName} ${op} ${filePath}`;
+    }
+    case "apply_patch": {
+      const filePath = obj?.path ?? obj?.file_path ?? obj?.target_file ?? "?";
+      return `${toolName} → ${filePath}`;
+    }
+    case "run_commands": {
+      const cmd = typeof obj?.command === "string" ? obj.command : "?";
+      const truncated = cmd.length > 120 ? `${cmd.slice(0, 120)}…` : cmd;
+      return `${toolName}: ${truncated}`;
+    }
+    case "read_files": {
+      if (obj?.files && Array.isArray(obj.files)) {
+        const paths = (obj.files as Array<{ path?: string }>).map(
+          (f) => f.path ?? "?",
+        );
+        return `${toolName} [${paths.join(", ")}]`;
+      }
+      const path = obj?.path ?? obj?.file ?? "?";
+      return `${toolName} ${path}`;
+    }
+    case "readIssue": {
+      return `${toolName}`;
+    }
+    case "readComments": {
+      return `${toolName}`;
+    }
+    case "list_files": {
+      const target = obj?.path ?? obj?.target_directory ?? ".";
+      const depth = obj?.depth ?? obj?.recursive ?? "";
+      return `${toolName} ${target}${depth ? ` (recursive=${depth})` : ""}`;
+    }
+    case "readCheckRuns":
+    case "readCheckLogs": {
+      return `${toolName}`;
+    }
+    case "search_codebase": {
+      const patterns = obj?.queries ?? obj?.pattern ?? "?";
+      const patternStr = Array.isArray(patterns)
+        ? (patterns as string[]).slice(0, 3).join(", ") +
+          (patterns.length > 3 ? ` +${patterns.length - 3} more` : "")
+        : String(patterns);
+      return `${toolName}: ${patternStr}`;
+    }
+    default:
+      return `${toolName}`;
+  }
+}
+
+/** One-line summary of a tool output for GHA operator readability. */
+function summarizeToolOutput(
+  toolName: string,
+  output: unknown,
+  error?: string,
+): string {
+  if (error) return `ERROR: ${error}`;
+  if (output == null) return "done";
+  const obj = output as Record<string, unknown> | undefined;
+
+  switch (toolName) {
+    case "run_commands": {
+      const exitCode = obj?.exitCode ?? obj?.code ?? "?";
+      const stdoutStr =
+        typeof obj?.stdout === "string" ? obj.stdout.slice(0, 80) : "";
+      return `exit=${exitCode}${stdoutStr ? ` ${stdoutStr}` : ""}`;
+    }
+    case "read_files": {
+      if (obj?.files && Array.isArray(obj.files)) {
+        return `${obj.files.length} file(s)`;
+      }
+      const content = typeof obj?.content === "string" ? obj.content : "";
+      return `${content.length} chars`;
+    }
+    case "readIssue": {
+      const number = obj?.number ?? obj?.issue_number ?? "?";
+      const title =
+        typeof obj?.title === "string" ? obj.title.slice(0, 80) : "";
+      return `#${number}${title ? ` ${title}` : ""}`;
+    }
+    case "readComments": {
+      const count = Array.isArray(obj) ? obj.length : (obj?.count ?? "?");
+      return `${count} comment(s)`;
+    }
+    case "list_files": {
+      const count = Array.isArray(obj)
+        ? obj.length
+        : (obj?.entries ?? obj?.count ?? "?");
+      return `${count} entries`;
+    }
+    case "readCheckRuns":
+    case "readCheckLogs": {
+      const name = obj?.name ?? obj?.check_name ?? "";
+      return `${name}`;
+    }
+    case "editor":
+    case "apply_patch": {
+      return "done";
+    }
+    default:
+      if (typeof output === "string") {
+        const truncated =
+          output.length > 120 ? `${output.slice(0, 120)}…` : output;
+        return truncated;
+      }
+      return "done";
+  }
+}
+
+function formatToolOutputVerbose(
+  toolName: string,
+  output: unknown,
+  error?: string,
+): string {
+  if (error) {
+    return `[tool error] ${toolName}: ${redactSensitiveStrings(error)}`;
+  }
+  return `[tool output] ${toolName}\n${formatToolValue(output)}`;
+}
+
+function formatToolInputVerbose(toolName: string, input: unknown): string {
+  return `[tool input] ${toolName}\n${formatToolValue(input)}`;
+}
 function buildUsageRows(
   usage: SessionAccumulatedUsage,
   formatter: (label: string, value: string) => string,
@@ -239,6 +400,20 @@ export function createSessionLogger(
   const loggedToolResults = new Set<string>();
   const toolCallCounts = new Map<string, number>();
   let summaryAppended = false;
+  let reasoningText = "";
+  let reasoningGroupOpen = false;
+  let chunkBuffer = "";
+  interface ToolTimelineEntry {
+    toolName: string;
+    inputSummary: string;
+    outputSummary: string;
+    durationMs?: number;
+  }
+  const toolTimeline: ToolTimelineEntry[] = [];
+  const pendingToolCalls = new Map<
+    string,
+    { toolName: string; inputSummary: string }
+  >();
 
   const openGroup = (title: string) => {
     ghaGroup(title);
@@ -264,11 +439,12 @@ export function createSessionLogger(
   };
 
   const appendToolSummary = () => {
-    if (summaryAppended || toolCallCounts.size === 0 || !isGitHubActions()) {
+    if (summaryAppended || !isGitHubActions()) {
       return;
     }
     summaryAppended = true;
 
+    // Tool counts
     const toolsList = Array.from(toolCallCounts.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(
@@ -278,34 +454,112 @@ export function createSessionLogger(
       .join("\n");
 
     appendStepSummary(`\n## Tools used (${phase})\n\n${toolsList}\n`);
+
+    // Tools timeline
+    if (toolTimeline.length > 0) {
+      const timeline = toolTimeline
+        .map(
+          (entry, i) =>
+            `| ${i + 1} | \`${entry.toolName}\` | ${entry.durationMs != null ? `${entry.durationMs}ms` : "—"} | ${entry.inputSummary} | ${entry.outputSummary} |`,
+        )
+        .join("\n");
+
+      appendStepSummary(
+        `\n## Tools timeline\n\n` +
+          `| # | Tool | Duration | Input | Output |\n` +
+          `| --- | --- | --- | --- | --- |\n` +
+          `${timeline}\n`,
+      );
+    }
+  };
+
+  const flushReasoning = () => {
+    if (!reasoningText || !isGitHubActions()) return;
+    if (reasoningGroupOpen) {
+      // Truncate long reasoning
+      let displayed = reasoningText;
+      if (displayed.length > DEFAULT_REASONING_TRUNCATE) {
+        displayed = `${displayed.slice(0, DEFAULT_REASONING_TRUNCATE)}…(truncated)`;
+      }
+      console.log(redactSensitiveStrings(displayed));
+      closeGroup();
+      reasoningGroupOpen = false;
+    }
+    reasoningText = "";
   };
 
   const logToolInput = (toolName: string, input: unknown) => {
-    console.log(`[tool input] ${toolName}`);
-    console.log(formatToolValue(input));
+    const inputSummary = summarizeToolInput(toolName, input);
+    if (isVerboseTools()) {
+      console.log(formatToolInputVerbose(toolName, input));
+    } else {
+      console.log(`[tool input] ${toolName}: ${inputSummary}`);
+    }
+    return inputSummary;
   };
 
-  const logToolResult = (toolName: string, output: unknown, error?: string) => {
-    if (error) {
+  const logToolResult = (
+    toolName: string,
+    output: unknown,
+    error?: string,
+    durationMs?: number,
+  ) => {
+    const outputSummary = summarizeToolOutput(toolName, output, error);
+    if (isVerboseTools()) {
+      console.log(formatToolOutputVerbose(toolName, output, error));
+    } else if (error) {
       console.log(`[tool error] ${toolName}: ${redactSensitiveStrings(error)}`);
     } else {
-      console.log(`[tool output] ${toolName}`);
-      console.log(formatToolValue(output));
+      console.log(`[tool output] ${toolName}: ${outputSummary}`);
     }
+    return outputSummary;
   };
 
   const unsubscribe = cline.subscribe((event) => {
+    // --- Chunk handler (raw agent stream) ---
     if (event.type === "chunk" && event.payload.stream === "agent") {
       if (isGitHubActions()) {
-        // In GHA mode, group assistant output in a collapsible section
-        if (!assistantGroupOpen) {
-          openGroup("Assistant output");
-          assistantGroupOpen = true;
+        // Parse NDJSON lines and only show text (and optionally reasoning)
+        chunkBuffer += event.payload.chunk;
+        const lines = chunkBuffer.split("\n");
+        // Keep the last potentially incomplete line in the buffer
+        chunkBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const parsed = parseChunkLine(line);
+          if (!parsed) continue;
+
+          const chunkType = parsed.type as string | undefined;
+
+          if (chunkType === "text" && typeof parsed.text === "string") {
+            flushReasoning();
+            // Ensure assistant group is open for text chunks
+            if (!assistantGroupOpen) {
+              openGroup("Assistant output");
+              assistantGroupOpen = true;
+            }
+            process.stdout.write(parsed.text);
+          } else if (
+            chunkType === "reasoning" &&
+            typeof parsed.text === "string" &&
+            shouldShowReasoning()
+          ) {
+            if (!reasoningGroupOpen) {
+              flushReasoning();
+              openGroup("Reasoning");
+              reasoningGroupOpen = true;
+            }
+            reasoningText += parsed.text;
+          }
+          // tool, usage, etc. chunks are handled via agent_event
         }
+      } else {
+        // Non-GHA mode: pass through raw chunks as before
+        process.stdout.write(event.payload.chunk);
       }
-      process.stdout.write(event.payload.chunk);
     }
 
+    // --- Agent events ---
     if (event.type === "agent_event") {
       const agentEvent = event.payload.event;
 
@@ -315,6 +569,10 @@ export function createSessionLogger(
         agentEvent.toolName
       ) {
         trackToolCall(agentEvent.toolName);
+        const inputSummary = logToolInput(
+          agentEvent.toolName,
+          agentEvent.input,
+        );
 
         if (isGitHubActions()) {
           // Close assistant group if open when starting a tool
@@ -322,11 +580,52 @@ export function createSessionLogger(
             closeGroup();
             assistantGroupOpen = false;
           }
+          // Flush reasoning before tool group
+          flushReasoning();
           openGroup(`Tool: ${agentEvent.toolName}`);
-          logToolInput(agentEvent.toolName, agentEvent.input);
         } else {
           console.log(`\n[tool] ${agentEvent.toolName}`);
-          logToolInput(agentEvent.toolName, agentEvent.input);
+        }
+
+        // Track pending tool call for timeline
+        if (agentEvent.toolCallId) {
+          pendingToolCalls.set(agentEvent.toolCallId, {
+            toolName: agentEvent.toolName,
+            inputSummary,
+          });
+        }
+      }
+
+      // Handle text content_start: flush reasoning and output text
+      if (
+        agentEvent.type === "content_start" &&
+        agentEvent.contentType === "text" &&
+        typeof agentEvent.text === "string"
+      ) {
+        if (isGitHubActions()) {
+          flushReasoning();
+          if (!assistantGroupOpen) {
+            openGroup("Assistant output");
+            assistantGroupOpen = true;
+          }
+          process.stdout.write(agentEvent.text);
+        }
+      }
+
+      // Handle reasoning content_start via agent_event
+      if (
+        agentEvent.type === "content_start" &&
+        agentEvent.contentType === "reasoning" &&
+        typeof agentEvent.reasoning === "string" &&
+        shouldShowReasoning()
+      ) {
+        if (isGitHubActions()) {
+          if (!reasoningGroupOpen) {
+            flushReasoning();
+            openGroup("Reasoning");
+            reasoningGroupOpen = true;
+          }
+          reasoningText += agentEvent.reasoning;
         }
       }
 
@@ -336,8 +635,32 @@ export function createSessionLogger(
         agentEvent.toolName &&
         agentEvent.toolCallId
       ) {
-        loggedToolResults.add(agentEvent.toolCallId);
-        logToolResult(agentEvent.toolName, agentEvent.output, agentEvent.error);
+        if (!loggedToolResults.has(agentEvent.toolCallId)) {
+          loggedToolResults.add(agentEvent.toolCallId);
+
+          const outputSummary = logToolResult(
+            agentEvent.toolName,
+            agentEvent.output,
+            agentEvent.error,
+          );
+
+          // Resolve pending tool call
+          const pending = pendingToolCalls.get(agentEvent.toolCallId);
+          if (pending) {
+            toolTimeline.push({
+              toolName: pending.toolName,
+              inputSummary: pending.inputSummary,
+              outputSummary,
+            });
+            pendingToolCalls.delete(agentEvent.toolCallId);
+          } else {
+            toolTimeline.push({
+              toolName: agentEvent.toolName,
+              inputSummary: summarizeToolInput(agentEvent.toolName, null),
+              outputSummary,
+            });
+          }
+        }
       }
 
       if (agentEvent.type === "error") {
@@ -365,6 +688,7 @@ export function createSessionLogger(
       }
     }
 
+    // --- Hook events ---
     if (event.type === "hook") {
       const hookEvent = event.payload;
 
@@ -376,7 +700,39 @@ export function createSessionLogger(
         if (toolCallId && !loggedToolResults.has(toolCallId)) {
           loggedToolResults.add(toolCallId);
           trackToolCall(toolName);
-          logToolResult(toolName, record.output, record.error);
+          const outputSummary = logToolResult(
+            toolName,
+            record.output,
+            record.error,
+            record.durationMs,
+          );
+
+          // Resolve pending tool call with full data including duration
+          const pending = pendingToolCalls.get(toolCallId);
+          if (pending) {
+            toolTimeline.push({
+              toolName: pending.toolName,
+              inputSummary: pending.inputSummary,
+              outputSummary,
+              durationMs: record.durationMs,
+            });
+            pendingToolCalls.delete(toolCallId);
+          } else {
+            toolTimeline.push({
+              toolName,
+              inputSummary: summarizeToolInput(toolName, null),
+              outputSummary,
+              durationMs: record.durationMs,
+            });
+          }
+        } else if (toolCallId) {
+          // Already logged via content_end; update duration if available
+          const existing = toolTimeline.find(
+            (t) => t.durationMs == null && t.toolName === toolName,
+          );
+          if (existing && record.durationMs != null) {
+            existing.durationMs = record.durationMs;
+          }
         }
 
         if (isGitHubActions()) {
@@ -389,6 +745,7 @@ export function createSessionLogger(
         hookEvent.hookEventName === "agent_end" ||
         hookEvent.hookEventName === "session_shutdown"
       ) {
+        flushReasoning();
         appendToolSummary();
       }
     }

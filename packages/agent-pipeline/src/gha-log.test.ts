@@ -144,7 +144,7 @@ describe("gha-log", () => {
           event: {
             type: "content_start",
             contentType: "tool",
-            toolName: "read_file",
+            toolName: "read_files",
             toolCallId: "call-1",
             input: { path: "README.md" },
           },
@@ -157,7 +157,7 @@ describe("gha-log", () => {
           event: {
             type: "content_end",
             contentType: "tool",
-            toolName: "read_file",
+            toolName: "read_files",
             toolCallId: "call-1",
             output: { content: "hello" },
           },
@@ -170,7 +170,7 @@ describe("gha-log", () => {
           hookEventName: "tool_result",
           tool_result: {
             id: "call-1",
-            name: "read_file",
+            name: "read_files",
             input: { path: "README.md" },
             output: { content: "hello" },
             durationMs: 5,
@@ -181,11 +181,16 @@ describe("gha-log", () => {
       });
 
       const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
-      expect(calls).toContain("::group::Tool: read_file");
-      expect(calls).toContain("[tool input] read_file");
-      expect(calls).toContain("[tool output] read_file");
-      expect(calls).toContain(JSON.stringify({ path: "README.md" }, null, 2));
-      expect(calls).toContain(JSON.stringify({ content: "hello" }, null, 2));
+      expect(calls).toContain("::group::Tool: read_files");
+      expect(calls.some((c) => c.includes("[tool input] read_files"))).toBe(
+        true,
+      );
+      expect(calls.some((c) => c.includes("[tool output] read_files"))).toBe(
+        true,
+      );
+      // Non-verbose mode shows semantic summaries, not raw JSON
+      expect(calls.some((c) => c.includes("read_files README.md"))).toBe(true);
+      expect(calls.some((c) => c.includes("5 chars"))).toBe(true);
       expect(calls).toContain("::endgroup::");
     });
 
@@ -208,7 +213,7 @@ describe("gha-log", () => {
           event: {
             type: "content_start",
             contentType: "tool",
-            toolName: "run_command",
+            toolName: "run_commands",
             toolCallId: "call-2",
             input: { command: "echo hi" },
           },
@@ -221,7 +226,7 @@ describe("gha-log", () => {
           event: {
             type: "content_end",
             contentType: "tool",
-            toolName: "run_command",
+            toolName: "run_commands",
             toolCallId: "call-2",
             output: "hi",
           },
@@ -234,7 +239,7 @@ describe("gha-log", () => {
           hookEventName: "tool_result",
           tool_result: {
             id: "call-2",
-            name: "run_command",
+            name: "run_commands",
             input: { command: "echo hi" },
             output: "hi",
             durationMs: 12,
@@ -269,7 +274,7 @@ describe("gha-log", () => {
           event: {
             type: "content_start",
             contentType: "tool",
-            toolName: "run_command",
+            toolName: "run_commands",
             toolCallId: "call-3",
             input: { command: "echo hi" },
           },
@@ -282,7 +287,7 @@ describe("gha-log", () => {
           hookEventName: "tool_result",
           tool_result: {
             id: "call-3",
-            name: "run_command",
+            name: "run_commands",
             input: { command: "echo hi" },
             output: "hi",
             durationMs: 12,
@@ -293,8 +298,10 @@ describe("gha-log", () => {
       });
 
       const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
-      expect(calls).toContain("[tool output] run_command");
-      expect(calls).toContain("hi");
+      expect(calls.some((c) => c.includes("[tool output] run_commands"))).toBe(
+        true,
+      );
+      expect(calls.some((c) => c.includes("hi"))).toBe(true);
     });
 
     it("logs tool errors", () => {
@@ -316,7 +323,7 @@ describe("gha-log", () => {
           event: {
             type: "content_start",
             contentType: "tool",
-            toolName: "run_command",
+            toolName: "run_commands",
             toolCallId: "call-4",
             input: { command: "bad" },
           },
@@ -329,7 +336,7 @@ describe("gha-log", () => {
           event: {
             type: "content_end",
             contentType: "tool",
-            toolName: "run_command",
+            toolName: "run_commands",
             toolCallId: "call-4",
             error: "command failed",
           },
@@ -362,7 +369,7 @@ describe("gha-log", () => {
           event: {
             type: "content_start",
             contentType: "tool",
-            toolName: "read_file",
+            toolName: "read_files",
             toolCallId: "call-5",
             input: { path: "src/app/page.tsx" },
           },
@@ -375,7 +382,7 @@ describe("gha-log", () => {
           event: {
             type: "content_end",
             contentType: "tool",
-            toolName: "read_file",
+            toolName: "read_files",
             toolCallId: "call-5",
             output: "content",
           },
@@ -383,6 +390,307 @@ describe("gha-log", () => {
       });
 
       expect(() => logger.closeAllGroups()).not.toThrow();
+    });
+
+    it("filters NDJSON chunks to only show text type in GHA mode", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      // Simulate a chunk with mixed NDJSON types
+      const ndjson =
+        [
+          JSON.stringify({ type: "reasoning", text: "hidden thinking" }),
+          JSON.stringify({ type: "text", text: "Hello agent" }),
+          JSON.stringify({ type: "usage", inputTokens: 100 }),
+          JSON.stringify({ type: "tool", name: "read_files" }),
+          JSON.stringify({ type: "text", text: " more text" }),
+        ].join("\n") + "\n";
+
+      const stdoutWrite = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation(() => true);
+
+      try {
+        listener({
+          type: "chunk",
+          payload: { stream: "agent", chunk: ndjson },
+        });
+
+        const output = stdoutWrite.mock.calls
+          .map((call) => String(call[0]))
+          .join("");
+        expect(output).toContain("Hello agent");
+        expect(output).toContain(" more text");
+        expect(output).not.toContain("hidden thinking");
+        expect(output).not.toContain("inputTokens");
+        expect(output).not.toContain('"tool"');
+      } finally {
+        stdoutWrite.mockRestore();
+      }
+    });
+
+    it("shows reasoning chunks when AGENT_LOG_REASONING=1", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      process.env.AGENT_LOG_REASONING = "1";
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      const ndjson =
+        [
+          JSON.stringify({ type: "reasoning", text: "Let me think..." }),
+          JSON.stringify({ type: "text", text: "Done" }),
+        ].join("\n") + "\n";
+
+      const calls: string[] = [];
+      const spy = vi.spyOn(console, "log").mockImplementation((...args) => {
+        calls.push(String(args[0]));
+      });
+
+      try {
+        listener({
+          type: "chunk",
+          payload: { stream: "agent", chunk: ndjson },
+        });
+
+        expect(calls.some((c) => c.includes("::group::Reasoning"))).toBe(true);
+        expect(calls.some((c) => c.includes("Let me think..."))).toBe(true);
+      } finally {
+        spy.mockRestore();
+        delete process.env.AGENT_LOG_REASONING;
+      }
+    });
+
+    it("passes through raw chunks in non-GHA mode", () => {
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      const rawChunk = '{"type":"text","text":"Hello"}';
+      const stdoutWrite = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation(() => true);
+
+      try {
+        listener({
+          type: "chunk",
+          payload: { stream: "agent", chunk: rawChunk },
+        });
+
+        expect(
+          stdoutWrite.mock.calls.some((call) =>
+            String(call[0]).includes(rawChunk),
+          ),
+        ).toBe(true);
+      } finally {
+        stdoutWrite.mockRestore();
+      }
+    });
+
+    it("shows verbose tool JSON when AGENT_LOG_VERBOSE_TOOLS=1", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      process.env.AGENT_LOG_VERBOSE_TOOLS = "1";
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "read_files",
+            toolCallId: "call-v1",
+            input: { path: "README.md" },
+          },
+        },
+      });
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_end",
+            contentType: "tool",
+            toolName: "read_files",
+            toolCallId: "call-v1",
+            output: { content: "hello" },
+          },
+        },
+      });
+
+      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      expect(
+        calls.some((c) =>
+          c.includes(JSON.stringify({ path: "README.md" }, null, 2)),
+        ),
+      ).toBe(true);
+      expect(
+        calls.some((c) =>
+          c.includes(JSON.stringify({ content: "hello" }, null, 2)),
+        ),
+      ).toBe(true);
+
+      delete process.env.AGENT_LOG_VERBOSE_TOOLS;
+    });
+
+    it("produces semantic summaries for common tools", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      // editor tool
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "editor",
+            toolCallId: "call-ed1",
+            input: { path: "src/foo.ts", old_text: "bar" },
+          },
+        },
+      });
+
+      // run_commands tool
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "run_commands",
+            toolCallId: "call-rc1",
+            input: { command: "npm test" },
+          },
+        },
+      });
+
+      // list_files tool
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "list_files",
+            toolCallId: "call-lf1",
+            input: { path: "src", recursive: true },
+          },
+        },
+      });
+
+      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      expect(calls.some((c) => c.includes("editor edit src/foo.ts"))).toBe(
+        true,
+      );
+      expect(calls.some((c) => c.includes("run_commands: npm test"))).toBe(
+        true,
+      );
+      expect(
+        calls.some((c) => c.includes("list_files src (recursive=true)")),
+      ).toBe(true);
+    });
+
+    it("appends a tools timeline with duration to job summary", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      process.env.GITHUB_STEP_SUMMARY = "/tmp/gha-log-timeline-test.md";
+
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      const logger = createSessionLogger(cline, "implement", "test-model");
+      const listener = listeners[0]!;
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "read_files",
+            toolCallId: "call-tl1",
+            input: { path: "README.md" },
+          },
+        },
+      });
+
+      listener({
+        type: "hook",
+        payload: {
+          hookEventName: "tool_result",
+          tool_result: {
+            id: "call-tl1",
+            name: "read_files",
+            input: { path: "README.md" },
+            output: { content: "hello" },
+            durationMs: 42,
+            startedAt: new Date(),
+            endedAt: new Date(),
+          },
+        },
+      });
+
+      listener({
+        type: "hook",
+        payload: {
+          hookEventName: "agent_end",
+        },
+      });
+
+      const fs = require("fs");
+      const content = fs.readFileSync("/tmp/gha-log-timeline-test.md", "utf8");
+      expect(content).toContain("## Tools timeline");
+      expect(content).toContain("read_files");
+      expect(content).toContain("42ms");
+      expect(content).toContain("read_files README.md");
+
+      logger.closeAllGroups();
     });
   });
 });
