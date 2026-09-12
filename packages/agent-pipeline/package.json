@@ -1,0 +1,20 @@
+{
+  "name": "@igloo/agent-pipeline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Actions agent runtime (Cline) for issue-driven plan/implement/fix pipelines",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "agent-pipeline": "./bin/agent-pipeline.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "typescript": "^5.9.3"
+  }
+}

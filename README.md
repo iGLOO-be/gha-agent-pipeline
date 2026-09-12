@@ -2,13 +2,28 @@
 
 Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) and other consumers.
 
-**Phase 2** — runtime and workflows are migrated from the demo repo incrementally.
+## Status (Phase 2)
 
-## POC (issue #139)
+| Piece              | Location                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| Runtime (WIP)      | `packages/agent-pipeline/` — Step 2 [#141](https://github.com/iGLOO-be/gha-agent-demo/issues/141) |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                      |
+| Reusable workflows | `.github/workflows/` (POC + future `dispatch.yml`)                                                |
 
-Reusable workflow [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable.yml) validates cross-repo `workflow_call` from a consumer repository.
+## Development
 
-**Repository setting:** Actions → General → Access → *Accessible from repositories in the **iGLOO-be** organization* (`access_level: organization`). Without this, consumers get `workflow was not found`.
+```bash
+pnpm install
+pnpm test
+pnpm run typecheck
+pnpm run format:check
+```
+
+## Cross-repo `workflow_call` (POC)
+
+Reusable [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable.yml) — validated in [#139](https://github.com/iGLOO-be/gha-agent-demo/issues/139).
+
+**Repository setting:** Actions → General → Access → _Accessible from repositories in the **iGLOO-be** organization_ (`access_level: organization`).
 
 ## Consumer wiring (target)
 
@@ -20,3 +35,8 @@ jobs:
 ```
 
 Runners (`runs-on`) are set on the **consumer** workflow job, not in agent config.
+
+## Related docs
+
+- [gha-agent-demo reusable architecture](https://github.com/iGLOO-be/gha-agent-demo/blob/main/docs/reusable-architecture.md)
+- [`AGENTS.md`](./AGENTS.md)

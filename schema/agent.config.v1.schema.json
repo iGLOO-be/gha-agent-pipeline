@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iGLOO-be/gha-agent-pipeline/schema/agent.config.v1.schema.json",
+  "title": "Agent Configuration v1",
+  "description": "Configuration contract for consumer repositories. Loaded from .github/agent.config.yml.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Schema version. Must be 1.",
+      "default": 1,
+      "enum": [1]
+    },
+    "app": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Application name used for LLM client metadata and OpenRouter attribution headers. Falls back to the repository name derived from GITHUB_REPOSITORY."
+        }
+      },
+      "default": {}
+    },
+    "git": {
+      "type": "object",
+      "properties": {
+        "base_branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source branch used for agent checkouts and base-branch sync.",
+          "default": "main"
+        },
+        "pr_target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target branch for agent-created pull requests. Defaults to git.base_branch.",
+          "default": "main"
+        },
+        "branch_prefix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Prefix for agent-created branches, e.g. agent/<issue#>-<slug>.",
+          "default": "agent"
+        },
+        "merge_strategy": {
+          "type": "string",
+          "description": "Default strategy used when synchronizing with the base branch.",
+          "enum": ["merge", "rebase"],
+          "default": "merge"
+        }
+      },
+      "default": {}
+    },
+    "models": {
+      "type": "object",
+      "properties": {
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for the /agent plan phase.",
+          "default": "deepseek/deepseek-v4-pro"
+        },
+        "implement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for the /agent implement and /agent yolo phases.",
+          "default": "moonshotai/kimi-k2.7-code"
+        },
+        "ci-fix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for the /agent fix (CI) phase.",
+          "default": "moonshotai/kimi-k2.7-code"
+        },
+        "review-fix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for the /agent fix (review) phase.",
+          "default": "moonshotai/kimi-k2.7-code"
+        }
+      },
+      "default": {}
+    },
+    "prompts": {
+      "type": "object",
+      "description": "Per-phase system prompt overrides. Each phase can override the role description that appears at the start of the system prompt; the operational instructions remain fixed.",
+      "properties": {
+        "plan": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the plan phase.",
+              "default": "You are a planning agent for this repository."
+            }
+          },
+          "default": {}
+        },
+        "implement": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the implement phase.",
+              "default": "You are an implementation agent for this repository."
+            }
+          },
+          "default": {}
+        },
+        "ci-fix": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the ci-fix phase.",
+              "default": "You are a CI fix agent for this repository."
+            }
+          },
+          "default": {}
+        },
+        "yolo": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the yolo phase.",
+              "default": "You are an implementation agent for this repository."
+            }
+          },
+          "default": {}
+        },
+        "review-fix": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the review-fix phase.",
+              "default": "You are a review fix agent for this repository."
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
+    "ci": {
+      "type": "object",
+      "properties": {
+        "max_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of automatic CI fix rounds before blocking the PR.",
+          "default": 3
+        }
+      },
+      "default": {}
+    }
+  },
+  "default": {}
+}
