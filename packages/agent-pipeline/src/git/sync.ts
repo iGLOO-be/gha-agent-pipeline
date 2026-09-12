@@ -240,7 +240,9 @@ export async function prepareResolvedMergeForCommit(): Promise<void> {
     if (add.exitCode !== 0) {
       const fallback = await runShell("git add -A");
       if (fallback.exitCode !== 0) {
-        throw new Error(`git add failed: ${fallback.stderr || fallback.stdout}`);
+        throw new Error(
+          `git add failed: ${fallback.stderr || fallback.stdout}`,
+        );
       }
       await runShell(unstagePipelineCheckoutCommand());
     }
