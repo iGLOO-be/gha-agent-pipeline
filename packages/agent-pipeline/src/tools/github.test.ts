@@ -1,5 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
+  addReactionToIssueComment,
+  addReactionToPullRequestReview,
   AGENT_COMMENT_MARKERS,
   buildRunUrl,
   clearAgentResumeLabels,
@@ -334,6 +336,106 @@ describe("tools/github", () => {
         { issueNumber: undefined, prNumber: null },
       );
       expect(calls).toEqual([]);
+    });
+  });
+
+  describe("reaction helpers", () => {
+    it("adds a reaction to an issue comment", async () => {
+      const calls: Array<{ method: string; args: unknown }> = [];
+      const octokit = {
+        reactions: {
+          createForIssueComment: async (args: unknown) => {
+            calls.push({ method: "createForIssueComment", args });
+            return { data: { id: 1 } };
+          },
+        },
+      };
+
+      await addReactionToIssueComment(
+        octokit as never,
+        "owner",
+        "repo",
+        123,
+        "rocket",
+      );
+
+      expect(calls).toEqual([
+        {
+          method: "createForIssueComment",
+          args: {
+            owner: "owner",
+            repo: "repo",
+            comment_id: 123,
+            content: "rocket",
+          },
+        },
+      ]);
+    });
+
+    it("adds a reaction to the first review comment", async () => {
+      const calls: Array<{ method: string; args: unknown }> = [];
+      const octokit = {
+        pulls: {
+          listCommentsForReview: async (args: unknown) => {
+            calls.push({ method: "listCommentsForReview", args });
+            return { data: [{ id: 1001 }, { id: 1002 }] };
+          },
+        },
+        reactions: {
+          createForPullRequestReviewComment: async (args: unknown) => {
+            calls.push({ method: "createForPullRequestReviewComment", args });
+            return { data: { id: 2 } };
+          },
+        },
+      };
+
+      await addReactionToPullRequestReview(
+        octokit as never,
+        "owner",
+        "repo",
+        42,
+        456,
+        "+1",
+      );
+
+      expect(calls.map((c) => c.method)).toEqual([
+        "listCommentsForReview",
+        "createForPullRequestReviewComment",
+      ]);
+      expect(calls[0]?.args).toEqual({
+        owner: "owner",
+        repo: "repo",
+        pull_number: 42,
+        review_id: 456,
+      });
+      expect(calls[1]?.args).toEqual({
+        owner: "owner",
+        repo: "repo",
+        comment_id: 1001,
+        content: "+1",
+      });
+    });
+
+    it("returns null when the review has no comments", async () => {
+      const octokit = {
+        pulls: {
+          listCommentsForReview: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: { id: 3 } }),
+        },
+      };
+
+      const result = await addReactionToPullRequestReview(
+        octokit as never,
+        "owner",
+        "repo",
+        42,
+        456,
+        "rocket",
+      );
+
+      expect(result).toBeNull();
     });
   });
 });

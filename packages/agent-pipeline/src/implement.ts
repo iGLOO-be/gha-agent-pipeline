@@ -10,6 +10,7 @@ import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
+import { runAgentPhase } from "./lifecycle.js";
 import { safeFormatUsageMarkdown } from "./gha-log.js";
 import {
   addLabelToIssue,
@@ -167,4 +168,17 @@ Branch: ${branch}`,
   }
 }
 
-runAgentMain(main);
+const env = loadAgentEnv();
+const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
+const octokit = createOctokit(env.GITHUB_TOKEN);
+
+runAgentMain(() =>
+  runAgentPhase({
+    phase: "implement",
+    octokit,
+    owner,
+    repo,
+    issueNumber: env.ISSUE_NUMBER,
+    main,
+  }),
+);
