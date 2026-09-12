@@ -26,6 +26,8 @@ pnpm run typecheck
 pnpm run format:check
 ```
 
+`pnpm test` includes a dogfood check that validates [`.github/agent.config.yml`](./.github/agent.config.yml) against the runtime Zod schema.
+
 Run a phase from a **consumer repo** checkout (needs `.github/agent.config.yml` and agent env vars):
 
 ```bash
