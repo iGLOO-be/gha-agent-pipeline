@@ -16,6 +16,7 @@ import {
   PLAN_MODEL,
 } from "./config.js";
 import { FILE_EDIT_SYSTEM_HINT } from "./prompts/file-edits.js";
+import { RUN_FRICTION_SYSTEM_HINT } from "./prompts/run-friction.js";
 import { resolvePhaseModel } from "./session-retry.js";
 
 const ENV_KEYS = [
@@ -348,6 +349,9 @@ describe("config", () => {
       const config = loadAgentConfig(join(tempDir, "missing.yml"));
       expect(buildPhaseSystemPrompt("implement", config)).toContain(
         FILE_EDIT_SYSTEM_HINT,
+      );
+      expect(buildPhaseSystemPrompt("implement", config)).toContain(
+        RUN_FRICTION_SYSTEM_HINT,
       );
       expect(buildPhaseSystemPrompt("ci-fix", config)).toContain(
         "The pull request failed CI.",

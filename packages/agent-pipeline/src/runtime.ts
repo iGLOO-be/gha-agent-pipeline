@@ -26,6 +26,10 @@ import {
 import type { SessionAccumulatedUsage } from "./types/usage.js";
 import { workspacePathSystemHint } from "./prompts/workspace-paths.js";
 import {
+  type RunFrictionCollector,
+  setActiveRunFrictionCollector,
+} from "./run-friction.js";
+import {
   AgentSessionError,
   getSessionMaxAttempts,
   getSessionRetryBaseDelayMs,
@@ -69,6 +73,8 @@ export type RunSessionInput = {
   prompt: string;
   tools: AgentTool[];
   sessionMetadata?: Record<string, unknown>;
+  /** When set, editor failures are recorded and exposed for end-of-phase summaries. */
+  runFriction?: RunFrictionCollector;
 };
 
 export type AgentSessionResult = {
@@ -251,6 +257,11 @@ export async function runAgentSession(
   const baseDelayMs = getSessionRetryBaseDelayMs();
   let lastError: AgentSessionError | undefined;
 
+  if (input.runFriction) {
+    setActiveRunFrictionCollector(input.runFriction);
+  }
+
+  try {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1) {
       const delayMs = baseDelayMs * 2 ** (attempt - 2);
@@ -286,4 +297,9 @@ export async function runAgentSession(
   }
 
   throw lastError ?? new Error("Agent session failed with no attempt result");
+  } finally {
+    if (input.runFriction) {
+      setActiveRunFrictionCollector(null);
+    }
+  }
 }

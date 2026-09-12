@@ -9,6 +9,11 @@ import { branchName, createAndCheckoutBranch } from "./git/branch.js";
 import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
 import { reportPhaseFailure } from "./report-failure.js";
+import {
+  appendRunFrictionStepSummary,
+  createRunFrictionCollector,
+  formatRunFrictionMarkdown,
+} from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import { safeFormatUsageMarkdown } from "./gha-log.js";
@@ -28,6 +33,7 @@ import {
   readIssue,
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
+import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 
 async function main() {
   const env = loadAgentEnv();
@@ -45,11 +51,10 @@ async function main() {
     );
     await createAndCheckoutBranch(branch, config.git.base_branch);
 
-    const tools = await createAgentTools(
-      octokit,
-      owner,
-      repo,
-      env.ISSUE_NUMBER,
+    const runFriction = createRunFrictionCollector();
+    const tools = await withReportRunFrictionTool(
+      await createAgentTools(octokit, owner, repo, env.ISSUE_NUMBER),
+      runFriction,
     );
 
     const session = await runAgentSession({
@@ -57,6 +62,7 @@ async function main() {
       modelId: YOLO_MODEL,
       systemPrompt: buildPhaseSystemPrompt("yolo", config),
       tools,
+      runFriction,
       sessionMetadata: {
         phase: "yolo",
         issueNumber: env.ISSUE_NUMBER,
@@ -71,6 +77,9 @@ ${issue.body ?? "(empty)"}
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${branch}`,
     });
+
+    appendRunFrictionStepSummary(runFriction, "yolo");
+    const frictionSection = formatRunFrictionMarkdown(runFriction);
 
     const parsedRiskLevel = parseRiskLevel(session.outputText);
     if (!parsedRiskLevel) {
@@ -151,7 +160,10 @@ Branch: ${branch}`,
       "",
       `Pull request [#${pr.number}](${pr.url}) created.`,
       usageSection ?? "",
-    ].join("\n");
+      frictionSection ?? "",
+    ]
+      .filter((section) => section.length > 0)
+      .join("\n\n");
 
     await postComment(
       octokit,

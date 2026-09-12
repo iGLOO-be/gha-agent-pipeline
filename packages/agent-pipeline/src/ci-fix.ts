@@ -13,6 +13,11 @@ import {
   syncWithBaseBranch,
 } from "./git/sync.js";
 import { reportPhaseFailure } from "./report-failure.js";
+import {
+  appendRunFrictionStepSummary,
+  appendRunFrictionToMarkdown,
+  createRunFrictionCollector,
+} from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
@@ -29,6 +34,7 @@ import {
   readIssue,
 } from "./tools/github.js";
 import { createCiFixTools } from "./tools/index.js";
+import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 
 async function main() {
   const env = loadCiFixEnv();
@@ -72,13 +78,17 @@ async function main() {
       `- conflicts: ${prMergeState.conflicts}`,
     ].join("\n");
 
-    const tools = await createCiFixTools(
-      octokit,
-      owner,
-      repo,
-      env.ISSUE_NUMBER,
-      env.PR_NUMBER,
-      env.HEAD_SHA,
+    const runFriction = createRunFrictionCollector();
+    const tools = await withReportRunFrictionTool(
+      await createCiFixTools(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        env.PR_NUMBER,
+        env.HEAD_SHA,
+      ),
+      runFriction,
     );
 
     await runAgentSession({
@@ -86,6 +96,7 @@ async function main() {
       modelId: CI_FIX_MODEL,
       systemPrompt: buildPhaseSystemPrompt("ci-fix", config),
       tools,
+      runFriction,
       sessionMetadata: {
         phase: "ci-fix",
         issueNumber: env.ISSUE_NUMBER,
@@ -110,6 +121,8 @@ ${failedSummary}
 Repository: ${env.GITHUB_REPOSITORY}`,
     });
 
+    appendRunFrictionStepSummary(runFriction, "ci-fix");
+
     await prepareResolvedMergeForCommit();
 
     const branch = process.env.AGENT_BRANCH;
@@ -128,7 +141,10 @@ Repository: ${env.GITHUB_REPOSITORY}`,
         owner,
         repo,
         env.PR_NUMBER,
-        `<!-- agent-ci-fix -->\nNo commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
+        `<!-- agent-ci-fix -->\n${appendRunFrictionToMarkdown(
+          `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
+          runFriction,
+        )}`,
       );
       console.log(`\nCI fix completed with no changes on branch ${branch}`);
       await clearAgentResumeLabels(octokit, owner, repo, {
@@ -147,7 +163,10 @@ Repository: ${env.GITHUB_REPOSITORY}`,
       owner,
       repo,
       env.PR_NUMBER,
-      `<!-- agent-ci-fix -->\nPushed a CI fix commit for \`${env.HEAD_SHA.slice(0, 7)}\`.`,
+      `<!-- agent-ci-fix -->\n${appendRunFrictionToMarkdown(
+        `Pushed a CI fix commit for \`${env.HEAD_SHA.slice(0, 7)}\`.`,
+        runFriction,
+      )}`,
     );
 
     await clearAgentResumeLabels(octokit, owner, repo, {

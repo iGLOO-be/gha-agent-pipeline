@@ -3,7 +3,22 @@ import {
   isMissingOldTextEditorError,
   missingOldTextRecoveryMessage,
 } from "./editor-old-text-recovery.js";
+import { getActiveRunFrictionCollector } from "../run-friction.js";
 import { resolveWorkspaceFilePath } from "./resolve-workspace-path.js";
+
+function editorResultError(result: unknown): string | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const record = result as { success?: boolean; error?: unknown };
+  if (typeof record.error === "string" && record.error.length > 0) {
+    return record.error;
+  }
+  if (record.success === false && typeof record.error === "string") {
+    return record.error;
+  }
+  return null;
+}
 
 /**
  * Override Cline's built-in editor executor so paths resolve against the
@@ -31,9 +46,23 @@ export async function createWorkspaceScopedEditorExecutor(
     const normalizedInput = { ...input, path: resolvedPath };
 
     try {
-      return await inner(normalizedInput, cwd, context);
+      const result = await inner(normalizedInput, cwd, context);
+      const toolError = editorResultError(result);
+      if (toolError) {
+        getActiveRunFrictionCollector()?.recordRuntimeToolError(
+          "editor",
+          toolError,
+          resolvedPath,
+        );
+      }
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      getActiveRunFrictionCollector()?.recordRuntimeToolError(
+        "editor",
+        message,
+        resolvedPath,
+      );
       if (isMissingOldTextEditorError(message)) {
         throw new Error(
           missingOldTextRecoveryMessage(resolvedPath, input.old_text),
