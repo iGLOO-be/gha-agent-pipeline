@@ -1,0 +1,1 @@
+export const FILE_EDIT_SYSTEM_HINT = `File changes: prefer apply_patch for edits to existing files. With editor on an existing file, set old_text to the exact substring to replace (read the file first) or use insert_line; do not call editor with only new_text on an existing file.`;

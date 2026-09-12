@@ -5,16 +5,26 @@
   "type": "module",
   "description": "GitHub Actions agent runtime (Cline) for issue-driven plan/implement/fix pipelines",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/config.ts"
   },
   "bin": {
     "agent-pipeline": "./bin/agent-pipeline.js"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@cline/sdk": "^0.0.82",
+    "@octokit/rest": "^22.0.1",
+    "globby": "^16.2.4",
+    "yaml": "^2.9.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",
-    "typescript": "^5.9.3"
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   }
 }

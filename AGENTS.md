@@ -24,6 +24,13 @@ pnpm run format:fix
 pnpm run format:check
 ```
 
+Run a phase against a **consumer checkout** (cwd must contain `.github/agent.config.yml`):
+
+```bash
+cd /path/to/gha-agent-demo
+pnpm exec agent-pipeline plan   # requires OPENROUTER_API_KEY, GITHUB_TOKEN, etc.
+```
+
 ## Conventions
 
 - TypeScript strict mode; Vitest for unit tests under `packages/agent-pipeline/`

@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=22"
   },
+  "dependencies": {
+    "@igloo/agent-pipeline": "workspace:*"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",

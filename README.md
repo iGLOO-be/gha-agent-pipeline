@@ -19,6 +19,14 @@ pnpm run typecheck
 pnpm run format:check
 ```
 
+Run a phase from a **consumer repo** checkout (needs `.github/agent.config.yml` and agent env vars):
+
+```bash
+cd /path/to/gha-agent-demo
+/path/to/gha-agent-pipeline/node_modules/.bin/agent-pipeline plan
+# or: pnpm exec agent-pipeline plan   # when run from gha-agent-pipeline with workspace linked
+```
+
 ## Cross-repo `workflow_call` (POC)
 
 Reusable [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable.yml) — validated in [#139](https://github.com/iGLOO-be/gha-agent-demo/issues/139).

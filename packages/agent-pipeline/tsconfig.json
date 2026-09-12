@@ -9,5 +9,5 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["./src/**/*.ts"]
+  "include": ["./**/*.ts"]
 }
