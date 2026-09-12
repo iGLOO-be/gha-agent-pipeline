@@ -1,0 +1,95 @@
+name: Run agent phase (post-setup)
+description: |
+  Orchestrates the shared post-environment-setup steps for the slash-command
+  agent phases (plan, implement, yolo, review-fix). Consumers keep their own
+  `setup-pr-environment` step (checkout + package manager + token) and then
+  call this composite once. This composite never performs environment setup
+  (package manager, Node version, checkout ref, token generation).
+inputs:
+  phase:
+    description: Agent phase to run (plan, implement, yolo, review-fix).
+    required: true
+  app_token:
+    description: >
+      GitHub App token produced by the consumer's setup step
+      (e.g. steps.setup.outputs.app_token). Used for pipeline checkout and all
+      GitHub API operations.
+    required: true
+  comment_id:
+    description: Comment or review ID that triggered the workflow.
+    required: true
+  issue_number:
+    description: Issue number this run targets.
+    required: true
+  pr_number:
+    description: Pull request number (required for review-fix).
+    required: false
+  head_ref:
+    description: PR head branch (required for review-fix).
+    required: false
+  review_feedback:
+    description: Review feedback text for the agent (required for review-fix).
+    required: false
+  reaction_target:
+    description: issue_comment or pull_request_review (required for review-fix).
+    required: false
+  pipeline_ref:
+    description: Git ref of the pipeline library to install.
+    required: false
+    default: main
+  pipeline_repository:
+    description: Repository (owner/name) hosting the pipeline library.
+    required: false
+    default: iGLOO-be/gha-agent-pipeline
+
+runs:
+  using: composite
+  steps:
+    - name: Install agent pipeline
+      id: pipeline
+      uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
+      with:
+        token: ${{ inputs.app_token }}
+        pipeline_ref: ${{ inputs.pipeline_ref }}
+        pipeline_repository: ${{ inputs.pipeline_repository }}
+
+    - name: Run agent
+      id: run-agent
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.app_token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        PR_NUMBER: ${{ inputs.phase == 'review-fix' && inputs.pr_number || '' }}
+        AGENT_BRANCH: ${{ inputs.phase == 'review-fix' && inputs.head_ref || '' }}
+        REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
+        COMMENT_ID: ${{ inputs.comment_id }}
+        REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
+        SUCCESS_REACTION: ${{ inputs.phase == 'plan' && '+1' || 'rocket' }}
+      run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
+
+    - name: Fallback failure comment
+      if: failure() && steps.run-agent.outcome != 'success'
+      uses: iGLOO-be/gha-agent-pipeline/.github/actions/report-failure-fallback@main
+      with:
+        token: ${{ inputs.app_token || github.token }}
+        phase: ${{ inputs.phase }}
+        target_type: ${{ inputs.phase == 'review-fix' && 'pr' || 'issue' }}
+        target_number: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.issue_number }}
+        source_issue_number: ${{ inputs.phase == 'review-fix' && inputs.issue_number || '' }}
+
+    - name: Remove agent-working label on PR
+      if: always() && inputs.phase == 'review-fix'
+      uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+      with:
+        action: remove
+        token: ${{ inputs.app_token || github.token }}
+        pr_number: ${{ inputs.pr_number }}
+
+    - name: Remove agent-working label on issue
+      if: always()
+      uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+      with:
+        action: remove
+        token: ${{ inputs.app_token || github.token }}
+        issue_number: ${{ inputs.issue_number }}
