@@ -27,10 +27,6 @@ permissions:
 
 run-name: "Agent Plan / Issue #${{ inputs.issue_number }}"
 
-concurrency:
-  group: agent-issue-${{ inputs.issue_number }}
-  cancel-in-progress: false
-
 jobs:
   plan:
     runs-on: blacksmith-4vcpu-ubuntu-2404

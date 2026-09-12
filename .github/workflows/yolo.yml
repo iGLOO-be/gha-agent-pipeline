@@ -28,10 +28,6 @@ permissions:
 
 run-name: "Agent Yolo / Issue #${{ inputs.issue_number }}"
 
-concurrency:
-  group: agent-issue-${{ inputs.issue_number }}
-  cancel-in-progress: false
-
 jobs:
   yolo:
     runs-on: blacksmith-4vcpu-ubuntu-2404

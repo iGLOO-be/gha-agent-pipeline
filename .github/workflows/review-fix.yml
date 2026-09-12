@@ -36,10 +36,6 @@ permissions:
 
 run-name: "Agent Review Fix / PR #${{ inputs.pr_number }} / Issue #${{ inputs.issue_number }}"
 
-concurrency:
-  group: agent-issue-${{ inputs.issue_number }}
-  cancel-in-progress: false
-
 jobs:
   review-fix:
     runs-on: blacksmith-4vcpu-ubuntu-2404

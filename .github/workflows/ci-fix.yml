@@ -18,10 +18,6 @@ permissions:
   checks: read
   actions: read
 
-concurrency:
-  group: agent-ci-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: false
-
 jobs:
   ci-fix:
     if: github.event.workflow_run.conclusion == 'failure'
