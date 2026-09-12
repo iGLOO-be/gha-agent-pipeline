@@ -1,0 +1,47 @@
+name: Post agent startup comment
+description: >
+  Post a startup comment with a link to the current GitHub Actions run on an
+  issue or pull request.
+
+inputs:
+  phase:
+    description: Agent phase (plan, implement, yolo, review-fix).
+    required: true
+  target_type:
+    description: Either "issue" or "pr".
+    required: true
+  target_number:
+    description: Issue or PR number to comment on.
+    required: true
+  token:
+    description: GitHub token with issues and pull-requests write permission.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const phase = '${{ inputs.phase }}';
+          const targetType = '${{ inputs.target_type }}';
+          const targetNumber = Number('${{ inputs.target_number }}');
+          const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+
+          const phaseLabels = {
+            plan: 'Plan',
+            implement: 'Implement',
+            yolo: 'Yolo',
+            'review-fix': 'Review Fix',
+          };
+          const phaseLabel = phaseLabels[phase] ?? phase;
+          const targetLabel = targetType === 'pr' ? `PR #${targetNumber}` : `issue #${targetNumber}`;
+          const body = `<!-- agent-startup -->\n🚀 **Agent ${phaseLabel}** démarré pour ${targetLabel} — [Suivre l'exécution](${runUrl})`;
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: targetNumber,
+            body,
+          });

@@ -1,0 +1,73 @@
+name: Get PR from check suite
+description: Resolve an open agent PR for a completed check suite, with stale SHA filtering
+
+outputs:
+  skip:
+    description: Whether to skip downstream jobs
+    value: ${{ steps.resolve.outputs.skip }}
+  pr_number:
+    description: Pull request number
+    value: ${{ steps.resolve.outputs.pr_number }}
+  issue_number:
+    description: Linked issue number parsed from agent branch name
+    value: ${{ steps.resolve.outputs.issue_number }}
+  head_ref:
+    description: PR head branch name
+    value: ${{ steps.resolve.outputs.head_ref }}
+  head_sha:
+    description: Check suite head SHA
+    value: ${{ steps.resolve.outputs.head_sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve agent PR
+      id: resolve
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const suite = context.payload.check_suite
+          const headBranch = suite.head_branch || ''
+          const headSha = suite.head_sha || ''
+
+          if (!headBranch.startsWith('agent/')) {
+            core.setOutput('skip', 'true')
+            core.info(`Skipping non-agent branch: ${headBranch}`)
+            return
+          }
+
+          if (suite.app?.name && suite.app.name !== 'GitHub Actions') {
+            core.setOutput('skip', 'true')
+            core.info(`Skipping check suite app: ${suite.app.name}`)
+            return
+          }
+
+          const owner = context.repo.owner
+          const repo = context.repo.repo
+          const pulls = await github.rest.pulls.list({
+            owner,
+            repo,
+            head: `${owner}:${headBranch}`,
+            state: 'open',
+            per_page: 5
+          })
+
+          const pr = pulls.data.find((p) => p.head.sha === headSha)
+          if (!pr) {
+            core.setOutput('skip', 'true')
+            core.info(`No open PR at head SHA ${headSha} for branch ${headBranch}`)
+            return
+          }
+
+          const match = headBranch.match(/^agent\/(\d+)-/)
+          if (!match) {
+            core.setOutput('skip', 'true')
+            core.info(`Could not parse issue number from branch ${headBranch}`)
+            return
+          }
+
+          core.setOutput('skip', 'false')
+          core.setOutput('pr_number', String(pr.number))
+          core.setOutput('issue_number', match[1])
+          core.setOutput('head_ref', headBranch)
+          core.setOutput('head_sha', headSha)

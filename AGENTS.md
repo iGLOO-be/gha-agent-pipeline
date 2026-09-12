@@ -12,7 +12,8 @@ Consumers (e.g. [`gha-agent-demo`](https://github.com/iGLOO-be/gha-agent-demo)) 
 
 - `packages/agent-pipeline/` — Cline agent harness (migrated from demo `tools/agent/`)
 - `schema/agent.config.v1.schema.json` — config contract for consumers
-- `.github/workflows/` — reusable workflows (`poc-callable.yml` today; `dispatch.yml` etc. in later steps)
+- `.github/workflows/` — reusable workflows (`dispatch.yml`, phase workflows, `poc-callable.yml`)
+- `.github/actions/` — composites including `install-agent-pipeline` and `setup-pr-environment`
 
 ## Dev commands
 

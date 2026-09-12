@@ -1,0 +1,12 @@
+name: Sync agent harness from main
+description: Overlay tools/agent from origin/main on the current PR checkout so fix jobs use the latest harness
+
+runs:
+  using: composite
+  steps:
+    - name: Overlay tools/agent from main
+      shell: bash
+      run: |
+        set -euo pipefail
+        git fetch origin main
+        git checkout origin/main -- tools/agent

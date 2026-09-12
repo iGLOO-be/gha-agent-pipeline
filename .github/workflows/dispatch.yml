@@ -1,0 +1,326 @@
+name: Agent dispatch
+
+# Invoked from the consumer repo (issue_comment / pull_request_review live there).
+on:
+  workflow_call:
+    secrets:
+      APP_ID:
+        required: true
+      APP_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Generate GitHub App token
+        id: app_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Parse slash command and dispatch workflow
+        uses: actions/github-script@v7
+        env:
+          ACTIONS_TOKEN: ${{ github.token }}
+        with:
+          github-token: ${{ steps.app_token.outputs.token }}
+          script: |
+            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR']
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const consumerRef = context.payload.repository.default_branch
+
+            async function dispatchReviewFix({
+              commentId,
+              prNumber,
+              issueNumber,
+              headRef,
+              reviewFeedback,
+              reactionTarget
+            }) {
+              await fetch(
+                `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-review-fix.yml/dispatches`,
+                {
+                  method: 'POST',
+                  headers: {
+                    authorization: `token ${process.env.ACTIONS_TOKEN}`,
+                    accept: 'application/vnd.github.v3+json',
+                    'content-type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    ref: consumerRef,
+                    inputs: {
+                      comment_id: String(commentId),
+                      pr_number: String(prNumber),
+                      issue_number: String(issueNumber),
+                      head_ref: headRef,
+                      review_feedback: reviewFeedback,
+                      reaction_target: reactionTarget
+                    }
+                  })
+                }
+              ).then(async (res) => {
+                if (!res.ok) {
+                  const text = await res.text()
+                  throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
+                }
+              })
+            }
+
+            async function resolveAgentPullRequest(prNumber) {
+              const { data: pr } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber
+              })
+              if (!pr.head.ref.startsWith('agent/')) {
+                core.info(`Skipping non-agent PR branch: ${pr.head.ref}`)
+                return null
+              }
+              const match = pr.head.ref.match(/^agent\/(\d+)-/)
+              if (!match) {
+                core.info(`Could not parse issue number from branch ${pr.head.ref}`)
+                return null
+              }
+              return {
+                prNumber: pr.number,
+                issueNumber: Number(match[1]),
+                headRef: pr.head.ref
+              }
+            }
+
+            async function isAgentBusy(issueNumber) {
+              const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+                owner,
+                repo,
+                issue_number: issueNumber
+              })
+              const hasWorkingLabel = labels.some((label) => label.name === 'agent-working')
+
+              const agentWorkflowPaths = [
+                '.github/workflows/agent-plan.yml',
+                '.github/workflows/agent-implement.yml',
+                '.github/workflows/agent-yolo.yml',
+                '.github/workflows/agent-review-fix.yml'
+              ]
+              let busyRuns = []
+              try {
+                const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                  owner,
+                  repo,
+                  status: 'in_progress',
+                  per_page: 100
+                })
+                busyRuns = data.workflow_runs.filter((run) => {
+                  if (!agentWorkflowPaths.includes(run.path)) return false
+                  const match = (run.display_title || '').match(/Issue #(\d+)/)
+                  return match && Number(match[1]) === issueNumber
+                })
+              } catch (error) {
+                core.warning(`Could not list in-progress workflow runs: ${error.message}`)
+              }
+
+              if (!hasWorkingLabel && busyRuns.length === 0) {
+                return { busy: false }
+              }
+
+              const runUrl = busyRuns.length > 0 ? busyRuns[0].html_url : null
+              return { busy: true, runUrl }
+            }
+
+            if (context.eventName === 'issue_comment') {
+              const body = (context.payload.comment.body || '').trim()
+              const isPullRequest = Boolean(context.payload.issue.pull_request)
+              const authorAssociation = context.payload.comment.author_association
+
+              if (!allowed.includes(authorAssociation)) {
+                core.info(`Skipping workflow: author association ${authorAssociation} not allowed`)
+                return
+              }
+
+              if (isPullRequest) {
+                if (!body.includes('/agent fix')) {
+                  core.info('No /agent fix on PR comment')
+                  return
+                }
+
+                const resolved = await resolveAgentPullRequest(context.payload.issue.number)
+                if (!resolved) return
+
+                const busy = await isAgentBusy(resolved.issueNumber)
+                if (busy.busy) {
+                  core.info(`Agent already working on issue #${resolved.issueNumber}; skipping /agent fix dispatch`)
+                  const busyBody = busy.runUrl
+                    ? `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**\n\n🔗 [Suivre l'exécution en cours](${busy.runUrl})`
+                    : `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**`
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: resolved.prNumber,
+                    body: busyBody
+                  })
+                  return
+                }
+
+                const feedback = body.replace('/agent fix', '').trim() || body
+                const commentId = context.payload.comment.id
+
+                await github.rest.reactions.createForIssueComment({
+                  owner,
+                  repo,
+                  comment_id: commentId,
+                  content: 'eyes'
+                })
+
+                await dispatchReviewFix({
+                  commentId,
+                  prNumber: resolved.prNumber,
+                  issueNumber: resolved.issueNumber,
+                  headRef: resolved.headRef,
+                  reviewFeedback: feedback,
+                  reactionTarget: 'issue_comment'
+                })
+                return
+              }
+
+              let workflowFile = null
+              if (body.includes('/agent plan')) {
+                workflowFile = 'agent-plan.yml'
+              } else if (body.includes('/agent implement')) {
+                workflowFile = 'agent-implement.yml'
+              } else if (body.includes('/agent yolo')) {
+                workflowFile = 'agent-yolo.yml'
+              }
+
+              if (!workflowFile) {
+                core.info('No /agent slash command detected')
+                return
+              }
+
+              const commentId = String(context.payload.comment.id)
+              const issueNumber = String(context.payload.issue.number)
+
+              const busy = await isAgentBusy(Number(issueNumber))
+              if (busy.busy) {
+                core.info(`Agent already working on issue #${issueNumber}; skipping dispatch`)
+                const busyBody = busy.runUrl
+                  ? `🚫 **Un agent travaille déjà sur cette issue (#${issueNumber}).**\n\n🔗 [Suivre l'exécution en cours](${busy.runUrl})`
+                  : `🚫 **Un agent travaille déjà sur cette issue (#${issueNumber}).**`
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: Number(issueNumber),
+                  body: busyBody
+                })
+                return
+              }
+
+              await github.rest.reactions.createForIssueComment({
+                owner,
+                repo,
+                comment_id: Number(commentId),
+                content: 'eyes'
+              })
+
+              const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`
+              const res = await fetch(dispatchUrl, {
+                method: 'POST',
+                headers: {
+                  authorization: `token ${process.env.ACTIONS_TOKEN}`,
+                  accept: 'application/vnd.github.v3+json',
+                  'content-type': 'application/json'
+                },
+                body: JSON.stringify({
+                  ref: consumerRef,
+                  inputs: {
+                    comment_id: commentId,
+                    issue_number: issueNumber,
+                    author_association: authorAssociation
+                  }
+                })
+              })
+
+              if (!res.ok) {
+                const text = await res.text()
+                throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
+              }
+              return
+            }
+
+            if (context.eventName === 'pull_request_review') {
+              const review = context.payload.review
+              const body = (review.body || '').trim()
+              const authorAssociation = review.author_association
+
+              if (!allowed.includes(authorAssociation)) {
+                core.info(`Skipping review workflow: author association ${authorAssociation} not allowed`)
+                return
+              }
+
+              if (!body.includes('/agent fix')) {
+                core.info('No /agent fix in submitted review')
+                return
+              }
+
+              const prNumber = context.payload.pull_request.number
+              const resolved = await resolveAgentPullRequest(prNumber)
+              if (!resolved) return
+
+              const busy = await isAgentBusy(resolved.issueNumber)
+              if (busy.busy) {
+                core.info(`Agent already working on issue #${resolved.issueNumber}; skipping /agent fix dispatch`)
+                const busyBody = busy.runUrl
+                  ? `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**\n\n🔗 [Suivre l'exécution en cours](${busy.runUrl})`
+                  : `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**`
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: resolved.prNumber,
+                  body: busyBody
+                })
+                return
+              }
+
+              const feedback = body.replace('/agent fix', '').trim() || body
+
+              try {
+                const { data: reviewComments } = await github.rest.pulls.listCommentsForReview({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  review_id: review.id,
+                })
+                if (reviewComments.length > 0) {
+                  await github.rest.reactions.createForPullRequestReviewComment({
+                    owner,
+                    repo,
+                    comment_id: reviewComments[0].id,
+                    content: 'eyes',
+                  })
+                } else {
+                  core.info(
+                    'Review has no line comments; skipping eyes reaction because GitHub does not support reactions on pull request reviews directly.'
+                  )
+                }
+              } catch (error) {
+                core.warning(`Could not add eyes reaction to review: ${error.message}`)
+              }
+
+              await dispatchReviewFix({
+                commentId: review.id,
+                prNumber: resolved.prNumber,
+                issueNumber: resolved.issueNumber,
+                headRef: resolved.headRef,
+                reviewFeedback: feedback,
+                reactionTarget: 'pull_request_review',
+              })
+            }

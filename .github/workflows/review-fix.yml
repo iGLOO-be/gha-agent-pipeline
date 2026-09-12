@@ -1,0 +1,150 @@
+name: Agent Review Fix
+
+on:
+  workflow_call:
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+      APP_ID:
+        required: true
+      APP_PRIVATE_KEY:
+        required: true
+    inputs:
+      comment_id:
+        required: true
+        type: string
+      pr_number:
+        required: true
+        type: string
+      issue_number:
+        required: true
+        type: string
+      head_ref:
+        required: true
+        type: string
+      review_feedback:
+        required: true
+        type: string
+      reaction_target:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+run-name: "Agent Review Fix / PR #${{ inputs.pr_number }} / Issue #${{ inputs.issue_number }}"
+
+concurrency:
+  group: agent-issue-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  review-fix:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    steps:
+      - name: Setup environment
+        id: setup
+        uses: ./.github/actions/setup-pr-environment
+        with:
+          ref: ${{ inputs.head_ref }}
+          setup_environment: true
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Install agent pipeline
+        id: pipeline
+        uses: ./.github/actions/install-agent-pipeline
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+
+      - name: Add agent-working label on issue
+        uses: ./.github/actions/manage-agent-working-label
+        with:
+          action: add
+          token: ${{ steps.setup.outputs.app_token }}
+          issue_number: ${{ inputs.issue_number }}
+
+      - name: Add agent-working label on PR
+        uses: ./.github/actions/manage-agent-working-label
+        with:
+          action: add
+          token: ${{ steps.setup.outputs.app_token }}
+          pr_number: ${{ inputs.pr_number }}
+
+      - name: Clear agent resume labels
+        uses: ./.github/actions/clear-agent-resume-labels
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+          issue_number: ${{ inputs.issue_number }}
+          pr_number: ${{ inputs.pr_number }}
+
+      - name: Post startup comment on PR
+        uses: ./.github/actions/post-agent-startup-comment
+        with:
+          phase: review-fix
+          target_type: pr
+          target_number: ${{ inputs.pr_number }}
+          token: ${{ steps.setup.outputs.app_token }}
+
+      - name: Run review fix agent
+        id: run-agent
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ steps.setup.outputs.app_token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          AGENT_BRANCH: ${{ inputs.head_ref }}
+          REVIEW_FEEDBACK: ${{ inputs.review_feedback }}
+        run: ${{ steps.pipeline.outputs.bin }} review-fix
+
+      - name: Fallback failure comment
+        if: failure() && steps.run-agent.outcome != 'success'
+        uses: ./.github/actions/report-failure-fallback
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          phase: review-fix
+          target_type: pr
+          target_number: ${{ inputs.pr_number }}
+          source_issue_number: ${{ inputs.issue_number }}
+
+      - name: React to trigger
+        if: success()
+        uses: ./.github/actions/react-agent-trigger
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+          reaction_target: ${{ inputs.reaction_target }}
+          comment_id: ${{ inputs.comment_id }}
+          pr_number: ${{ inputs.pr_number }}
+          outcome: success
+          success_reaction: rocket
+
+      - name: React to trigger on failure
+        if: failure()
+        uses: ./.github/actions/react-agent-trigger
+        with:
+          token: ${{ github.token }}
+          reaction_target: ${{ inputs.reaction_target }}
+          comment_id: ${{ inputs.comment_id }}
+          pr_number: ${{ inputs.pr_number }}
+          outcome: failure
+          success_reaction: rocket
+
+      - name: Remove agent-working label on issue
+        if: always()
+        uses: ./.github/actions/manage-agent-working-label
+        with:
+          action: remove
+          token: ${{ steps.setup.outputs.app_token }}
+          issue_number: ${{ inputs.issue_number }}
+
+      - name: Remove agent-working label on PR
+        if: always()
+        uses: ./.github/actions/manage-agent-working-label
+        with:
+          action: remove
+          token: ${{ steps.setup.outputs.app_token }}
+          pr_number: ${{ inputs.pr_number }}

@@ -1,0 +1,80 @@
+name: React to agent trigger
+description: >
+  Add a success or failure reaction to the trigger that started an agent
+  workflow. For issue comments the reaction is added directly to the comment.
+  For pull request reviews the reaction is added to the first review comment,
+  because the GitHub API does not support reactions on pull request reviews
+  themselves.
+
+inputs:
+  token:
+    description: GitHub token with reactions write permission.
+    required: true
+  reaction_target:
+    description: Either "issue_comment" or "pull_request_review".
+    required: false
+    default: issue_comment
+  comment_id:
+    description: ID of the issue comment or pull request review to react to.
+    required: true
+  pr_number:
+    description: Pull request number (required when reaction_target is pull_request_review).
+    required: false
+  outcome:
+    description: Either "success" or "failure".
+    required: true
+  success_reaction:
+    description: Reaction emoji to use on success (e.g. "+1" or "rocket").
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const outcome = '${{ inputs.outcome }}';
+          const successReaction = '${{ inputs.success_reaction }}';
+          const content = outcome === 'success' ? successReaction : 'confused';
+          const reactionTarget = '${{ inputs.reaction_target }}';
+
+          if (reactionTarget === 'issue_comment') {
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: Number('${{ inputs.comment_id }}'),
+              content,
+            });
+            return;
+          }
+
+          if (reactionTarget === 'pull_request_review') {
+            const prNumber = Number('${{ inputs.pr_number }}');
+            const reviewId = Number('${{ inputs.comment_id }}');
+            if (!prNumber || Number.isNaN(prNumber)) {
+              core.warning('pr_number is required to react to a pull request review');
+              return;
+            }
+            const { data: reviewComments } = await github.rest.pulls.listCommentsForReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              review_id: reviewId,
+            });
+            if (reviewComments.length === 0) {
+              core.info(
+                'No review comments available to react to; GitHub does not support reactions on pull request reviews directly.'
+              );
+              return;
+            }
+            await github.rest.reactions.createForPullRequestReviewComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: reviewComments[0].id,
+              content,
+            });
+            return;
+          }
+
+          core.warning(`Unknown reaction_target: ${reactionTarget}`);

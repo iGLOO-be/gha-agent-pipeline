@@ -1,0 +1,56 @@
+name: Install agent pipeline
+description: Checkout the agent pipeline repository and install dependencies for the CLI
+
+inputs:
+  pipeline_ref:
+    description: Git ref on the pipeline repository
+    required: false
+    default: main
+  pipeline_repository:
+    description: Pipeline repository (owner/name)
+    required: false
+    default: iGLOO-be/gha-agent-pipeline
+  token:
+    description: GitHub token for checkout
+    required: true
+
+outputs:
+  root:
+    description: Absolute path to the pipeline checkout
+    value: ${{ steps.paths.outputs.root }}
+  bin:
+    description: Path to the agent-pipeline CLI
+    value: ${{ steps.paths.outputs.bin }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout pipeline
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.pipeline_repository }}
+        ref: ${{ inputs.pipeline_ref }}
+        path: gha-agent-pipeline
+        token: ${{ inputs.token }}
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: gha-agent-pipeline/pnpm-lock.yaml
+
+    - name: Install pipeline dependencies
+      shell: bash
+      working-directory: gha-agent-pipeline
+      run: pnpm install --frozen-lockfile
+
+    - name: Export paths
+      id: paths
+      shell: bash
+      run: |
+        echo "root=${GITHUB_WORKSPACE}/gha-agent-pipeline" >> "$GITHUB_OUTPUT"
+        echo "bin=${GITHUB_WORKSPACE}/gha-agent-pipeline/node_modules/.bin/agent-pipeline" >> "$GITHUB_OUTPUT"

@@ -4,11 +4,11 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 ## Status (Phase 2)
 
-| Piece              | Location                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
-| Runtime (WIP)      | `packages/agent-pipeline/` — Step 2 [#141](https://github.com/iGLOO-be/gha-agent-demo/issues/141) |
-| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                      |
-| Reusable workflows | `.github/workflows/` (POC + future `dispatch.yml`)                                                |
+| Piece              | Location                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                  |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                       |
+| Reusable workflows | `dispatch.yml`, `plan.yml`, `implement.yml`, … — **`workflow_call` only** (no issue triggers here) |
 
 ## Development
 
@@ -33,16 +33,26 @@ Reusable [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable
 
 **Repository setting:** Actions → General → Access → _Accessible from repositories in the **iGLOO-be** organization_ (`access_level: organization`).
 
-## Consumer wiring (target)
+## Consumer wiring
+
+Triggers (`issue_comment`, `workflow_run` on CI) stay on the **consumer** repo. This library only defines reusable workflows.
 
 ```yaml
+# .github/workflows/agent.yml (consumer)
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 jobs:
-  agent:
+  dispatch:
     uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@main
     secrets: inherit
 ```
 
-Runners (`runs-on`) are set on the **consumer** workflow job, not in agent config.
+Phase jobs are thin `workflow_dispatch` wrappers on the consumer (e.g. `agent-plan.yml`) that call `plan.yml` here. **Runs and `github.repository` are always the consumer.**
+
+Runners (`runs-on`) are defined on jobs inside the reusable workflows here (or can move to consumer wrappers later).
 
 ## Related docs
 
