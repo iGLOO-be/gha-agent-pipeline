@@ -79,6 +79,23 @@ export async function createWorkspaceScopedEditorExecutor(
     const normalizedInput = { ...input, path: resolvedPath };
     const fileExists = await pathExists(resolvedPath);
 
+    // Pre-flight: prevent Cline call when existing file is edited without
+    // old_text or insert_line; return recovery message directly instead of
+    // waiting for Cline to reject it (which it always does).
+    const hasOldText =
+      typeof normalizedInput.old_text === "string" &&
+      normalizedInput.old_text.length > 0;
+    const hasInsertLine =
+      typeof normalizedInput.insert_line === "number" &&
+      normalizedInput.insert_line > 0;
+    if (fileExists && !hasOldText && !hasInsertLine) {
+      const recovery = missingOldTextRecoveryMessage(
+        displayPath,
+        normalizedInput.old_text,
+      );
+      return editorFailureResult(displayPath, recovery);
+    }
+
     if (exceedsEditorArgLimit(normalizedInput)) {
       if (isOversizedNewFileEditorWrite(normalizedInput, fileExists)) {
         await writeNewFileBypassingEditorLimit(
@@ -127,6 +144,17 @@ export async function createWorkspaceScopedEditorExecutor(
           return editorFailureResult(displayPath, recovery);
         }
 
+        if (isMissingOldTextEditorError(toolError)) {
+          const recovery = missingOldTextRecoveryMessage(
+            displayPath,
+            normalizedInput.old_text,
+          );
+          if (result && typeof result === "object") {
+            return { ...result, error: recovery };
+          }
+          return editorFailureResult(displayPath, recovery);
+        }
+
         getActiveRunFrictionCollector()?.recordRuntimeToolError(
           "editor",
           toolError,
@@ -136,16 +164,16 @@ export async function createWorkspaceScopedEditorExecutor(
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      getActiveRunFrictionCollector()?.recordRuntimeToolError(
-        "editor",
-        message,
-        resolvedPath,
-      );
       if (isMissingOldTextEditorError(message)) {
         throw new Error(
           missingOldTextRecoveryMessage(resolvedPath, input.old_text),
         );
       }
+      getActiveRunFrictionCollector()?.recordRuntimeToolError(
+        "editor",
+        message,
+        resolvedPath,
+      );
       throw error;
     }
   };

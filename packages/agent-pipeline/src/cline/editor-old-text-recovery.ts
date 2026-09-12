@@ -7,7 +7,7 @@
  */
 export function isMissingOldTextEditorError(message: string): boolean {
   return (
-    message.includes("`old_text`") &&
+    message.includes("old_text") &&
     message.includes("required when editing an existing file")
   );
 }
