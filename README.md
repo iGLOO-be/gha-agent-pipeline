@@ -35,12 +35,6 @@ cd /path/to/gha-agent-demo
 /path/to/gha-agent-pipeline/node_modules/.bin/agent-pipeline plan
 ```
 
-## Cross-repo `workflow_call` (POC)
-
-Reusable [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable.yml) — validated in [#139](https://github.com/iGLOO-be/gha-agent-demo/issues/139).
-
-**Repository setting:** Actions → General → Access → _Accessible from repositories in the **iGLOO-be** organization_ (`access_level: organization`).
-
 ## Consumer wiring
 
 Triggers (`issue_comment`, `workflow_run` on CI) and **all agent phase jobs** stay on the **consumer** repo. This library provides dispatch routing and shared composite actions + CLI install.
