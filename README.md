@@ -8,6 +8,8 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 Reusable workflow [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable.yml) validates cross-repo `workflow_call` from a consumer repository.
 
+**Repository setting:** Actions → General → Access → *Accessible from repositories in the **iGLOO-be** organization* (`access_level: organization`). Without this, consumers get `workflow was not found`.
+
 ## Consumer wiring (target)
 
 ```yaml
