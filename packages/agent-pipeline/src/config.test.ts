@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -394,6 +394,18 @@ describe("config", () => {
       delete process.env.GITHUB_REPOSITORY;
       const config = loadAgentConfig(join(tempDir, "missing.yml"));
       expect(getAppName(config)).toBe("gha-agent");
+    });
+  });
+
+  describe("dogfood config", () => {
+    it("validates .github/agent.config.yml at repo root", () => {
+      expect(
+        existsSync(".github/agent.config.yml"),
+        ".github/agent.config.yml must exist at repo root",
+      ).toBe(true);
+
+      const config = loadAgentConfig(".github/agent.config.yml");
+      expect(config.version).toBe(1);
     });
   });
 });

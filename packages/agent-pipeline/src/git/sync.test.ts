@@ -116,6 +116,22 @@ describe("git/sync", () => {
     });
   });
 
+  it("syncWithBaseBranch skips tools/agent overlay when harness path is absent", async () => {
+    await withRepo(async () => {
+      const { syncWithBaseBranch } = await import("./sync.js");
+
+      runGit(process.cwd(), "git checkout -b feature");
+      writeFileSync(join(process.cwd(), "feature-only.txt"), "x\n");
+      runGit(
+        process.cwd(),
+        'git add feature-only.txt && git commit -m "feature only"',
+      );
+
+      const message = await syncWithBaseBranch("main", "resolve conflicts");
+      expect(message).toContain("up to date with main");
+    });
+  });
+
   it("prepares a resolved merge for commit", async () => {
     await withRepo(async () => {
       const { prepareResolvedMergeForCommit } = await import("./sync.js");

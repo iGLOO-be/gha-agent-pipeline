@@ -7,7 +7,11 @@ import { commitAll } from "./pr.js";
 import { PIPELINE_GHA_CHECKOUT_DIR } from "./worktree-excludes.js";
 
 function runGit(cwd: string, command: string): string {
-  return execSync(command, { cwd, stdio: "pipe", shell: "/bin/bash" }).toString();
+  return execSync(command, {
+    cwd,
+    stdio: "pipe",
+    shell: "/bin/bash",
+  }).toString();
 }
 
 describe("commitAll", () => {

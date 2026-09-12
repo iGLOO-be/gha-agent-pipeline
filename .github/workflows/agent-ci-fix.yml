@@ -9,6 +9,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  # Requires the GitHub App installation to grant Checks: Read (see README).
   checks: read
   actions: read
 
