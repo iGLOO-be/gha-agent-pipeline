@@ -1,4 +1,7 @@
-/** Cline @cline/sdk 0.0.82 editor tool rejects each of old_text/new_text over 6000 chars. */
+/**
+ * Shown in phase system prompts. Keep in sync with Cline’s editor guard and with
+ * `cline/editor-size-recovery.ts` (harness bypass for oversized **new** files).
+ */
 export const CLINE_EDITOR_ARG_CHAR_LIMIT = 6000;
 
 export const FILE_EDIT_SYSTEM_HINT = `File changes:

@@ -48,9 +48,13 @@ function editorFailureResult(displayPath: string, error: string) {
 }
 
 /**
- * Override Cline's built-in editor executor so paths resolve against the
- * checkout root and missing `old_text` errors include recovery guidance
- * (workaround for @cline/sdk@0.0.82; upstream fix: cline/cline#13970).
+ * Workspace-aware wrapper around Cline’s default `editor` executor.
+ *
+ * - **Paths** — resolve `read_files` / `editor` paths against the checkout root.
+ * - **Missing `old_text`** — clearer errors (`editor-old-text-recovery.ts`).
+ * - **6000-char tool args** — bypass + recovery (`editor-size-recovery.ts`); see
+ *   that module’s file comment for background and when to remove the workaround.
+ * - **Run friction** — record non-fatal editor failures for phase summaries.
  */
 export async function createWorkspaceScopedEditorExecutor(
   workspaceRoot: string,

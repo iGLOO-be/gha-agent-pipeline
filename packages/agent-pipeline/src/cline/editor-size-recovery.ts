@@ -1,3 +1,37 @@
+/**
+ * Cline `editor` tool — 6000-character argument limit
+ *
+ * ## Problem
+ *
+ * `@cline/sdk` (via `@cline/core`) rejects any `editor` call where `old_text` or
+ * `new_text` exceeds 6000 characters. The tool returns `success: false` and the
+ * error string `Editor input too large: … exceeding the recommended limit of 6000`
+ * **without writing the file**. The model often retries the same oversized payload,
+ * which wastes tokens and shows up as failed tool calls in GHA logs.
+ *
+ * Prompt hints (`FILE_EDIT_SYSTEM_HINT` in `prompts/file-edits.ts`) reduce but do
+ * not eliminate this: implement runs still hit it when creating whole files in one
+ * call (e.g. `.github/workflows/agent-phase.yml` at ~6.8k chars on issue #8).
+ *
+ * ## What we do in this repo
+ *
+ * 1. **New files** — `workspace-scoped-editor.ts` detects create-style calls
+ *    (path absent, no `old_text` / `insert_line`) with oversized `new_text` and
+ *    writes via Node `fs` instead of calling Cline’s executor. The model still sees
+ *    a successful `editor` result.
+ * 2. **Existing files** — no safe automatic rewrite; return an expanded error via
+ *    `oversizedEditorRecoveryMessage` so the model is steered toward `apply_patch` or
+ *    smaller `editor` chunks.
+ * 3. **Observability** — remaining limit hits are recorded as `tool_limit` run
+ *    friction (`run-friction.ts`) on phase comments / step summaries.
+ *
+ * Related: missing `old_text` on existing files is handled separately in
+ * `editor-old-text-recovery.ts` (cline/cline#13970).
+ *
+ * Revisit when upgrading `@cline/sdk` if upstream relaxes or removes the guard
+ * (see cline/cline#13263).
+ */
+
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CLINE_EDITOR_ARG_CHAR_LIMIT } from "../prompts/file-edits.js";
@@ -30,7 +64,10 @@ export function exceedsEditorArgLimit(
   return oldTextLength > limit || newTextLength > limit;
 }
 
-/** New file via editor: no old_text, no insert_line — common for agent-phase.yml-style creates. */
+/**
+ * Create-via-editor pattern: entire file content in `new_text` only.
+ * Typical when the model adds a new workflow or test file in one shot.
+ */
 export function isOversizedNewFileEditorWrite(
   input: EditorLikeInput,
   fileExists: boolean,
@@ -73,6 +110,7 @@ export function oversizedEditorRecoveryMessage(
   return parts.join(" ");
 }
 
+/** Harness write path when Cline would reject the payload but content is a new file. */
 export async function writeNewFileBypassingEditorLimit(
   absolutePath: string,
   content: string,

@@ -1,4 +1,13 @@
+/**
+ * Suboptimal moments during an agent phase (retries, tool limits, self-reported
+ * friction). Appended to GitHub issue comments and job step summaries so humans
+ * see why a run was expensive without treating these as hard failures.
+ *
+ * `tool_limit` is used mainly for Cline `editor` “Editor input too large” — see
+ * `cline/editor-size-recovery.ts`.
+ */
 import { appendStepSummary, redactSensitiveStrings } from "./gha-log.js";
+import { CLINE_EDITOR_ARG_CHAR_LIMIT } from "./prompts/file-edits.js";
 
 export const RUN_FRICTION_CATEGORIES = [
   "tool_limit",
@@ -119,7 +128,7 @@ export class RunFrictionCollector {
       context,
       mitigation:
         category === "tool_limit"
-          ? "Prefer apply_patch for large files; split editor old_text/new_text under 6000 chars or use insert_line in steps."
+          ? `Prefer apply_patch for large files; split editor old_text/new_text under ${CLINE_EDITOR_ARG_CHAR_LIMIT} chars or use insert_line in steps (new-file bypass is harness-only).`
           : undefined,
     });
   }
