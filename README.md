@@ -4,12 +4,12 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 ## Status (Phase 2)
 
-| Piece              | Location                                                                                                                                                                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                                                                                                                         |
-| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                                                                                                                              |
-| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) (slash router), [`agent-ci-fix-reusable.yml`](./.github/workflows/agent-ci-fix-reusable.yml), [`agent-ci-success-reusable.yml`](./.github/workflows/agent-ci-success-reusable.yml), plus dogfood triggers on this repo |
-| Composite actions  | `agent-phase-run`, `run-agent-ci-fix`, `install-agent-pipeline`, `get-pr-from-workflow-run`, labels, comments, reactions, failure fallback                                                                                                                                |
+| Piece              | Location                                                                                                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                                                    |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                                                         |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml), [`agent-ci-fix.yml`](./.github/workflows/agent-ci-fix.yml), [`agent-ci-success.yml`](./.github/workflows/agent-ci-success.yml) (`workflow_call`) |
+| Composite actions  | **Public:** `agent-phase-run`, `run-agent-ci-fix`, `install-agent-pipeline`. **Internal:** `get-pr-from-workflow-run`, `get-pr-from-check-suite`, legacy label/comment composites                    |
 
 **Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Slash phases use `agent-phase-run@ref`; CI loops use thin `workflow_run` wrappers (see below). Do **not** copy library composites such as `get-pr-from-workflow-run` or `get-pr-from-check-suite` into consumer repos.
 
@@ -48,7 +48,7 @@ on:
     types: [submitted]
 jobs:
   dispatch:
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@main
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.1.0
     secrets: inherit
 ```
 
@@ -63,7 +63,7 @@ jobs:
           ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@main
+      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.1.0
         with:
           phase: ${{ inputs.phase }}
           app_token: ${{ steps.setup.outputs.app_token }}
@@ -80,7 +80,7 @@ jobs:
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
 
 ```yaml
-# .github/workflows/agent-ci-fix.yml (consumer) — thin wrapper
+# .github/workflows/agent-on-ci-failure.yml (consumer) — thin wrapper
 on:
   workflow_run:
     workflows: [CI]
@@ -91,13 +91,39 @@ concurrency:
 jobs:
   ci-fix:
     if: github.event.workflow_run.conclusion == 'failure'
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix-reusable.yml@main
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.1.0
     secrets: inherit
 ```
 
-(Same pattern for CI success → `agent-ci-success-reusable.yml@main` when `conclusion == 'success'`.)
+(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.1.0` when `conclusion == 'success'`.)
 
-**Runs and `github.repository` are always the consumer.** Pin `@main` or a release tag on pipeline actions/workflows.
+**Runs and `github.repository` are always the consumer.** Pin `@v0.1.0` (recommended for beta) or another release tag on pipeline actions/workflows.
+
+## Consumer contract (v0.1)
+
+**Required files on the consumer repo**
+
+| Path                                        | Role                                            |
+| ------------------------------------------- | ----------------------------------------------- |
+| `.github/agent.config.yml`                  | Agent config (schema v1)                        |
+| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.1.0`          |
+| `.github/workflows/agent-phase.yml`         | **Fixed filename** — target of library dispatch |
+| `.github/workflows/agent-on-ci-failure.yml` | `workflow_run` on failed **`CI`** workflow      |
+| `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
+| `.github/actions/setup-pr-environment/`     | Checkout, App token, pnpm (consumer-owned)      |
+
+Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
+
+**Pin these library refs at `@v0.1.0`**
+
+- `dispatch.yml`
+- `agent-phase-run`
+- `agent-ci-fix.yml`
+- `agent-ci-success.yml`
+
+**Do not copy into the consumer**
+
+- `get-pr-from-workflow-run`, `get-pr-from-check-suite`, or other internal composites unless you maintain a fork.
 
 ## Dogfooding (slash commands on this repo)
 
@@ -128,7 +154,7 @@ Use the same GitHub App as the demo (or a dedicated app) with these **repository
 | Actions       | Read & write  | Workflow tokens, nested pipeline checkout                                                                                                                                    |
 | **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`) |
 
-`agent-ci-fix-reusable.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI Fix and Agent CI Success only operate on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
+`agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI fix and Agent CI success only operate on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
 
 ```text
 HttpError: Resource not accessible by integration
