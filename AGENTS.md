@@ -4,16 +4,17 @@ Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/i
 
 ## Role of this repo
 
-**Library only** — agent runtime (`packages/agent-pipeline`), reusable GitHub Actions workflows, and the consumer config JSON Schema. No application code.
+**Library** — agent runtime (`packages/agent-pipeline`), reusable GitHub Actions workflows, and the consumer config JSON Schema. No application code.
 
-Consumers (e.g. [`gha-agent-demo`](https://github.com/iGLOO-be/gha-agent-demo)) keep `.github/agent.config.yml`, consumer checkout/setup, and phase workflows (`agent-plan.yml`, …) that call composites here.
+**Dogfood consumer** — this repo also wires slash commands on itself ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `.github/agent.config.yml`, `agent.yml`, phase workflows (`agent-plan.yml`, …), and local `setup-pr-environment`. Other consumers (e.g. [`gha-agent-demo`](https://github.com/iGLOO-be/gha-agent-demo)) keep their own copy of the consumer layer.
 
 ## Layout
 
 - `packages/agent-pipeline/` — Cline agent harness (migrated from demo `tools/agent/`)
 - `schema/agent.config.v1.schema.json` — config contract for consumers
-- `.github/workflows/` — `dispatch.yml` (slash router), `poc-callable.yml`, library `ci.yml`
-- `.github/actions/` — shared composites (`install-agent-pipeline`, labels, comments, …). **No** `setup-pr-environment` (consumer-only).
+- `.github/agent.config.yml` — agent config for dogfooding on this monorepo
+- `.github/workflows/` — `dispatch.yml` (slash router), `agent.yml` + phase jobs (dogfood), `ci.yml`, `poc-callable.yml`
+- `.github/actions/` — shared composites (`install-agent-pipeline`, labels, comments, …) plus **`setup-pr-environment`** (local copy for dogfood only; other consumers keep their own)
 
 ## Dev commands
 
@@ -25,10 +26,10 @@ pnpm run format:fix
 pnpm run format:check
 ```
 
-Run a phase against a **consumer checkout** (cwd must contain `.github/agent.config.yml`):
+Run a phase locally (cwd must contain `.github/agent.config.yml`):
 
 ```bash
-cd /path/to/gha-agent-demo
+# From this repo (dogfood) or another consumer checkout
 pnpm exec agent-pipeline plan   # requires OPENROUTER_API_KEY, GITHUB_TOKEN, etc.
 ```
 

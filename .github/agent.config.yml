@@ -1,0 +1,31 @@
+version: 1
+
+app:
+  name: gha-agent-pipeline
+
+git:
+  base_branch: main
+  pr_target: main
+  branch_prefix: agent
+  merge_strategy: merge
+
+models:
+  plan: deepseek/deepseek-v4-pro
+  implement: moonshotai/kimi-k2.7-code
+  ci-fix: moonshotai/kimi-k2.7-code
+  review-fix: moonshotai/kimi-k2.7-code
+
+prompts:
+  plan:
+    role_description: You are a planning agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
+  implement:
+    role_description: You are an implementation agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
+  ci-fix:
+    role_description: You are a CI fix agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
+  yolo:
+    role_description: You are an implementation agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
+  review-fix:
+    role_description: You are a review fix agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
+
+ci:
+  max_rounds: 3

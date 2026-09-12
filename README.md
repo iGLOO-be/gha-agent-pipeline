@@ -4,14 +4,16 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 ## Status (Phase 2)
 
-| Piece              | Location                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------- |
-| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                  |
-| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                       |
-| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) — **`workflow_call` only** (slash-command router) |
-| Composite actions  | `install-agent-pipeline`, labels, comments, reactions, failure fallback, PR resolution helpers     |
+| Piece              | Location                                                                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                             |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                  |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) (slash router) + **dogfood** phase jobs (`agent-plan.yml`, …) on this repo |
+| Composite actions  | `install-agent-pipeline`, labels, comments, reactions, failure fallback, PR resolution helpers                                |
 
-**Consumer-owned:** checkout, `pnpm install` for the app, GitHub App token, and `setup-pr-environment` (or equivalent). Phase jobs (`agent-plan.yml`, etc.) live on the consumer and reference actions here via `owner/repo/.github/actions/...@ref`.
+**Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Phase jobs reference library actions via `owner/repo/.github/actions/...@ref`.
+
+**This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflows, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
 
 **Private repo:** keep this repository private. The consumer’s GitHub App must be **installed on this repo** (Contents read is enough) and the app token must list `gha-agent-pipeline` in `create-github-app-token` `repositories` (see demo `setup-pr-environment`).
 
@@ -63,6 +65,29 @@ steps:
 ```
 
 **Runs and `github.repository` are always the consumer.** Pin `@main` or a release tag on pipeline actions/workflows.
+
+## Dogfooding (slash commands on this repo)
+
+After the consumer workflows are on **`main`**, comment on an issue:
+
+- `/agent plan` — explore and post a plan
+- `/agent implement` — implement from the plan and open a PR
+- `/agent yolo` — implement directly from the issue
+- `/agent fix` — on an agent PR (comment or submitted review)
+
+Dispatch runs phase workflows from the default branch (`main`), not from open PR branches.
+
+### Secrets (repository)
+
+| Secret               | Usage         |
+| -------------------- | ------------- |
+| `APP_ID`             | GitHub App ID |
+| `APP_PRIVATE_KEY`    | App PEM key   |
+| `OPENROUTER_API_KEY` | LLM gateway   |
+
+Use the same GitHub App as the demo (or a dedicated app) with **Contents**, **Issues**, **Pull requests**, and **Actions** read/write. Install the app on **`gha-agent-pipeline`** (and keep access to this repo in the app token `repositories` list — see `setup-pr-environment`).
+
+The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gitignored; agent commits must not include that path (runtime excludes it from `git add`).
 
 ## Related docs
 

@@ -3,3 +3,6 @@ node_modules
 .env*
 dist
 *.tsbuildinfo
+.agent-state
+# Ephemeral checkout from install-agent-pipeline on GHA (nested .git → accidental submodule)
+gha-agent-pipeline/

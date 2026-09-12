@@ -1,0 +1,115 @@
+name: Agent Plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      comment_id:
+        description: Comment ID that triggered the workflow
+        required: true
+        type: string
+      issue_number:
+        description: Issue number
+        required: true
+        type: string
+      author_association:
+        description: Comment author association
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+run-name: "Agent Plan / Issue #${{ github.event.inputs.issue_number }}"
+
+concurrency:
+  group: agent-issue-${{ github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        id: setup
+        uses: ./.github/actions/setup-pr-environment
+        with:
+          ref: ${{ github.ref_name }}
+          setup_environment: true
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Install agent pipeline
+        id: pipeline
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+
+      - name: Add agent-working label
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+        with:
+          action: add
+          token: ${{ steps.setup.outputs.app_token }}
+          issue_number: ${{ github.event.inputs.issue_number }}
+
+      - name: Post startup comment
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/post-agent-startup-comment@main
+        with:
+          phase: plan
+          target_type: issue
+          target_number: ${{ github.event.inputs.issue_number }}
+          token: ${{ steps.setup.outputs.app_token }}
+
+      - name: Clear agent resume labels
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/clear-agent-resume-labels@main
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+          issue_number: ${{ github.event.inputs.issue_number }}
+
+      - name: Run plan agent
+        id: run-agent
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ steps.setup.outputs.app_token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.inputs.issue_number }}
+        run: ${{ steps.pipeline.outputs.bin }} plan
+
+      - name: Fallback failure comment
+        if: failure() && steps.run-agent.outcome != 'success'
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/report-failure-fallback@main
+        with:
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          phase: plan
+          target_type: issue
+          target_number: ${{ github.event.inputs.issue_number }}
+
+      - name: React to comment
+        if: success()
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/react-agent-trigger@main
+        with:
+          token: ${{ steps.setup.outputs.app_token }}
+          comment_id: ${{ github.event.inputs.comment_id }}
+          outcome: success
+          success_reaction: "+1"
+
+      - name: React to comment on failure
+        if: failure()
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/react-agent-trigger@main
+        with:
+          token: ${{ github.token }}
+          comment_id: ${{ github.event.inputs.comment_id }}
+          outcome: failure
+          success_reaction: "+1"
+
+      - name: Remove agent-working label
+        if: always()
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+        with:
+          action: remove
+          token: ${{ steps.setup.outputs.app_token || github.token }}
+          issue_number: ${{ github.event.inputs.issue_number }}

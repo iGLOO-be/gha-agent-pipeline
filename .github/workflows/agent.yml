@@ -1,0 +1,19 @@
+# Consumer entrypoint: triggers live here; logic is in iGLOO-be/gha-agent-pipeline.
+name: Agent pipeline
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+
+jobs:
+  dispatch:
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@main
+    secrets: inherit
