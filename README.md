@@ -100,7 +100,7 @@ Use the same GitHub App as the demo (or a dedicated app) with these **repository
 | Actions       | Read & write  | Workflow tokens, nested pipeline checkout                                                                                                                                    |
 | **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`) |
 
-`agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs:
+`agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI Fix and Agent CI Success only operate on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
 
 ```text
 HttpError: Resource not accessible by integration
