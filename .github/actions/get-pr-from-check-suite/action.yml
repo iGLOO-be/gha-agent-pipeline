@@ -1,6 +1,11 @@
 name: Get PR from check suite
 description: Resolve an open agent PR for a completed check suite, with stale SHA filtering
 
+inputs:
+  required_label:
+    description: Label a PR must carry to be treated as an agent PR
+    default: agent-pr
+
 outputs:
   skip:
     description: Whether to skip downstream jobs
@@ -56,6 +61,13 @@ runs:
           if (!pr) {
             core.setOutput('skip', 'true')
             core.info(`No open PR at head SHA ${headSha} for branch ${headBranch}`)
+            return
+          }
+
+          const requiredLabel = '${{ inputs.required_label }}'
+          if (!pr.labels.some((l) => l.name === requiredLabel)) {
+            core.setOutput('skip', 'true')
+            core.info(`Skipping PR #${pr.number}: missing ${requiredLabel} label`)
             return
           }
 
