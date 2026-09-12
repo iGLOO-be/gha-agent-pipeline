@@ -1,16 +1,51 @@
-name: Agent CI Fix
+name: Agent CI fix
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  workflow_call:
+    inputs:
+      max_rounds:
+        description: Maximum CI auto-fix attempts per PR
+        required: false
+        type: string
+        default: "3"
+    secrets:
+      APP_ID:
+        required: true
+      APP_PRIVATE_KEY:
+        required: true
+      OPENROUTER_API_KEY:
+        required: true
 
-concurrency:
-  group: agent-ci-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: false
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  # Requires the GitHub App installation to grant Checks: Read (see README).
+  checks: read
+  actions: read
 
 jobs:
   ci-fix:
-    if: github.event.workflow_run.conclusion == 'failure'
-    uses: ./.github/workflows/agent-ci-fix-reusable.yml
-    secrets: inherit
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    steps:
+      - name: Resolve agent PR
+        id: pr
+        uses: ./.github/actions/get-pr-from-workflow-run
+
+      - name: Skip when not an agent PR
+        if: steps.pr.outputs.skip == 'true'
+        run: echo "Skipping agent CI fix"
+
+      - name: Run agent CI fix
+        if: steps.pr.outputs.skip != 'true'
+        uses: ./.github/actions/run-agent-ci-fix
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+          openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+          issue_number: ${{ steps.pr.outputs.issue_number }}
+          pr_number: ${{ steps.pr.outputs.pr_number }}
+          head_ref: ${{ steps.pr.outputs.head_ref }}
+          head_sha: ${{ steps.pr.outputs.head_sha }}
+          max_rounds: ${{ inputs.max_rounds }}

@@ -1,4 +1,4 @@
-name: Agent dispatch
+name: Agent slash dispatch
 
 # Invoked from the consumer repo (issue_comment / pull_request_review live there).
 on:

@@ -1,0 +1,16 @@
+name: Agent on CI success
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+concurrency:
+  group: agent-ci-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    if: github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/agent-ci-success.yml
+    secrets: inherit
