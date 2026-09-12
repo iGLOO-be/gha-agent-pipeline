@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAgentConfig } from "../config.js";
+import { sleep } from "../session-retry.js";
 import { runGh, runShell } from "../tools/shell.js";
 import {
   gitAddAllExcludingPipelineCheckoutCommand,
@@ -28,13 +29,70 @@ export async function commitAll(message: string): Promise<boolean> {
   return true;
 }
 
-export async function pushBranch(branch: string): Promise<void> {
-  let push = await runShell(`git push -u origin ${branch}`);
-  if (push.exitCode !== 0 && push.stderr.includes("non-fast-forward")) {
-    push = await runShell(`git push -u origin ${branch} --force-with-lease`);
+const NETWORK_ERROR_PATTERN =
+  /unable to access|failed to connect|couldn't connect|could not resolve host|timed out|connection reset|connection refused|network is unreachable/i;
+
+export function getPushMaxAttempts(): number {
+  const raw = process.env.AGENT_PUSH_MAX_ATTEMPTS;
+  if (!raw) {
+    return 3;
   }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+    return 3;
+  }
+  return parsed;
+}
+
+export function getPushRetryBaseDelayMs(): number {
+  const raw = process.env.AGENT_PUSH_RETRY_BASE_DELAY_MS;
+  if (!raw) {
+    return 10_000;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 10_000;
+  }
+  return parsed;
+}
+
+function isNetworkPushError(stderr: string): boolean {
+  return NETWORK_ERROR_PATTERN.test(stderr);
+}
+
+export async function pushBranch(branch: string): Promise<void> {
+  const pushCommand = `git push -u origin ${branch}`;
+  const maxAttempts = getPushMaxAttempts();
+  const baseDelayMs = getPushRetryBaseDelayMs();
+
+  let push = await runShell(pushCommand);
+  let attempts = 1;
+
+  // Retry transient network errors with exponential backoff.
+  while (
+    attempts < maxAttempts &&
+    push.exitCode !== 0 &&
+    !push.stderr.includes("non-fast-forward") &&
+    isNetworkPushError(push.stderr)
+  ) {
+    await sleep(baseDelayMs * 2 ** (attempts - 1));
+    push = await runShell(pushCommand);
+    attempts += 1;
+  }
+
+  if (push.exitCode !== 0 && push.stderr.includes("non-fast-forward")) {
+    push = await runShell(`${pushCommand} --force-with-lease`);
+    if (push.exitCode !== 0) {
+      throw new Error(`git push failed: ${push.stderr}`);
+    }
+    return;
+  }
+
   if (push.exitCode !== 0) {
-    throw new Error(`git push failed: ${push.stderr}`);
+    const label = attempts === 1 ? "attempt" : "attempts";
+    throw new Error(
+      `git push failed after ${attempts} ${label}: ${push.stderr}`,
+    );
   }
 }
 
