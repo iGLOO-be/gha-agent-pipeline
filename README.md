@@ -4,14 +4,14 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 ## Status (Phase 2)
 
-| Piece              | Location                                                                                                                                                          |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                 |
-| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                      |
-| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) (slash router) + **dogfood** phase job ([`agent-phase.yml`](./.github/workflows/agent-phase.yml)) on this repo |
-| Composite actions  | `install-agent-pipeline`, labels, comments, reactions, failure fallback, PR resolution helpers                                                                    |
+| Piece              | Location                                                                                                                                                                                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                                                                                                                         |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                                                                                                                              |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) (slash router), [`agent-ci-fix-reusable.yml`](./.github/workflows/agent-ci-fix-reusable.yml), [`agent-ci-success-reusable.yml`](./.github/workflows/agent-ci-success-reusable.yml), plus dogfood triggers on this repo |
+| Composite actions  | `agent-phase-run`, `run-agent-ci-fix`, `install-agent-pipeline`, `get-pr-from-workflow-run`, labels, comments, reactions, failure fallback                                                                                                                                |
 
-**Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Phase jobs reference library actions via `owner/repo/.github/actions/...@ref`.
+**Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Slash phases use `agent-phase-run@ref`; CI loops use thin `workflow_run` wrappers (see below). Do **not** copy library composites such as `get-pr-from-workflow-run` or `get-pr-from-check-suite` into consumer repos.
 
 **This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflow, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
 
@@ -54,13 +54,6 @@ jobs:
 
 ```yaml
 # .github/workflows/agent-phase.yml (consumer) — excerpt
-on:
-  workflow_dispatch:
-    inputs:
-      phase:
-        required: true
-        type: choice
-        options: [plan, implement, yolo, review-fix]
 jobs:
   agent:
     steps:
@@ -85,6 +78,24 @@ jobs:
 ```
 
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
+
+```yaml
+# .github/workflows/agent-ci-fix.yml (consumer) — thin wrapper
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+concurrency:
+  group: agent-ci-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+jobs:
+  ci-fix:
+    if: github.event.workflow_run.conclusion == 'failure'
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix-reusable.yml@main
+    secrets: inherit
+```
+
+(Same pattern for CI success → `agent-ci-success-reusable.yml@main` when `conclusion == 'success'`.)
 
 **Runs and `github.repository` are always the consumer.** Pin `@main` or a release tag on pipeline actions/workflows.
 
@@ -117,7 +128,7 @@ Use the same GitHub App as the demo (or a dedicated app) with these **repository
 | Actions       | Read & write  | Workflow tokens, nested pipeline checkout                                                                                                                                    |
 | **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`) |
 
-`agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI Fix only operates on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
+`agent-ci-fix-reusable.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI Fix and Agent CI Success only operate on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
 
 ```text
 HttpError: Resource not accessible by integration
