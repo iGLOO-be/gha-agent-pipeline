@@ -147,9 +147,7 @@ export function formatRunFrictionMarkdown(
   }
 
   const lines = collector.list().map((note) => {
-    const parts = [
-      `- **[${note.source}/${note.category}]** ${note.summary}`,
-    ];
+    const parts = [`- **[${note.source}/${note.category}]** ${note.summary}`];
     if (note.context) {
       parts.push(`  - Context: ${note.context}`);
     }
@@ -198,8 +196,6 @@ export function appendRunFrictionToMarkdown(
   return `${body}\n\n${section}`;
 }
 
-export function parseAgentFrictionCategory(
-  value: string,
-): RunFrictionCategory {
+export function parseAgentFrictionCategory(value: string): RunFrictionCategory {
   return normalizeCategory(value);
 }

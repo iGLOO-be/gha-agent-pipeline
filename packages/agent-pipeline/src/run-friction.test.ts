@@ -17,7 +17,7 @@ describe("RunFrictionCollector", () => {
     ).toBe(true);
     collector.recordRuntimeToolError(
       "editor",
-      'Editor input too large: new_text was 11056 characters',
+      "Editor input too large: new_text was 11056 characters",
       "packages/foo.test.ts",
     );
     expect(collector.noteCount).toBe(2);

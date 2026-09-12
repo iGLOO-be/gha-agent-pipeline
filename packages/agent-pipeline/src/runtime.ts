@@ -262,41 +262,43 @@ export async function runAgentSession(
   }
 
   try {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (attempt > 1) {
-      const delayMs = baseDelayMs * 2 ** (attempt - 2);
-      console.warn(
-        `[session] retrying in ${delayMs}ms (attempt ${attempt}/${maxAttempts}, previous finishReason=${lastError?.finishReason})`,
-      );
-      await sleep(delayMs);
-    }
-
-    try {
-      const result = await runAgentSessionAttempt({
-        ...input,
-        modelId,
-        attempt,
-        maxAttempts,
-      });
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (attempt > 1) {
-        console.log(`[session] succeeded on attempt ${attempt}/${maxAttempts}`);
+        const delayMs = baseDelayMs * 2 ** (attempt - 2);
+        console.warn(
+          `[session] retrying in ${delayMs}ms (attempt ${attempt}/${maxAttempts}, previous finishReason=${lastError?.finishReason})`,
+        );
+        await sleep(delayMs);
       }
-      return result;
-    } catch (error) {
-      if (!(error instanceof AgentSessionError)) {
-        throw error;
-      }
-      lastError = error;
-      console.warn(
-        `[session] attempt ${attempt}/${maxAttempts} failed (${error.finishReason}): ${error.message}`,
-      );
-      if (!error.retriable || attempt === maxAttempts) {
-        throw error;
+
+      try {
+        const result = await runAgentSessionAttempt({
+          ...input,
+          modelId,
+          attempt,
+          maxAttempts,
+        });
+        if (attempt > 1) {
+          console.log(
+            `[session] succeeded on attempt ${attempt}/${maxAttempts}`,
+          );
+        }
+        return result;
+      } catch (error) {
+        if (!(error instanceof AgentSessionError)) {
+          throw error;
+        }
+        lastError = error;
+        console.warn(
+          `[session] attempt ${attempt}/${maxAttempts} failed (${error.finishReason}): ${error.message}`,
+        );
+        if (!error.retriable || attempt === maxAttempts) {
+          throw error;
+        }
       }
     }
-  }
 
-  throw lastError ?? new Error("Agent session failed with no attempt result");
+    throw lastError ?? new Error("Agent session failed with no attempt result");
   } finally {
     if (input.runFriction) {
       setActiveRunFrictionCollector(null);
