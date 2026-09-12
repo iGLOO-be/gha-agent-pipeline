@@ -6,3 +6,6 @@ dist
 .agent-state
 # Ephemeral checkout from install-agent-pipeline on GHA (nested .git → accidental submodule)
 gha-agent-pipeline/
+
+# Graphify knowledge graph (generated, reproducible)
+graphify-out/
