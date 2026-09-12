@@ -45,3 +45,27 @@ pnpm exec agent-pipeline plan   # requires OPENROUTER_API_KEY, GITHUB_TOKEN, etc
 ## Phase 2 tracking
 
 Parent epic: [gha-agent-demo#138](https://github.com/iGLOO-be/gha-agent-demo/issues/138)
+
+## Agent phase report
+
+When the agent finishes edits (implement, yolo, ci-fix, review-fix), it may call `submitPhaseReport` to provide a structured markdown summary. The runner injects this report into the PR body or the fix PR comment.
+
+### Report structure
+
+- **summary** (required): markdown describing what changed, which files were touched, and why.
+- **test plan** (optional): markdown describing how to verify the changes.
+
+### Example
+
+```
+## Implementation
+
+- Added `widgetSort` to `src/widgets/sort.ts` — handles ASC / DESC with locale-aware comparisons.
+- Patched `src/widgets/index.ts` to export the new sort utility.
+- Tests in `src/widgets/sort.test.ts` cover the three ordering edge cases.
+
+### Test plan
+
+1. `pnpm test` — all Vitest suites pass including the new sort tests.
+2. `pnpm run typecheck` — no new TypeScript errors.
+```

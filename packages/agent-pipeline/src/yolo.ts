@@ -34,6 +34,12 @@ import {
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
+import {
+  appendSubmitPhaseReportTool,
+  createPhaseReportTracker,
+  formatPhaseReportForComment,
+  formatPhaseReportForPr,
+} from "./phase-report.js";
 
 async function main() {
   const env = loadAgentEnv();
@@ -52,8 +58,12 @@ async function main() {
     await createAndCheckoutBranch(branch, config.git.base_branch);
 
     const runFriction = createRunFrictionCollector();
+    const phaseReportTracker = createPhaseReportTracker();
     const tools = await withReportRunFrictionTool(
-      await createAgentTools(octokit, owner, repo, env.ISSUE_NUMBER),
+      await appendSubmitPhaseReportTool(
+        await createAgentTools(octokit, owner, repo, env.ISSUE_NUMBER),
+        phaseReportTracker,
+      ),
       runFriction,
     );
 
@@ -80,6 +90,11 @@ Branch: ${branch}`,
 
     appendRunFrictionStepSummary(runFriction, "yolo");
     const frictionSection = formatRunFrictionMarkdown(runFriction);
+
+    const phaseReport = phaseReportTracker.report;
+    const phaseReportMarkdown = phaseReport
+      ? formatPhaseReportForPr(phaseReport)
+      : undefined;
 
     const parsedRiskLevel = parseRiskLevel(session.outputText);
     if (!parsedRiskLevel) {
@@ -119,6 +134,7 @@ Branch: ${branch}`,
         usageMarkdown: usageSection,
         riskLevel,
         riskJustification,
+        phaseReportMarkdown,
       }),
       branch,
       config.git.pr_target,
@@ -160,6 +176,7 @@ Branch: ${branch}`,
       "",
       `Pull request [#${pr.number}](${pr.url}) created.`,
       usageSection ?? "",
+      phaseReport ? formatPhaseReportForComment(phaseReport) : "",
       frictionSection ?? "",
     ]
       .filter((section) => section.length > 0)

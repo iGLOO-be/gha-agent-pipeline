@@ -35,6 +35,10 @@ import {
 } from "./tools/github.js";
 import { createCiFixTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
+import {
+  createPhaseReportTracker,
+  formatPhaseReportForComment,
+} from "./phase-report.js";
 
 async function main() {
   const env = loadCiFixEnv();
@@ -79,6 +83,7 @@ async function main() {
     ].join("\n");
 
     const runFriction = createRunFrictionCollector();
+    const phaseReportTracker = createPhaseReportTracker();
     const tools = await withReportRunFrictionTool(
       await createCiFixTools(
         octokit,
@@ -87,6 +92,7 @@ async function main() {
         env.ISSUE_NUMBER,
         env.PR_NUMBER,
         env.HEAD_SHA,
+        phaseReportTracker,
       ),
       runFriction,
     );
@@ -123,6 +129,8 @@ Repository: ${env.GITHUB_REPOSITORY}`,
 
     appendRunFrictionStepSummary(runFriction, "ci-fix");
 
+    const phaseReport = phaseReportTracker.report;
+
     await prepareResolvedMergeForCommit();
 
     const branch = process.env.AGENT_BRANCH;
@@ -135,16 +143,24 @@ Repository: ${env.GITHUB_REPOSITORY}`,
       `fix(ci): address failures for PR #${env.PR_NUMBER}`,
     );
 
+    const buildCiFixComment = (body: string): string => {
+      const withFriction = appendRunFrictionToMarkdown(body, runFriction);
+      const marker = `<!-- agent-ci-fix -->`;
+      if (phaseReport) {
+        return `${marker}\n${formatPhaseReportForComment(phaseReport)}\n\n${withFriction}`;
+      }
+      return `${marker}\n${withFriction}`;
+    };
+
     if (pushResult.status === "noChanges") {
       await postComment(
         octokit,
         owner,
         repo,
         env.PR_NUMBER,
-        `<!-- agent-ci-fix -->\n${appendRunFrictionToMarkdown(
+        buildCiFixComment(
           `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
-          runFriction,
-        )}`,
+        ),
       );
       console.log(`\nCI fix completed with no changes on branch ${branch}`);
       await clearAgentResumeLabels(octokit, owner, repo, {
@@ -163,10 +179,9 @@ Repository: ${env.GITHUB_REPOSITORY}`,
       owner,
       repo,
       env.PR_NUMBER,
-      `<!-- agent-ci-fix -->\n${appendRunFrictionToMarkdown(
+      buildCiFixComment(
         `Pushed a CI fix commit for \`${env.HEAD_SHA.slice(0, 7)}\`.`,
-        runFriction,
-      )}`,
+      ),
     );
 
     await clearAgentResumeLabels(octokit, owner, repo, {

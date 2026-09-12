@@ -32,6 +32,11 @@ import {
 } from "./tools/github.js";
 import { createImplementTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
+import {
+  createPhaseReportTracker,
+  formatPhaseReportForComment,
+  formatPhaseReportForPr,
+} from "./phase-report.js";
 
 async function main() {
   const env = loadAgentEnv();
@@ -57,8 +62,15 @@ async function main() {
     await createAndCheckoutBranch(branch, config.git.base_branch);
 
     const runFriction = createRunFrictionCollector();
+    const phaseReportTracker = createPhaseReportTracker();
     const tools = await withReportRunFrictionTool(
-      await createImplementTools(octokit, owner, repo, env.ISSUE_NUMBER),
+      await createImplementTools(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        phaseReportTracker,
+      ),
       runFriction,
     );
 
@@ -89,6 +101,11 @@ Branch: ${branch}`,
     appendRunFrictionStepSummary(runFriction, "implement");
     const frictionSection = formatRunFrictionMarkdown(runFriction);
 
+    const phaseReport = phaseReportTracker.report;
+    const phaseReportMarkdown = phaseReport
+      ? formatPhaseReportForPr(phaseReport)
+      : undefined;
+
     const committed = await commitAll(
       `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`,
     );
@@ -112,6 +129,7 @@ Branch: ${branch}`,
         issueUrl: issue.html_url,
         planCommentUrl: findPlanCommentUrl(comments),
         usageMarkdown: usageSection,
+        phaseReportMarkdown,
       }),
       branch,
       config.git.pr_target,
@@ -135,6 +153,7 @@ Branch: ${branch}`,
       "",
       `Pull request [#${pr.number}](${pr.url}) created.`,
       usageSection ?? "",
+      phaseReport ? formatPhaseReportForComment(phaseReport) : "",
       frictionSection ?? "",
     ]
       .filter((section) => section.length > 0)

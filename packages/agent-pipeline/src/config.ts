@@ -164,6 +164,10 @@ Score by considering: scope/size, code surface area, infrastructure/workflows to
 
 Do not modify files. submitPlan is the only valid way to finish.`;
 
+const SUBMIT_PHASE_REPORT_PROMPT = `
+After you have finished all edits, call \`submitPhaseReport\` with a concise human-readable summary.  
+If the repo contains an \`AGENTS.md\` with an **"Agent phase report"** (or **"Agent PR summary"**) section, follow its instructions. Otherwise summarize: what changed, which files were touched, and how to test your work.  
+The report is optional but encouraged.`;
 const implementPromptBody = `Implement the GitHub issue using the provided plan.
 
 Workflow:
@@ -175,6 +179,8 @@ Workflow:
 ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
+
+${SUBMIT_PHASE_REPORT_PROMPT}
 
 Do not commit, push, or open a PR yourself. The runner will handle git operations after you finish.
 
@@ -192,6 +198,8 @@ ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
 
+${SUBMIT_PHASE_REPORT_PROMPT}
+
 Do not commit or push. The runner will handle git operations after you finish.`;
 
 const yoloPromptBody = `Implement the GitHub issue using the instructions in the issue description.
@@ -205,6 +213,8 @@ Workflow:
 ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
+
+${SUBMIT_PHASE_REPORT_PROMPT}
 
 Do not commit, push, or open a PR yourself. The runner will handle git operations after you finish.
 
@@ -234,6 +244,8 @@ Merge handling:
 ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
+
+${SUBMIT_PHASE_REPORT_PROMPT}
 
 Do not commit or push. The runner will handle git operations after you finish.`;
 }

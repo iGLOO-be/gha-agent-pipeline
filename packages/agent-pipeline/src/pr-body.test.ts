@@ -88,4 +88,29 @@ describe("pr-body", () => {
       "- **Run:** [GitHub Actions](https://github.com/iGLOO-be/gha-agent-demo/actions/runs/123456)",
     );
   });
+
+  it("includes phase report section when provided", () => {
+    const body = buildAgentPrBody({
+      issueNumber: 1,
+      issueTitle: "Issue",
+      issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+      phaseReportMarkdown:
+        "<!-- agent-phase-report -->\n## Implementation\n\nSummary text.",
+    });
+
+    expect(body).toContain("<!-- agent-phase-report -->");
+    expect(body).toContain("## Implementation");
+    expect(body).toContain("Summary text.");
+  });
+
+  it("omits phase report when not provided", () => {
+    const body = buildAgentPrBody({
+      issueNumber: 1,
+      issueTitle: "Issue",
+      issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+    });
+
+    expect(body).not.toContain("<!-- agent-phase-report -->");
+    expect(body).not.toContain("## Implementation\n");
+  });
 });

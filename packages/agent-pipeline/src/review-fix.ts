@@ -34,6 +34,10 @@ import {
 } from "./tools/github.js";
 import { createReviewFixTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
+import {
+  createPhaseReportTracker,
+  formatPhaseReportForComment,
+} from "./phase-report.js";
 
 function buildConflictPriorityHint(
   prState: Awaited<ReturnType<typeof getPullRequestMergeState>>,
@@ -112,6 +116,7 @@ async function main() {
     );
 
     const runFriction = createRunFrictionCollector();
+    const phaseReportTracker = createPhaseReportTracker();
     const tools = await withReportRunFrictionTool(
       await createReviewFixTools(
         octokit,
@@ -119,6 +124,7 @@ async function main() {
         repo,
         env.ISSUE_NUMBER,
         env.PR_NUMBER,
+        phaseReportTracker,
       ),
       runFriction,
     );
@@ -158,6 +164,17 @@ Branch: ${env.AGENT_BRANCH}`,
 
     appendRunFrictionStepSummary(runFriction, "review-fix");
 
+    const phaseReport = phaseReportTracker.report;
+
+    const buildReviewFixComment = (body: string): string => {
+      const withFriction = appendRunFrictionToMarkdown(body, runFriction);
+      const marker = `<!-- agent-review-fix -->`;
+      if (phaseReport) {
+        return `${marker}\n${formatPhaseReportForComment(phaseReport)}\n\n${withFriction}`;
+      }
+      return `${marker}\n${withFriction}`;
+    };
+
     await prepareResolvedMergeForCommit();
 
     const pushResult = await commitAndPushBranch(
@@ -171,10 +188,9 @@ Branch: ${env.AGENT_BRANCH}`,
         owner,
         repo,
         env.PR_NUMBER,
-        `<!-- agent-review-fix -->\n${appendRunFrictionToMarkdown(
+        buildReviewFixComment(
           `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
-          runFriction,
-        )}`,
+        ),
       );
       console.log(
         `\nReview fix completed with no changes on branch ${env.AGENT_BRANCH}`,
@@ -195,10 +211,7 @@ Branch: ${env.AGENT_BRANCH}`,
       owner,
       repo,
       env.PR_NUMBER,
-      `<!-- agent-review-fix -->\n${appendRunFrictionToMarkdown(
-        `Pushed review fixes for PR #${env.PR_NUMBER}.`,
-        runFriction,
-      )}`,
+      buildReviewFixComment(`Pushed review fixes for PR #${env.PR_NUMBER}.`),
     );
 
     await clearAgentResumeLabels(octokit, owner, repo, {

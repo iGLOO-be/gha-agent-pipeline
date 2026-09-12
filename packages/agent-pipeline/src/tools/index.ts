@@ -13,6 +13,10 @@ import {
 } from "./github.js";
 import { getConflictFiles } from "../git/sync.js";
 import { listFiles } from "./list-files.js";
+import {
+  appendSubmitPhaseReportTool,
+  type PhaseReportTracker,
+} from "../phase-report.js";
 
 export async function createAgentTools(
   octokit: Octokit,
@@ -150,9 +154,14 @@ export async function createImplementTools(
   owner: string,
   repo: string,
   issueNumber: number,
+  tracker?: PhaseReportTracker,
 ) {
   const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
-  return baseTools.filter((tool) => tool.name !== "postComment");
+  const withoutPost = baseTools.filter((tool) => tool.name !== "postComment");
+  if (tracker) {
+    return appendSubmitPhaseReportTool(withoutPost, tracker);
+  }
+  return withoutPost;
 }
 
 export async function createCiFixTools(
@@ -162,6 +171,7 @@ export async function createCiFixTools(
   issueNumber: number,
   prNumber: number,
   headSha: string,
+  tracker?: PhaseReportTracker,
 ) {
   const { createTool } = await loadClineSdk();
   const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
@@ -256,7 +266,7 @@ export async function createCiFixTools(
 
   const withoutPost = baseTools.filter((tool) => tool.name !== "postComment");
 
-  return [
+  const tools = [
     ...withoutPost,
     postPrCommentTool,
     readCheckRunsTool,
@@ -264,6 +274,11 @@ export async function createCiFixTools(
     getCacheTool,
     setCacheTool,
   ];
+
+  if (tracker) {
+    return appendSubmitPhaseReportTool(tools, tracker);
+  }
+  return tools;
 }
 
 export async function createReviewFixTools(
@@ -272,6 +287,7 @@ export async function createReviewFixTools(
   repo: string,
   issueNumber: number,
   prNumber: number,
+  tracker?: PhaseReportTracker,
 ) {
   const { createTool } = await loadClineSdk();
   const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
@@ -316,7 +332,13 @@ export async function createReviewFixTools(
   });
 
   const withoutPost = baseTools.filter((tool) => tool.name !== "postComment");
-  return [...withoutPost, postPrCommentTool, getMergeStatusTool];
+
+  const tools = [...withoutPost, postPrCommentTool, getMergeStatusTool];
+
+  if (tracker) {
+    return appendSubmitPhaseReportTool(tools, tracker);
+  }
+  return tools;
 }
 
 export const AGENT_TOOL_NAMES = [
