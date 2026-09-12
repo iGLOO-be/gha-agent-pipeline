@@ -31,6 +31,44 @@ describe("RunFrictionCollector", () => {
     expect(collector.droppedNoteCount).toBe(1);
   });
 
+  it("deduplicates identical notes instead of counting repeats", () => {
+    const collector = new RunFrictionCollector();
+    expect(
+      collector.record({
+        source: "runtime",
+        category: "tool_error",
+        summary: "editor: Parameter old_text is required",
+        context: "/repo/.github/actions/x/action.yml",
+      }).accepted,
+    ).toBe(true);
+    expect(
+      collector.record({
+        source: "runtime",
+        category: "tool_error",
+        summary: "editor: Parameter old_text is required",
+        context: "/repo/.github/actions/x/action.yml",
+      }).accepted,
+    ).toBe(false);
+    expect(collector.noteCount).toBe(1);
+    expect(collector.droppedNoteCount).toBe(0);
+  });
+
+  it("keeps same error on different files and different errors on the same file", () => {
+    const collector = new RunFrictionCollector();
+    collector.recordRuntimeToolError(
+      "editor",
+      "Parameter old_text is required",
+      "/repo/a.yml",
+    );
+    collector.recordRuntimeToolError(
+      "editor",
+      "Parameter old_text is required",
+      "/repo/b.yml",
+    );
+    collector.recordRuntimeToolError("editor", "ENOENT", "/repo/a.yml");
+    expect(collector.noteCount).toBe(3);
+  });
+
   it("formats markdown and appends to comment bodies", () => {
     const collector = new RunFrictionCollector();
     collector.record({

@@ -54,6 +54,7 @@ export class RunFrictionCollector {
   private readonly maxNotes: number;
   private readonly maxFieldLength: number;
   private readonly notes: RunFrictionNote[] = [];
+  private readonly seenNoteKeys = new Set<string>();
   private droppedCount = 0;
 
   constructor(options: RunFrictionCollectorOptions = {}) {
@@ -99,11 +100,17 @@ export class RunFrictionCollector {
       return { accepted: false };
     }
 
+    const key = `${normalized.category}|${normalized.summary}|${normalized.context ?? ""}`;
+    if (this.seenNoteKeys.has(key)) {
+      return { accepted: false };
+    }
+
     if (this.notes.length >= this.maxNotes) {
       this.droppedCount += 1;
       return { accepted: false };
     }
 
+    this.seenNoteKeys.add(key);
     this.notes.push(normalized);
     return { accepted: true, index: this.notes.length - 1 };
   }
