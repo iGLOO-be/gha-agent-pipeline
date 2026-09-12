@@ -87,7 +87,24 @@ Dispatch runs phase workflows from the default branch (`main`), not from open PR
 | `APP_PRIVATE_KEY`    | App PEM key   |
 | `OPENROUTER_API_KEY` | LLM gateway   |
 
-Use the same GitHub App as the demo (or a dedicated app) with **Contents**, **Issues**, **Pull requests**, and **Actions** read/write. Install the app on **`gha-agent-pipeline`** (and keep access to this repo in the app token `repositories` list — see `setup-pr-environment`).
+Use the same GitHub App as the demo (or a dedicated app) with these **repository permissions** on the app (Organization → GitHub Apps → _your app_ → Permissions):
+
+| Permission    | Access        | Why                                                                                                                                                                          |
+| ------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Contents      | Read & write  | Checkout, commits, PR branches                                                                                                                                               |
+| Issues        | Read & write  | Plans, agent comments, labels                                                                                                                                                |
+| Pull requests | Read & write  | Agent PRs, reviews                                                                                                                                                           |
+| Actions       | Read & write  | Workflow tokens, nested pipeline checkout                                                                                                                                    |
+| **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`) |
+
+`agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs:
+
+```text
+HttpError: Resource not accessible by integration
+  at readCheckRuns (packages/agent-pipeline/src/tools/github.ts)
+```
+
+After changing app permissions, accept the updated installation request on each repo (including **`gha-agent-pipeline`**) and keep this repo in the app token `repositories` list — see `setup-pr-environment`.
 
 The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gitignored; agent commits must not include that path (runtime excludes it from `git add`).
 
