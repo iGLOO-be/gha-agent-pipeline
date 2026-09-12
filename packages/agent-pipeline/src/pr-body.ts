@@ -8,6 +8,7 @@ export interface BuildAgentPrBodyOptions {
   usageMarkdown?: string | null;
   riskLevel?: string | null;
   riskJustification?: string | null;
+  phaseReportMarkdown?: string | null;
 }
 
 export function buildAgentPrBody({
@@ -18,6 +19,7 @@ export function buildAgentPrBody({
   usageMarkdown,
   riskLevel,
   riskJustification,
+  phaseReportMarkdown,
 }: BuildAgentPrBodyOptions): string {
   const runUrl = buildRunUrl();
 
@@ -52,6 +54,10 @@ export function buildAgentPrBody({
 
   if (usageMarkdown) {
     lines.push("", usageMarkdown);
+  }
+
+  if (phaseReportMarkdown) {
+    lines.push("", phaseReportMarkdown);
   }
 
   return lines.join("\n");

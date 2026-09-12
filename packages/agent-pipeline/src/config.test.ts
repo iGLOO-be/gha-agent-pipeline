@@ -378,6 +378,34 @@ describe("config", () => {
       expect(prompt).toContain("develop");
       expect(prompt).toContain("rebase");
     });
+
+    it("includes submitPhaseReport in implement prompt", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("implement", config);
+      expect(prompt).toContain("submitPhaseReport");
+      expect(prompt).toContain("Agent phase report");
+    });
+
+    it("includes submitPhaseReport in yolo prompt", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("yolo", config);
+      expect(prompt).toContain("submitPhaseReport");
+      expect(prompt).toContain("Agent phase report");
+    });
+
+    it("includes submitPhaseReport in ci-fix prompt", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("ci-fix", config);
+      expect(prompt).toContain("submitPhaseReport");
+      expect(prompt).toContain("Agent phase report");
+    });
+
+    it("includes submitPhaseReport in review-fix prompt", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("review-fix", config);
+      expect(prompt).toContain("submitPhaseReport");
+      expect(prompt).toContain("Agent phase report");
+    });
   });
 
   describe("app metadata", () => {
