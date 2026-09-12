@@ -6,14 +6,14 @@ Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/i
 
 **Library only** — agent runtime (`packages/agent-pipeline`), reusable GitHub Actions workflows, and the consumer config JSON Schema. No application code.
 
-Consumers (e.g. [`gha-agent-demo`](https://github.com/iGLOO-be/gha-agent-demo)) keep `.github/agent.config.yml` and a thin `workflow_call` wrapper.
+Consumers (e.g. [`gha-agent-demo`](https://github.com/iGLOO-be/gha-agent-demo)) keep `.github/agent.config.yml`, consumer checkout/setup, and phase workflows (`agent-plan.yml`, …) that call composites here.
 
 ## Layout
 
 - `packages/agent-pipeline/` — Cline agent harness (migrated from demo `tools/agent/`)
 - `schema/agent.config.v1.schema.json` — config contract for consumers
-- `.github/workflows/` — reusable workflows (`dispatch.yml`, phase workflows, `poc-callable.yml`)
-- `.github/actions/` — composites including `install-agent-pipeline` and `setup-pr-environment`
+- `.github/workflows/` — `dispatch.yml` (slash router), `poc-callable.yml`, library `ci.yml`
+- `.github/actions/` — shared composites (`install-agent-pipeline`, labels, comments, …). **No** `setup-pr-environment` (consumer-only).
 
 ## Dev commands
 

@@ -8,7 +8,10 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 | ------------------ | -------------------------------------------------------------------------------------------------- |
 | Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                  |
 | Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                       |
-| Reusable workflows | `dispatch.yml`, `plan.yml`, `implement.yml`, … — **`workflow_call` only** (no issue triggers here) |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml) — **`workflow_call` only** (slash-command router) |
+| Composite actions  | `install-agent-pipeline`, labels, comments, reactions, failure fallback, PR resolution helpers     |
+
+**Consumer-owned:** checkout, `pnpm install` for the app, GitHub App token, and `setup-pr-environment` (or equivalent). Phase jobs (`agent-plan.yml`, etc.) live on the consumer and reference actions here via `owner/repo/.github/actions/...@ref`.
 
 ## Development
 
@@ -24,7 +27,6 @@ Run a phase from a **consumer repo** checkout (needs `.github/agent.config.yml` 
 ```bash
 cd /path/to/gha-agent-demo
 /path/to/gha-agent-pipeline/node_modules/.bin/agent-pipeline plan
-# or: pnpm exec agent-pipeline plan   # when run from gha-agent-pipeline with workspace linked
 ```
 
 ## Cross-repo `workflow_call` (POC)
@@ -35,7 +37,7 @@ Reusable [`.github/workflows/poc-callable.yml`](./.github/workflows/poc-callable
 
 ## Consumer wiring
 
-Triggers (`issue_comment`, `workflow_run` on CI) stay on the **consumer** repo. This library only defines reusable workflows.
+Triggers (`issue_comment`, `workflow_run` on CI) and **all agent phase jobs** stay on the **consumer** repo. This library provides dispatch routing and shared composite actions + CLI install.
 
 ```yaml
 # .github/workflows/agent.yml (consumer)
@@ -50,9 +52,15 @@ jobs:
     secrets: inherit
 ```
 
-Phase jobs are thin `workflow_dispatch` wrappers on the consumer (e.g. `agent-plan.yml`) that call `plan.yml` here. **Runs and `github.repository` are always the consumer.**
+```yaml
+# .github/workflows/agent-plan.yml (consumer) — excerpt
+steps:
+  - uses: ./.github/actions/setup-pr-environment
+  - uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
+  - run: ${{ steps.pipeline.outputs.bin }} plan
+```
 
-Runners (`runs-on`) are defined on jobs inside the reusable workflows here (or can move to consumer wrappers later).
+**Runs and `github.repository` are always the consumer.** Pin `@main` or a release tag on pipeline actions/workflows.
 
 ## Related docs
 
