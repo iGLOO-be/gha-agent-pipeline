@@ -1,5 +1,7 @@
 # AGENTS.md
 
+> **First read [`CLAUDE.md`](./CLAUDE.md) — it contains the graphify knowledge graph integration that agents must use before answering codebase questions.**
+
 Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/iGLOO-be/gha-agent-pipeline).
 
 ## Role of this repo
