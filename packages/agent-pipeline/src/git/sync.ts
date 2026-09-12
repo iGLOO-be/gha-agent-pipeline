@@ -1,4 +1,8 @@
 import { runShell } from "../tools/shell.js";
+import {
+  gitAddAllExcludingPipelineCheckoutCommand,
+  unstagePipelineCheckoutCommand,
+} from "./worktree-excludes.js";
 
 export type MergeStrategy = "merge" | "rebase";
 
@@ -232,9 +236,13 @@ export async function assertNoConflictMarkersInRepository(): Promise<void> {
 export async function prepareResolvedMergeForCommit(): Promise<void> {
   const mergeHead = await runShell("git rev-parse -q --verify MERGE_HEAD");
   if (mergeHead.exitCode === 0) {
-    const add = await runShell("git add -A");
+    const add = await runShell(gitAddAllExcludingPipelineCheckoutCommand());
     if (add.exitCode !== 0) {
-      throw new Error(`git add -A failed: ${add.stderr || add.stdout}`);
+      const fallback = await runShell("git add -A");
+      if (fallback.exitCode !== 0) {
+        throw new Error(`git add failed: ${fallback.stderr || fallback.stdout}`);
+      }
+      await runShell(unstagePipelineCheckoutCommand());
     }
   }
 

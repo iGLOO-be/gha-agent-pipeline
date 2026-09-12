@@ -3,11 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadAgentConfig } from "../config.js";
 import { runGh, runShell } from "../tools/shell.js";
+import {
+  gitAddAllExcludingPipelineCheckoutCommand,
+  unstagePipelineCheckoutCommand,
+} from "./worktree-excludes.js";
 
 const { git: gitConfig } = loadAgentConfig();
 
 export async function commitAll(message: string): Promise<boolean> {
-  await runShell("git add -A");
+  const add = await runShell(gitAddAllExcludingPipelineCheckoutCommand());
+  if (add.exitCode !== 0) {
+    await runShell("git add -A");
+    await runShell(unstagePipelineCheckoutCommand());
+  }
   const status = await runShell("git diff --cached --quiet");
   if (status.exitCode === 0) {
     return false;
