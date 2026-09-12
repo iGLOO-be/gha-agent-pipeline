@@ -48,7 +48,7 @@ jobs:
               reactionTarget
             }) {
               await fetch(
-                `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-review-fix.yml/dispatches`,
+                `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`,
                 {
                   method: 'POST',
                   headers: {
@@ -59,6 +59,7 @@ jobs:
                   body: JSON.stringify({
                     ref: consumerRef,
                     inputs: {
+                      phase: 'review-fix',
                       comment_id: String(commentId),
                       pr_number: String(prNumber),
                       issue_number: String(issueNumber),
@@ -106,12 +107,7 @@ jobs:
               })
               const hasWorkingLabel = labels.some((label) => label.name === 'agent-working')
 
-              const agentWorkflowPaths = [
-                '.github/workflows/agent-plan.yml',
-                '.github/workflows/agent-implement.yml',
-                '.github/workflows/agent-yolo.yml',
-                '.github/workflows/agent-review-fix.yml'
-              ]
+              const agentWorkflowPaths = ['.github/workflows/agent-phase.yml']
               let busyRuns = []
               try {
                 const { data } = await github.rest.actions.listWorkflowRunsForRepo({
@@ -192,16 +188,16 @@ jobs:
                 return
               }
 
-              let workflowFile = null
+              let phase = null
               if (body.includes('/agent plan')) {
-                workflowFile = 'agent-plan.yml'
+                phase = 'plan'
               } else if (body.includes('/agent implement')) {
-                workflowFile = 'agent-implement.yml'
+                phase = 'implement'
               } else if (body.includes('/agent yolo')) {
-                workflowFile = 'agent-yolo.yml'
+                phase = 'yolo'
               }
 
-              if (!workflowFile) {
+              if (!phase) {
                 core.info('No /agent slash command detected')
                 return
               }
@@ -231,7 +227,7 @@ jobs:
                 content: 'eyes'
               })
 
-              const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`
+              const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
               const res = await fetch(dispatchUrl, {
                 method: 'POST',
                 headers: {
@@ -242,6 +238,7 @@ jobs:
                 body: JSON.stringify({
                   ref: consumerRef,
                   inputs: {
+                    phase,
                     comment_id: commentId,
                     issue_number: issueNumber,
                     author_association: authorAssociation
