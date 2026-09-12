@@ -10,6 +10,7 @@ import {
   isEditorInputTooLargeError,
   isOversizedNewFileEditorWrite,
   oversizedEditorRecoveryMessage,
+  recordOversizedEditorRunFriction,
   writeNewFileBypassingEditorLimit,
 } from "./editor-size-recovery.js";
 import { getActiveRunFrictionCollector } from "../run-friction.js";
@@ -94,11 +95,7 @@ export async function createWorkspaceScopedEditorExecutor(
         displayPath,
         normalizedInput,
       );
-      getActiveRunFrictionCollector()?.recordRuntimeToolError(
-        "editor",
-        recovery,
-        resolvedPath,
-      );
+      recordOversizedEditorRunFriction(recovery, resolvedPath);
       return editorFailureResult(displayPath, recovery);
     }
 
@@ -123,11 +120,7 @@ export async function createWorkspaceScopedEditorExecutor(
             displayPath,
             normalizedInput,
           );
-          getActiveRunFrictionCollector()?.recordRuntimeToolError(
-            "editor",
-            recovery,
-            resolvedPath,
-          );
+          recordOversizedEditorRunFriction(recovery, resolvedPath);
           if (result && typeof result === "object") {
             return { ...result, error: recovery };
           }

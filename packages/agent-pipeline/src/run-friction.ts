@@ -3,11 +3,8 @@
  * friction). Appended to GitHub issue comments and job step summaries so humans
  * see why a run was expensive without treating these as hard failures.
  *
- * `tool_limit` is used mainly for Cline `editor` “Editor input too large” — see
- * `cline/editor-size-recovery.ts`.
  */
 import { appendStepSummary, redactSensitiveStrings } from "./gha-log.js";
-import { CLINE_EDITOR_ARG_CHAR_LIMIT } from "./prompts/file-edits.js";
 
 export const RUN_FRICTION_CATEGORIES = [
   "tool_limit",
@@ -111,25 +108,17 @@ export class RunFrictionCollector {
     return { accepted: true, index: this.notes.length - 1 };
   }
 
+  /** Generic runtime tool failure; use `record()` when category/mitigation are known. */
   recordRuntimeToolError(
     toolName: string,
     errorMessage: string,
     context?: string,
   ): void {
-    const category: RunFrictionCategory = errorMessage.includes(
-      "Editor input too large",
-    )
-      ? "tool_limit"
-      : "tool_error";
     this.record({
       source: "runtime",
-      category,
+      category: "tool_error",
       summary: `${toolName}: ${errorMessage}`,
       context,
-      mitigation:
-        category === "tool_limit"
-          ? `Prefer apply_patch for large files; split editor old_text/new_text under ${CLINE_EDITOR_ARG_CHAR_LIMIT} chars or use insert_line in steps (new-file bypass is harness-only).`
-          : undefined,
     });
   }
 }

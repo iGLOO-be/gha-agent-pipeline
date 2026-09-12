@@ -16,8 +16,8 @@ describe("RunFrictionCollector", () => {
       }).accepted,
     ).toBe(true);
     collector.recordRuntimeToolError(
-      "editor",
-      "Editor input too large: new_text was 11056 characters",
+      "read_files",
+      "path not found",
       "packages/foo.test.ts",
     );
     expect(collector.noteCount).toBe(2);

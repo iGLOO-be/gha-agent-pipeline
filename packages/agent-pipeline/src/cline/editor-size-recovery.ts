@@ -22,8 +22,8 @@
  * 2. **Existing files** — no safe automatic rewrite; return an expanded error via
  *    `oversizedEditorRecoveryMessage` so the model is steered toward `apply_patch` or
  *    smaller `editor` chunks.
- * 3. **Observability** — remaining limit hits are recorded as `tool_limit` run
- *    friction (`run-friction.ts`) on phase comments / step summaries.
+ * 3. **Observability** — remaining limit hits are recorded via
+ *    `recordOversizedEditorRunFriction` on phase comments / step summaries.
  *
  * Related: missing `old_text` on existing files is handled separately in
  * `editor-old-text-recovery.ts` (cline/cline#13970).
@@ -35,6 +35,20 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CLINE_EDITOR_ARG_CHAR_LIMIT } from "../prompts/file-edits.js";
+import { getActiveRunFrictionCollector } from "../run-friction.js";
+
+/** Run friction for oversized editor args on existing files (bypass handled separately). */
+export function recordOversizedEditorRunFriction(
+  recoveryMessage: string,
+  contextPath: string,
+): void {
+  getActiveRunFrictionCollector()?.record({
+    source: "runtime",
+    category: "tool_limit",
+    summary: `editor: ${recoveryMessage}`,
+    context: contextPath,
+  });
+}
 
 export type EditorLikeInput = {
   path: string;
