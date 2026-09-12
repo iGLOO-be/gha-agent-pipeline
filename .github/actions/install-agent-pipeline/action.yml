@@ -54,3 +54,9 @@ runs:
       run: |
         echo "root=${GITHUB_WORKSPACE}/gha-agent-pipeline" >> "$GITHUB_OUTPUT"
         echo "bin=${GITHUB_WORKSPACE}/gha-agent-pipeline/node_modules/.bin/agent-pipeline" >> "$GITHUB_OUTPUT"
+
+    - name: Install graphify
+      shell: bash
+      run: |
+        pip install graphifyy -q 2>/dev/null || pip install graphifyy -q --break-system-packages 2>/dev/null
+        which graphify && graphify --version || echo "graphify not available"
