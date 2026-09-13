@@ -162,7 +162,31 @@ function summarizeToolInput(toolName: string, input: unknown): string {
       return `${toolName} → ${filePath}`;
     }
     case "run_commands": {
-      const cmd = typeof obj?.command === "string" ? obj.command : "?";
+      // Cline SDK accepts many union shapes: { commands: string[] },
+      // { commands: [{command, args}] }, { command: "..." }, { cmd: "..." },
+      // plain string, string[], etc.
+      let extracted: string | undefined;
+      if (Array.isArray(obj?.commands) && obj.commands.length > 0) {
+        const first = obj.commands[0];
+        if (typeof first === "string") {
+          extracted = first;
+        } else if (
+          typeof first === "object" &&
+          first !== null &&
+          typeof (first as Record<string, unknown>).command === "string"
+        ) {
+          extracted = (first as Record<string, unknown>).command as string;
+        }
+      } else if (typeof obj?.command === "string") {
+        extracted = obj.command;
+      } else if (typeof obj?.cmd === "string") {
+        extracted = obj.cmd;
+      } else if (typeof input === "string") {
+        extracted = input;
+      } else if (Array.isArray(input) && input.length > 0) {
+        extracted = String(input[0]);
+      }
+      const cmd = extracted ?? "?";
       const truncated = cmd.length > 120 ? `${cmd.slice(0, 120)}…` : cmd;
       return `${toolName}: ${truncated}`;
     }
@@ -216,12 +240,51 @@ function summarizeToolOutput(
 
   switch (toolName) {
     case "run_commands": {
+      // Handle ToolOperationResult[] (Cline SDK canonical output)
+      if (Array.isArray(output)) {
+        const results = output as Array<{
+          success?: boolean;
+          error?: string;
+          result?: string;
+        }>;
+        const allSuccess = results.every((r) => r.success !== false);
+        if (allSuccess) return "exit=0";
+        const errors = results
+          .filter((r) => r.error)
+          .map((r) => r.error!)
+          .join("; ");
+        return errors ? `ERROR: ${errors}` : "exit=?";
+      }
+      // Handle plain string output (raw stdout from content_end)
+      if (typeof output === "string") {
+        const truncated =
+          output.length > 120 ? `${output.slice(0, 120)}…` : output;
+        return truncated || "exit=0";
+      }
       const exitCode = obj?.exitCode ?? obj?.code ?? "?";
       const stdoutStr =
         typeof obj?.stdout === "string" ? obj.stdout.slice(0, 80) : "";
       return `exit=${exitCode}${stdoutStr ? ` ${stdoutStr}` : ""}`;
     }
     case "read_files": {
+      // Handle ToolOperationResult[] (Cline SDK canonical output)
+      if (Array.isArray(output)) {
+        const results = output as Array<{
+          query?: unknown;
+          result?: string;
+          success?: boolean;
+        }>;
+        let totalChars = 0;
+        for (const item of results) {
+          if (typeof item.result === "string") totalChars += item.result.length;
+        }
+        const fileCount = results.length;
+        return `${fileCount} file(s), ${totalChars} chars`;
+      }
+      // Handle plain string (raw content from content_end)
+      if (typeof output === "string") {
+        return `${output.length} chars`;
+      }
       if (obj?.files && Array.isArray(obj.files)) {
         return `${obj.files.length} file(s)`;
       }
@@ -493,7 +556,7 @@ export function createSessionLogger(
     if (isVerboseTools()) {
       console.log(formatToolInputVerbose(toolName, input));
     } else {
-      console.log(`[tool input] ${toolName}: ${inputSummary}`);
+      console.log(`[tool input] ${inputSummary}`);
     }
     return inputSummary;
   };
