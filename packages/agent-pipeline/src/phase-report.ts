@@ -2,7 +2,10 @@ import type { AgentPhase } from "./config.js";
 import { loadClineSdk } from "./cline.js";
 import { redactSensitiveStrings, safeFormatUsageMarkdown } from "./gha-log.js";
 import { PHASE_LABELS } from "./lifecycle.js";
-import { formatRunFrictionMarkdown, type RunFrictionCollector } from "./run-friction.js";
+import {
+  formatRunFrictionMarkdown,
+  type RunFrictionCollector,
+} from "./run-friction.js";
 import type { SessionAccumulatedUsage } from "./types/usage.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
