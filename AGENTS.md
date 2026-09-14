@@ -41,6 +41,7 @@ pnpm exec agent-pipeline plan   # requires OPENROUTER_API_KEY, GITHUB_TOKEN, etc
 - Any change to the runtime must include or update tests
 - Do not add Next.js or consumer app code to this repository
 - Runners (`runs-on`) belong in **consumer** workflows, not in `agent.config.yml`
+- Before finishing work, run `pnpm test && pnpm run typecheck && pnpm run format:check` to verify all checks pass. CI enforces these in the PR workflow.
 
 ## Phase 2 tracking
 
@@ -48,7 +49,14 @@ Parent epic: [gha-agent-demo#138](https://github.com/iGLOO-be/gha-agent-demo/iss
 
 ## Agent phase report
 
-When the agent finishes edits (implement, yolo, ci-fix, review-fix), it may call `submitPhaseReport` to provide a structured markdown summary. The runner injects this report into the PR body or the fix PR comment.
+When the agent finishes edits (implement, yolo, ci-fix, review-fix), it may call `submitPhaseReport` to provide a structured markdown summary. This is the agent's **business summary** only: what changed, which files were touched, and how to verify the work.
+
+The runner wraps this into a unified end-of-phase block (`## Agent phase report ({phase})`) that also includes a status line and — injected automatically by the runner, **never** by the agent — the run metrics and run friction sections:
+
+- **`### Run metrics`** — tokens, cost, model, and session ID, generated from `safeFormatUsageMarkdown` using the session result. The agent must not fill in token/cost numbers itself.
+- **`### Run friction`** — suboptimal moments (retries, tool limits, agent-reported friction) collected by the runner.
+
+The agent should only call `submitPhaseReport` for the `summary` (and optional `testPlan`). If the agent omits it, the runner emits a neutral fallback so the comment still shows the status + metrics.
 
 ### Report structure
 

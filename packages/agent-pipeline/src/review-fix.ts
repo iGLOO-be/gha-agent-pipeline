@@ -15,7 +15,6 @@ import {
 import { reportPhaseFailure } from "./report-failure.js";
 import {
   appendRunFrictionStepSummary,
-  appendRunFrictionToMarkdown,
   createRunFrictionCollector,
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
@@ -36,7 +35,7 @@ import { createReviewFixTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
-  formatPhaseReportForComment,
+  formatPhaseCompletionMarkdown,
 } from "./phase-report.js";
 
 function buildConflictPriorityHint(
@@ -129,7 +128,7 @@ async function main() {
       runFriction,
     );
 
-    await runAgentSession({
+    const session = await runAgentSession({
       phase: "review-fix",
       modelId: REVIEW_FIX_MODEL,
       systemPrompt: buildPhaseSystemPrompt("review-fix", config),
@@ -167,12 +166,18 @@ Branch: ${env.AGENT_BRANCH}`,
     const phaseReport = phaseReportTracker.report;
 
     const buildReviewFixComment = (body: string): string => {
-      const withFriction = appendRunFrictionToMarkdown(body, runFriction);
-      const marker = `<!-- agent-review-fix -->`;
-      if (phaseReport) {
-        return `${marker}\n${formatPhaseReportForComment(phaseReport)}\n\n${withFriction}`;
-      }
-      return `${marker}\n${withFriction}`;
+      const completion = formatPhaseCompletionMarkdown({
+        phase: "review-fix",
+        statusLine: body,
+        phaseReport,
+        sessionUsage: session.usage,
+        sessionId: session.sessionId,
+        modelId: session.modelId,
+        iterations: session.iterations,
+        toolCallsCount: session.toolCallsCount,
+        runFriction,
+      });
+      return `<!-- agent-review-fix -->\n${completion}`;
     };
 
     await prepareResolvedMergeForCommit();

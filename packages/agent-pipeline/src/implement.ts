@@ -12,7 +12,6 @@ import { reportPhaseFailure } from "./report-failure.js";
 import {
   appendRunFrictionStepSummary,
   createRunFrictionCollector,
-  formatRunFrictionMarkdown,
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
@@ -34,7 +33,7 @@ import { createImplementTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
-  formatPhaseReportForComment,
+  formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
 } from "./phase-report.js";
 
@@ -99,7 +98,6 @@ Branch: ${branch}`,
     });
 
     appendRunFrictionStepSummary(runFriction, "implement");
-    const frictionSection = formatRunFrictionMarkdown(runFriction);
 
     const phaseReport = phaseReportTracker.report;
     const phaseReportMarkdown = phaseReport
@@ -154,12 +152,19 @@ Branch: ${branch}`,
       `## Agent Implementation`,
       "",
       `Pull request [#${pr.number}](${pr.url}) created.`,
-      usageSection ?? "",
-      phaseReport ? formatPhaseReportForComment(phaseReport) : "",
-      frictionSection ?? "",
-    ]
-      .filter((section) => section.length > 0)
-      .join("\n\n");
+      "",
+      formatPhaseCompletionMarkdown({
+        phase: "implement",
+        statusLine: `Pull request [#${pr.number}](${pr.url}) created.`,
+        phaseReport,
+        sessionUsage: session.usage,
+        sessionId: session.sessionId,
+        modelId: session.modelId,
+        iterations: session.iterations,
+        toolCallsCount: session.toolCallsCount,
+        runFriction,
+      }),
+    ].join("\n\n");
 
     await postComment(
       octokit,

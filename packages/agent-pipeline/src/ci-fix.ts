@@ -15,7 +15,6 @@ import {
 import { reportPhaseFailure } from "./report-failure.js";
 import {
   appendRunFrictionStepSummary,
-  appendRunFrictionToMarkdown,
   createRunFrictionCollector,
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
@@ -37,7 +36,7 @@ import { createCiFixTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
-  formatPhaseReportForComment,
+  formatPhaseCompletionMarkdown,
 } from "./phase-report.js";
 
 async function main() {
@@ -97,7 +96,7 @@ async function main() {
       runFriction,
     );
 
-    await runAgentSession({
+    const session = await runAgentSession({
       phase: "ci-fix",
       modelId: CI_FIX_MODEL,
       systemPrompt: buildPhaseSystemPrompt("ci-fix", config),
@@ -144,12 +143,18 @@ Repository: ${env.GITHUB_REPOSITORY}`,
     );
 
     const buildCiFixComment = (body: string): string => {
-      const withFriction = appendRunFrictionToMarkdown(body, runFriction);
-      const marker = `<!-- agent-ci-fix -->`;
-      if (phaseReport) {
-        return `${marker}\n${formatPhaseReportForComment(phaseReport)}\n\n${withFriction}`;
-      }
-      return `${marker}\n${withFriction}`;
+      const completion = formatPhaseCompletionMarkdown({
+        phase: "ci-fix",
+        statusLine: body,
+        phaseReport,
+        sessionUsage: session.usage,
+        sessionId: session.sessionId,
+        modelId: session.modelId,
+        iterations: session.iterations,
+        toolCallsCount: session.toolCallsCount,
+        runFriction,
+      });
+      return `<!-- agent-ci-fix -->\n${completion}`;
     };
 
     if (pushResult.status === "noChanges") {

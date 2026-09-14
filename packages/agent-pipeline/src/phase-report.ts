@@ -1,5 +1,12 @@
+import type { AgentPhase } from "./config.js";
 import { loadClineSdk } from "./cline.js";
-import { redactSensitiveStrings } from "./gha-log.js";
+import { redactSensitiveStrings, safeFormatUsageMarkdown } from "./gha-log.js";
+import { PHASE_LABELS } from "./lifecycle.js";
+import {
+  formatRunFrictionMarkdown,
+  type RunFrictionCollector,
+} from "./run-friction.js";
+import type { SessionAccumulatedUsage } from "./types/usage.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -146,6 +153,82 @@ export function formatPhaseReportForComment(report: PhaseReport): string {
   }
 
   return lines.join("\n");
+}
+
+// ── Phase completion block ──────────────────────────────────────────────────
+
+export interface FormatPhaseCompletionOptions {
+  phase: AgentPhase;
+  /** Status line summarizing the runner outcome (e.g. "Pushed a CI fix commit"). */
+  statusLine: string;
+  /** Optional phase report from submitPhaseReport tool (agent-provided business summary). */
+  phaseReport?: PhaseReport;
+  /** Session usage for run metrics (omits metrics section when undefined). */
+  sessionUsage?: SessionAccumulatedUsage;
+  /** Session ID for the metrics table (omitted when sessionUsage is absent). */
+  sessionId?: string;
+  /** Model ID for the metrics table (omitted when sessionUsage is absent). */
+  modelId?: string;
+  /** Iterations count for the metrics table. */
+  iterations?: number;
+  /** Tool calls count for the metrics table. */
+  toolCallsCount?: number;
+  /** Run friction collector for the run friction section. */
+  runFriction?: RunFrictionCollector;
+}
+
+/**
+ * Build a unified end-of-phase markdown block suitable for PR comments
+ * (ci-fix, review-fix) or issue completion comments (implement, yolo).
+ *
+ * Always emits the phase marker + title and a status line. The agent
+ * business report (summary/testPlan) and runner-owned metrics + friction
+ * are injected when available.
+ */
+export function formatPhaseCompletionMarkdown(
+  opts: FormatPhaseCompletionOptions,
+): string {
+  const phaseLabel = PHASE_LABELS[opts.phase] ?? opts.phase;
+  const sections: string[] = [
+    PHASE_REPORT_MARKER,
+    `## Agent phase report (${phaseLabel})`,
+    "",
+    opts.statusLine,
+  ];
+
+  // Agent business summary
+  if (opts.phaseReport) {
+    sections.push("", opts.phaseReport.summary);
+    if (opts.phaseReport.testPlan) {
+      sections.push("", "### Test plan", "", opts.phaseReport.testPlan);
+    }
+  } else {
+    sections.push("", "_No business summary was submitted._");
+  }
+
+  // Runner-owned run metrics
+  if (opts.sessionUsage) {
+    const usageMd = safeFormatUsageMarkdown(opts.sessionUsage, {
+      heading: "### Run metrics",
+      sessionId: opts.sessionId,
+      modelId: opts.modelId,
+      iterations: opts.iterations,
+      toolCallsCount: opts.toolCallsCount,
+    });
+    if (usageMd) {
+      sections.push("", usageMd);
+    }
+  }
+
+  // Run friction
+  if (opts.runFriction) {
+    const frictionMd = formatRunFrictionMarkdown(opts.runFriction);
+    if (frictionMd) {
+      sections.push("", frictionMd);
+    }
+  }
+
+  return sections.join("\n");
 }
 
 // ── Tool wiring helper ──────────────────────────────────────────────────────
