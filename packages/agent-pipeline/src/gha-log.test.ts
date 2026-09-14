@@ -3,6 +3,9 @@ import {
   createSessionLogger,
   formatToolValue,
   redactSensitiveStrings,
+  formatUsageMarkdown,
+  formatUsageBlock,
+  safeFormatUsageMarkdown,
 } from "./gha-log.js";
 
 const ENV_KEYS = [
@@ -701,6 +704,150 @@ describe("gha-log", () => {
       expect(content).toContain("read_files [README.md]");
 
       logger.closeAllGroups();
+    });
+  });
+describe("formatUsageMarkdown and formatUsageBlock", () => {
+    const sampleUsage = {
+      inputTokens: 1000,
+      outputTokens: 500,
+      cacheReadTokens: 200,
+      cacheWriteTokens: 50,
+      totalCost: 0.0123,
+    };
+
+    describe("formatUsageMarkdown", () => {
+      it("renders a markdown table with token rows and optional heading", () => {
+        const result = formatUsageMarkdown(sampleUsage, {
+          heading: "### Usage",
+        });
+
+        expect(result).toContain("### Usage");
+        expect(result).toContain("| Input tokens | 1,000 |");
+        expect(result).toContain("| Output tokens | 500 |");
+        expect(result).toContain("| Cache read tokens | 200 |");
+        expect(result).toContain("| Cache write tokens | 50 |");
+        expect(result).toContain("| **Total tokens** | **1,750** |");
+        expect(result).toContain("| **Estimated cost** | **$0.0123 USD** |");
+        expect(result).toContain("_Estimated cost is a provider-side estimate");
+      });
+
+      it("renders session ID and model when provided", () => {
+        const result = formatUsageMarkdown(sampleUsage, {
+          sessionId: "abc123",
+          modelId: "test-model",
+        });
+
+        expect(result).toContain("| Session ID | `abc123` |");
+        expect(result).toContain("| Model | `test-model` |");
+      });
+
+      it("renders iterations and tool calls when provided", () => {
+        const result = formatUsageMarkdown(sampleUsage, {
+          iterations: 12,
+          toolCallsCount: 34,
+        });
+
+        expect(result).toContain("| Iterations | 12 |");
+        expect(result).toContain("| Tool calls | 34 |");
+      });
+
+      it("omits iterations and tool calls when not provided", () => {
+        const result = formatUsageMarkdown(sampleUsage, {});
+
+        expect(result).not.toContain("| Iterations |");
+        expect(result).not.toContain("| Tool calls |");
+      });
+
+      it("renders only iterations when toolCallsCount is omitted", () => {
+        const result = formatUsageMarkdown(sampleUsage, {
+          iterations: 5,
+        });
+
+        expect(result).toContain("| Iterations | 5 |");
+        expect(result).not.toContain("| Tool calls |");
+      });
+
+      it("renders only tool calls when iterations is omitted", () => {
+        const result = formatUsageMarkdown(sampleUsage, {
+          toolCallsCount: 10,
+        });
+
+        expect(result).not.toContain("| Iterations |");
+        expect(result).toContain("| Tool calls | 10 |");
+      });
+    });
+
+    describe("safeFormatUsageMarkdown", () => {
+      it("returns null when usage is undefined", () => {
+        expect(safeFormatUsageMarkdown(undefined)).toBeNull();
+      });
+
+      it("returns formatted markdown when usage is valid", () => {
+        const result = safeFormatUsageMarkdown(sampleUsage, {
+          heading: "### Safe Test",
+          iterations: 3,
+          toolCallsCount: 7,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result!).toContain("| Iterations | 3 |");
+        expect(result!).toContain("| Tool calls | 7 |");
+      });
+    });
+
+    describe("formatUsageBlock", () => {
+      it("includes iterations and tool calls in stdout when provided", () => {
+        const { stdout } = formatUsageBlock(
+          sampleUsage,
+          "session-1",
+          8,
+          15,
+        );
+
+        expect(stdout).toContain("[usage] Session session-1:");
+        expect(stdout).toContain("  Iterations: 8");
+        expect(stdout).toContain("  Tool calls: 15");
+      });
+
+      it("omits iterations and tool calls from stdout when not provided", () => {
+        const { stdout } = formatUsageBlock(sampleUsage, "session-2");
+
+        expect(stdout).not.toContain("Iterations:");
+        expect(stdout).not.toContain("Tool calls:");
+      });
+
+      it("includes iterations and tool calls in step summary when provided", () => {
+        const { stepSummary } = formatUsageBlock(
+          sampleUsage,
+          "session-3",
+          3,
+          20,
+        );
+
+        expect(stepSummary).toContain("| Iterations | 3 |");
+        expect(stepSummary).toContain("| Tool calls | 20 |");
+      });
+
+      it("omits iterations and tool calls from step summary when not provided", () => {
+        const { stepSummary } = formatUsageBlock(sampleUsage, "session-4");
+
+        expect(stepSummary).not.toContain("| Iterations |");
+        expect(stepSummary).not.toContain("| Tool calls |");
+      });
+
+      it("includes token metrics in both stdout and step summary", () => {
+        const { stdout, stepSummary } = formatUsageBlock(
+          sampleUsage,
+          "session-5",
+          2,
+          5,
+        );
+
+        expect(stdout).toContain("Input tokens: 1,000");
+        expect(stdout).toContain("Total tokens: 1,750");
+        expect(stepSummary).toContain("| Input tokens | 1,000 |");
+        expect(stepSummary).toContain("| **Estimated cost** | **$0.0123 USD** |");
+      });
     });
   });
 });

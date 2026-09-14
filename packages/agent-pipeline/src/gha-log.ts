@@ -343,6 +343,8 @@ function formatToolInputVerbose(toolName: string, input: unknown): string {
 function buildUsageRows(
   usage: SessionAccumulatedUsage,
   formatter: (label: string, value: string) => string,
+  iterations?: number,
+  toolCallsCount?: number,
 ): string[] {
   const totalTokens =
     usage.inputTokens +
@@ -350,14 +352,27 @@ function buildUsageRows(
     usage.cacheReadTokens +
     usage.cacheWriteTokens;
 
-  return [
+  const rows = [
     formatter("Input tokens", usage.inputTokens.toLocaleString()),
     formatter("Output tokens", usage.outputTokens.toLocaleString()),
     formatter("Cache read tokens", usage.cacheReadTokens.toLocaleString()),
     formatter("Cache write tokens", usage.cacheWriteTokens.toLocaleString()),
+  ];
+
+  if (iterations !== undefined) {
+    rows.push(formatter("Iterations", iterations.toLocaleString()));
+  }
+
+  if (toolCallsCount !== undefined) {
+    rows.push(formatter("Tool calls", toolCallsCount.toLocaleString()));
+  }
+
+  rows.push(
     formatter("**Total tokens**", `**${totalTokens.toLocaleString()}**`),
     formatter("**Estimated cost**", `**$${usage.totalCost.toFixed(4)} USD**`),
-  ];
+  );
+
+  return rows;
 }
 
 export function formatUsageMarkdown(
@@ -366,11 +381,15 @@ export function formatUsageMarkdown(
     heading?: string;
     sessionId?: string;
     modelId?: string;
+    iterations?: number;
+    toolCallsCount?: number;
   } = {},
 ): string {
   const rows = buildUsageRows(
     usage,
     (label, value) => `| ${label} | ${value} |`,
+    opts.iterations,
+    opts.toolCallsCount,
   );
   const headerRows = ["| Metric | Value |", "| --- | --- |"];
 
@@ -397,6 +416,8 @@ export function safeFormatUsageMarkdown(
     heading?: string;
     sessionId?: string;
     modelId?: string;
+    iterations?: number;
+    toolCallsCount?: number;
   } = {},
 ): string | null {
   if (!usage) {
@@ -414,6 +435,8 @@ export function safeFormatUsageMarkdown(
 export function formatUsageBlock(
   usage: SessionAccumulatedUsage,
   sessionId: string,
+  iterations?: number,
+  toolCallsCount?: number,
 ): {
   stdout: string;
   stepSummary: string;
@@ -431,6 +454,12 @@ export function formatUsageBlock(
     `  Output tokens: ${usage.outputTokens.toLocaleString()}`,
     `  Cache read tokens: ${usage.cacheReadTokens.toLocaleString()}`,
     `  Cache write tokens: ${usage.cacheWriteTokens.toLocaleString()}`,
+    ...(iterations !== undefined
+      ? [`  Iterations: ${iterations.toLocaleString()}`]
+      : []),
+    ...(toolCallsCount !== undefined
+      ? [`  Tool calls: ${toolCallsCount.toLocaleString()}`]
+      : []),
     `  Total tokens: ${totalTokens.toLocaleString()}`,
     `  Estimated cost: $${usage.totalCost.toFixed(4)} USD`,
   ].join("\n");
@@ -441,7 +470,12 @@ export function formatUsageBlock(
     `| Metric | Value |`,
     `| --- | --- |`,
     `| Session ID | \`${sessionId}\` |`,
-    ...buildUsageRows(usage, (label, value) => `| ${label} | ${value} |`),
+    ...buildUsageRows(
+      usage,
+      (label, value) => `| ${label} | ${value} |`,
+      iterations,
+      toolCallsCount,
+    ),
     `\n\n`,
   ].join("\n");
 

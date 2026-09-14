@@ -260,6 +260,8 @@ ${conversation}`,
       heading: "### Usage (plan run)",
       sessionId: session.sessionId,
       modelId: session.modelId,
+      iterations: session.iterations,
+      toolCallsCount: session.toolCallsCount,
     });
     if (usageSection && planComment.id && planComment.body) {
       try {
