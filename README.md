@@ -179,6 +179,17 @@ The CLI phases read the following environment variables. Common variables (`OPEN
 
 Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript `runAgentPhase()` wrapper before and after the phase `main()`. The `agent-phase.yml` workflow must not repeat those steps (it only runs the CLI and keeps `always()` label cleanup as a safety net).
 
+## Usage block (Job Summary & comments)
+
+After each agent run, the runtime emits a **Usage** block (stdout, GitHub step summary, and issue/PR comment footer). The block includes:
+
+- Token counts (input, output, cache read/write, total)
+- **Iterations** — number of agent loop cycles (model call → tools → repeat)
+- **Tool calls** — total tool invocations across all iterations
+- Estimated cost (provider-side estimate)
+
+Iterations and tool calls are sourced from `session.result` (`AgentResult` from the Cline SDK). If the session ends early (error/abort), they are omitted.
+
 ## Related docs
 
 - [gha-agent-demo reusable architecture](https://github.com/iGLOO-be/gha-agent-demo/blob/main/docs/reusable-architecture.md)

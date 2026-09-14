@@ -84,6 +84,10 @@ export type AgentSessionResult = {
   usage?: SessionAccumulatedUsage;
   modelId: string;
   attempts: number;
+  /** Number of agent iterations (model → tools → repeat cycles), from session.result */
+  iterations?: number;
+  /** Total number of tool calls across all iterations, from session.result.toolCalls */
+  toolCallsCount?: number;
 };
 
 /** ClineCore can leave timers/sockets open after dispose(); GHA steps wait for process exit. */
@@ -192,7 +196,12 @@ async function runAgentSessionAttempt(
         usage = usageSummary?.aggregateUsage || usageSummary?.usage;
 
         if (usage) {
-          const { stdout, stepSummary } = formatUsageBlock(usage, sessionId);
+          const { stdout, stepSummary } = formatUsageBlock(
+            usage,
+            sessionId,
+            session.result?.iterations,
+            session.result?.toolCalls?.length,
+          );
           console.log(stdout);
           appendStepSummary(stepSummary);
         }
@@ -224,6 +233,8 @@ async function runAgentSessionAttempt(
       usage,
       modelId: input.modelId,
       attempts: input.attempt,
+      iterations: session.result?.iterations,
+      toolCallsCount: session.result?.toolCalls?.length,
     };
   } finally {
     sessionLogger?.closeAllGroups();

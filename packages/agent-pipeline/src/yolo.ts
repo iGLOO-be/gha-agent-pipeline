@@ -122,6 +122,8 @@ Branch: ${branch}`,
       heading: "### Usage (yolo run)",
       sessionId: session.sessionId,
       modelId: session.modelId,
+      iterations: session.iterations,
+      toolCallsCount: session.toolCallsCount,
     });
 
     const pr = await createPullRequest(

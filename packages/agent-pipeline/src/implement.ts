@@ -119,6 +119,8 @@ Branch: ${branch}`,
       heading: "### Usage (implement run)",
       sessionId: session.sessionId,
       modelId: session.modelId,
+      iterations: session.iterations,
+      toolCallsCount: session.toolCallsCount,
     });
 
     const pr = await createPullRequest(
