@@ -146,7 +146,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "read_files",
             toolCallId: "call-1",
-            input: { path: "README.md" },
+            input: { files: [{ path: "README.md" }] },
           },
         },
       });
@@ -159,7 +159,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "read_files",
             toolCallId: "call-1",
-            output: { content: "hello" },
+            output: [{ query: "README.md", result: "hello", success: true }],
           },
         },
       });
@@ -171,8 +171,8 @@ describe("gha-log", () => {
           tool_result: {
             id: "call-1",
             name: "read_files",
-            input: { path: "README.md" },
-            output: { content: "hello" },
+            input: { files: [{ path: "README.md" }] },
+            output: [{ query: "README.md", result: "hello", success: true }],
             durationMs: 5,
             startedAt: new Date(),
             endedAt: new Date(),
@@ -189,8 +189,10 @@ describe("gha-log", () => {
         true,
       );
       // Non-verbose mode shows semantic summaries, not raw JSON
-      expect(calls.some((c) => c.includes("read_files README.md"))).toBe(true);
-      expect(calls.some((c) => c.includes("5 chars"))).toBe(true);
+      expect(calls.some((c) => c.includes("read_files [README.md]"))).toBe(
+        true,
+      );
+      expect(calls.some((c) => c.includes("1 file(s), 5 chars"))).toBe(true);
       expect(calls).toContain("::endgroup::");
     });
 
@@ -215,7 +217,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "run_commands",
             toolCallId: "call-2",
-            input: { command: "echo hi" },
+            input: { commands: ["echo hi"] },
           },
         },
       });
@@ -228,7 +230,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "run_commands",
             toolCallId: "call-2",
-            output: "hi",
+            output: [{ query: "echo hi", result: "hi", success: true }],
           },
         },
       });
@@ -240,8 +242,8 @@ describe("gha-log", () => {
           tool_result: {
             id: "call-2",
             name: "run_commands",
-            input: { command: "echo hi" },
-            output: "hi",
+            input: { commands: ["echo hi"] },
+            output: [{ query: "echo hi", result: "hi", success: true }],
             durationMs: 12,
             startedAt: new Date(),
             endedAt: new Date(),
@@ -276,7 +278,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "run_commands",
             toolCallId: "call-3",
-            input: { command: "echo hi" },
+            input: { commands: ["echo hi"] },
           },
         },
       });
@@ -288,8 +290,8 @@ describe("gha-log", () => {
           tool_result: {
             id: "call-3",
             name: "run_commands",
-            input: { command: "echo hi" },
-            output: "hi",
+            input: { commands: ["echo hi"] },
+            output: [{ query: "echo hi", result: "hi", success: true }],
             durationMs: 12,
             startedAt: new Date(),
             endedAt: new Date(),
@@ -301,7 +303,7 @@ describe("gha-log", () => {
       expect(calls.some((c) => c.includes("[tool output] run_commands"))).toBe(
         true,
       );
-      expect(calls.some((c) => c.includes("hi"))).toBe(true);
+      expect(calls.some((c) => c.includes("exit=0"))).toBe(true);
     });
 
     it("logs tool errors", () => {
@@ -325,7 +327,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "run_commands",
             toolCallId: "call-4",
-            input: { command: "bad" },
+            input: { commands: ["bad"] },
           },
         },
       });
@@ -532,7 +534,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "read_files",
             toolCallId: "call-v1",
-            input: { path: "README.md" },
+            input: { files: [{ path: "README.md" }] },
           },
         },
       });
@@ -545,7 +547,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "read_files",
             toolCallId: "call-v1",
-            output: { content: "hello" },
+            output: [{ query: "README.md", result: "hello", success: true }],
           },
         },
       });
@@ -553,12 +555,20 @@ describe("gha-log", () => {
       const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
       expect(
         calls.some((c) =>
-          c.includes(JSON.stringify({ path: "README.md" }, null, 2)),
+          c.includes(
+            JSON.stringify({ files: [{ path: "README.md" }] }, null, 2),
+          ),
         ),
       ).toBe(true);
       expect(
         calls.some((c) =>
-          c.includes(JSON.stringify({ content: "hello" }, null, 2)),
+          c.includes(
+            JSON.stringify(
+              [{ query: "README.md", result: "hello", success: true }],
+              null,
+              2,
+            ),
+          ),
         ),
       ).toBe(true);
 
@@ -655,7 +665,7 @@ describe("gha-log", () => {
             contentType: "tool",
             toolName: "read_files",
             toolCallId: "call-tl1",
-            input: { path: "README.md" },
+            input: { files: [{ path: "README.md" }] },
           },
         },
       });
@@ -667,8 +677,8 @@ describe("gha-log", () => {
           tool_result: {
             id: "call-tl1",
             name: "read_files",
-            input: { path: "README.md" },
-            output: { content: "hello" },
+            input: { files: [{ path: "README.md" }] },
+            output: [{ query: "README.md", result: "hello", success: true }],
             durationMs: 42,
             startedAt: new Date(),
             endedAt: new Date(),
@@ -688,7 +698,7 @@ describe("gha-log", () => {
       expect(content).toContain("## Tools timeline");
       expect(content).toContain("read_files");
       expect(content).toContain("42ms");
-      expect(content).toContain("read_files README.md");
+      expect(content).toContain("read_files [README.md]");
 
       logger.closeAllGroups();
     });
