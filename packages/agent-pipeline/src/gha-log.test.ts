@@ -706,7 +706,7 @@ describe("gha-log", () => {
       logger.closeAllGroups();
     });
   });
-describe("formatUsageMarkdown and formatUsageBlock", () => {
+  describe("formatUsageMarkdown and formatUsageBlock", () => {
     const sampleUsage = {
       inputTokens: 1000,
       outputTokens: 500,
@@ -797,12 +797,7 @@ describe("formatUsageMarkdown and formatUsageBlock", () => {
 
     describe("formatUsageBlock", () => {
       it("includes iterations and tool calls in stdout when provided", () => {
-        const { stdout } = formatUsageBlock(
-          sampleUsage,
-          "session-1",
-          8,
-          15,
-        );
+        const { stdout } = formatUsageBlock(sampleUsage, "session-1", 8, 15);
 
         expect(stdout).toContain("[usage] Session session-1:");
         expect(stdout).toContain("  Iterations: 8");
@@ -846,7 +841,9 @@ describe("formatUsageMarkdown and formatUsageBlock", () => {
         expect(stdout).toContain("Input tokens: 1,000");
         expect(stdout).toContain("Total tokens: 1,750");
         expect(stepSummary).toContain("| Input tokens | 1,000 |");
-        expect(stepSummary).toContain("| **Estimated cost** | **$0.0123 USD** |");
+        expect(stepSummary).toContain(
+          "| **Estimated cost** | **$0.0123 USD** |",
+        );
       });
     });
   });
