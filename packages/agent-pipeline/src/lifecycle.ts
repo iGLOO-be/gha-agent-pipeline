@@ -15,7 +15,7 @@ import {
   type ReactionContent,
 } from "./tools/github.js";
 
-const PHASE_LABELS: Record<AgentPhase, string> = {
+export const PHASE_LABELS: Record<AgentPhase, string> = {
   plan: "Plan",
   implement: "Implement",
   yolo: "Yolo",
