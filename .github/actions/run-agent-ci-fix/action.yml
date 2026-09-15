@@ -36,9 +36,15 @@ inputs:
     required: false
     default: iGLOO-be/gha-agent-pipeline
   pipeline_ref:
-    description: Git ref of the agent pipeline library to install.
+    description: >
+      Git ref of the pipeline library runtime to install. Defaults to the ref of
+      this composite when invoked from a tagged library workflow; override explicitly if needed.
     required: false
-    default: main
+    default: ""
+  node_version:
+    description: Node.js version for pipeline install and agent CLI steps (match consumer engines).
+    required: false
+    default: "22"
 
 runs:
   using: composite
@@ -54,11 +60,12 @@ runs:
 
     - name: Install agent pipeline
       id: pipeline
-      uses: ./.github/actions/install-agent-pipeline
+      uses: $/.github/actions/install-agent-pipeline
       with:
         token: ${{ steps.setup.outputs.app_token }}
         pipeline_repository: ${{ inputs.pipeline_repository }}
-        pipeline_ref: ${{ inputs.pipeline_ref }}
+        pipeline_ref: ${{ inputs.pipeline_ref != '' && inputs.pipeline_ref || github.action_ref || 'main' }}
+        node_version: ${{ inputs.node_version }}
 
     - name: Restore CI round counter
       id: cache-restore

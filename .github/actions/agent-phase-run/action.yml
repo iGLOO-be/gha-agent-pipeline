@@ -37,24 +37,32 @@ inputs:
     description: Question text for the ask phase.
     required: false
   pipeline_ref:
-    description: Git ref of the pipeline library to install.
+    description: >
+      Git ref of the pipeline library runtime to install. Defaults to the ref of
+      this composite action (e.g. the release tag you pinned). Override to track
+      main or another ref explicitly.
     required: false
-    default: main
+    default: ""
   pipeline_repository:
     description: Repository (owner/name) hosting the pipeline library.
     required: false
     default: iGLOO-be/gha-agent-pipeline
+  node_version:
+    description: Node.js version for pipeline install and agent CLI steps (match consumer engines / .node-version).
+    required: false
+    default: "22"
 
 runs:
   using: composite
   steps:
     - name: Install agent pipeline
       id: pipeline
-      uses: iGLOO-be/gha-agent-pipeline/.github/actions/install-agent-pipeline@main
+      uses: $/.github/actions/install-agent-pipeline
       with:
         token: ${{ inputs.app_token }}
-        pipeline_ref: ${{ inputs.pipeline_ref }}
+        pipeline_ref: ${{ inputs.pipeline_ref != '' && inputs.pipeline_ref || github.action_ref || 'main' }}
         pipeline_repository: ${{ inputs.pipeline_repository }}
+        node_version: ${{ inputs.node_version }}
 
     - name: Run agent
       id: run-agent
@@ -74,7 +82,7 @@ runs:
 
     - name: Fallback failure comment
       if: failure() && steps.run-agent.outcome != 'success'
-      uses: iGLOO-be/gha-agent-pipeline/.github/actions/report-failure-fallback@main
+      uses: $/.github/actions/report-failure-fallback
       with:
         token: ${{ inputs.app_token || github.token }}
         phase: ${{ inputs.phase }}
@@ -84,7 +92,7 @@ runs:
 
     - name: Remove agent-working label on PR
       if: always() && inputs.phase == 'review-fix'
-      uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+      uses: $/.github/actions/manage-agent-working-label
       with:
         action: remove
         token: ${{ inputs.app_token || github.token }}
@@ -92,7 +100,7 @@ runs:
 
     - name: Remove agent-working label on issue
       if: always()
-      uses: iGLOO-be/gha-agent-pipeline/.github/actions/manage-agent-working-label@main
+      uses: $/.github/actions/manage-agent-working-label
       with:
         action: remove
         token: ${{ inputs.app_token || github.token }}

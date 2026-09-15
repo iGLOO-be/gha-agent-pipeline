@@ -15,7 +15,7 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 **This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflow, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
 
-**Private repo:** keep this repository private. The consumer’s GitHub App must be **installed on this repo** (Contents read is enough) and the app token must list `gha-agent-pipeline` in `create-github-app-token` `repositories` (see demo `setup-pr-environment`).
+**Repository visibility:** Reusable actions and workflows from another GitHub organization require this repository to be **public** (or the consumer must live in the same org/enterprise). While the repo is private, the consumer’s GitHub App must be **installed on this repo** (Contents read is enough) and the app token must list `gha-agent-pipeline` in `create-github-app-token` `repositories` (see demo `setup-pr-environment`). Making the repo public removes that cross-org restriction; no application secrets are stored in this repository.
 
 ## Development
 
@@ -48,7 +48,7 @@ on:
     types: [submitted]
 jobs:
   dispatch:
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.1.0
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.1.1
     secrets: inherit
 ```
 
@@ -63,7 +63,7 @@ jobs:
           ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.1.0
+      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.1.1
         with:
           phase: ${{ inputs.phase }}
           app_token: ${{ steps.setup.outputs.app_token }}
@@ -73,11 +73,16 @@ jobs:
           head_ref: ${{ inputs.head_ref }}
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
+          node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
+
+**Node version:** `install-agent-pipeline` (via `agent-phase-run`) runs `setup-node` again after your consumer setup step, so pass `node_version` on `agent-phase-run` to match `engines.node` / `.node-version` (default `22` for backward compatibility).
+
+**Pinning:** Internal composites in `agent-phase-run` use the [`$/`](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/) self-repository syntax so they match the tag or SHA you pin on `agent-phase-run`. The pipeline CLI checkout uses the same ref as that pin unless you set `pipeline_ref` explicitly (for example `pipeline_ref: main` to float the runtime on `main` while keeping composite definitions on a release tag).
 
 ```yaml
 # .github/workflows/agent-on-ci-failure.yml (consumer) — thin wrapper
@@ -91,13 +96,13 @@ concurrency:
 jobs:
   ci-fix:
     if: github.event.workflow_run.conclusion == 'failure'
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.1.0
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.1.1
     secrets: inherit
 ```
 
-(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.1.0` when `conclusion == 'success'`.)
+(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.1.1` when `conclusion == 'success'`.)
 
-**Runs and `github.repository` are always the consumer.** Pin `@v0.1.0` (recommended for beta) or another release tag on pipeline actions/workflows.
+**Runs and `github.repository` are always the consumer.** Pin `@v0.1.1` (or another release tag) on pipeline actions/workflows — do not rely on `@main` for consumers.
 
 ## Consumer contract (v0.1)
 
@@ -106,7 +111,7 @@ jobs:
 | Path                                        | Role                                            |
 | ------------------------------------------- | ----------------------------------------------- |
 | `.github/agent.config.yml`                  | Agent config (schema v1)                        |
-| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.1.0`          |
+| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.1.1`          |
 | `.github/workflows/agent-phase.yml`         | **Fixed filename** — target of library dispatch |
 | `.github/workflows/agent-on-ci-failure.yml` | `workflow_run` on failed **`CI`** workflow      |
 | `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
@@ -114,7 +119,7 @@ jobs:
 
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
-**Pin these library refs at `@v0.1.0`**
+**Pin these library refs at `@v0.1.1`**
 
 - `dispatch.yml`
 - `agent-phase-run`
