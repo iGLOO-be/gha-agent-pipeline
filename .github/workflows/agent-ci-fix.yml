@@ -8,6 +8,20 @@ on:
         required: false
         type: string
         default: "3"
+      pipeline_install_token:
+        description: >
+          Token used only to checkout/install the pipeline library.
+          Leave empty to use github.token (suitable for public pipeline repos).
+        required: false
+        type: string
+        default: ""
+      pipeline_repo:
+        description: >
+          Optional pipeline library short repo name to include in App token scope.
+          Leave empty when the pipeline is public and installed via GITHUB_TOKEN.
+        required: false
+        type: string
+        default: ""
     secrets:
       APP_ID:
         required: true
@@ -51,3 +65,5 @@ jobs:
           head_ref: ${{ steps.pr.outputs.head_ref }}
           head_sha: ${{ steps.pr.outputs.head_sha }}
           max_rounds: ${{ inputs.max_rounds }}
+          pipeline_install_token: ${{ inputs.pipeline_install_token }}
+          pipeline_repo: ${{ inputs.pipeline_repo }}
