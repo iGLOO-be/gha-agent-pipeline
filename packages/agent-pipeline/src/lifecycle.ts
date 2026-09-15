@@ -37,9 +37,9 @@ export function buildStartupComment(
   const targetLabel =
     targetType === "pr" ? `PR #${targetNumber}` : `issue #${targetNumber}`;
   const runLink = runUrl
-    ? `[Suivre l'exécution](${runUrl})`
+    ? `[Follow execution](${runUrl})`
     : "(run URL unavailable)";
-  return `${markerFor(AGENT_COMMENT_MARKERS.startup)}\n🚀 **Agent ${phaseLabel}** démarré pour ${targetLabel} — ${runLink}`;
+  return `${markerFor(AGENT_COMMENT_MARKERS.startup)}\n🚀 **Agent ${phaseLabel}** started for ${targetLabel} — ${runLink}`;
 }
 
 export function resolveStartupTarget(

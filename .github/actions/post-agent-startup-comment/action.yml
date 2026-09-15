@@ -37,7 +37,7 @@ runs:
           };
           const phaseLabel = phaseLabels[phase] ?? phase;
           const targetLabel = targetType === 'pr' ? `PR #${targetNumber}` : `issue #${targetNumber}`;
-          const body = `<!-- agent-startup -->\n🚀 **Agent ${phaseLabel}** démarré pour ${targetLabel} — [Suivre l'exécution](${runUrl})`;
+          const body = `<!-- agent-startup -->\n🚀 **Agent ${phaseLabel}** started for ${targetLabel} — [Follow execution](${runUrl})`;
 
           await github.rest.issues.createComment({
             owner: context.repo.owner,
