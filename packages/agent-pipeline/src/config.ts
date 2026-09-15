@@ -384,9 +384,17 @@ export function loadReviewFixEnv(): ReviewFixEnv {
   return parsed.data;
 }
 
+/** GitHub Actions sets unset optional inputs to "" — treat as missing. */
+const optionalEnvPositiveInt = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  return value;
+}, z.coerce.number().int().positive().optional());
+
 const askEnvSchema = envSchema.extend({
   QUESTION: z.string().min(1),
-  PR_NUMBER: z.coerce.number().int().positive().optional(),
+  PR_NUMBER: optionalEnvPositiveInt,
 });
 
 export type AskEnv = z.infer<typeof askEnvSchema>;

@@ -443,6 +443,18 @@ describe("config", () => {
       expect(env.PR_NUMBER).toBe(42);
     });
 
+    it("loads ask env when PR_NUMBER is empty (issue-only ask in GHA)", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "49";
+      process.env.QUESTION = "Summarize the context.";
+      process.env.PR_NUMBER = "";
+
+      const env = loadAskEnv();
+      expect(env.PR_NUMBER).toBeUndefined();
+    });
+
     it("ask env fails without QUESTION", () => {
       process.env.OPENROUTER_API_KEY = "or-key";
       process.env.GITHUB_TOKEN = "gh-token";

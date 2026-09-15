@@ -11,7 +11,7 @@ inputs:
     description: GitHub token with issues and pull-requests write permission.
     required: true
   phase:
-    description: Agent phase that failed (plan, implement, yolo, review-fix, ci-fix).
+    description: Agent phase that failed (plan, implement, yolo, review-fix, ci-fix, ask).
     required: true
   target_type:
     description: Either "issue" or "pr".
@@ -47,6 +47,7 @@ runs:
             yolo: 'Agent Yolo Failed',
             'review-fix': 'Agent Review Fix Failed',
             'ci-fix': 'Agent CI Fix Failed',
+            ask: 'Agent Ask Failed',
           };
 
           const phaseMarkers = {
@@ -55,6 +56,7 @@ runs:
             yolo: '<!-- agent-yolo-failed -->',
             'review-fix': '<!-- agent-review-fix-failed -->',
             'ci-fix': '<!-- agent-ci-fix-failed -->',
+            ask: '<!-- agent-ask-failed -->',
           };
 
           if (!phaseTitles[phase]) {
