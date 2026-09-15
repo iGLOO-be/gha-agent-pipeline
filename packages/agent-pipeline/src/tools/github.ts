@@ -30,6 +30,8 @@ export const AGENT_COMMENT_MARKERS = {
   ciFix: "agent-ci-fix",
   ciSuccess: "agent-ci-success",
   blocked: "agent-blocked",
+  ask: "agent-ask",
+  askFailed: "agent-ask-failed",
 } as const;
 
 /** Lifecycle label applied while an agent phase is running. */

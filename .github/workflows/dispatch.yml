@@ -144,8 +144,11 @@ jobs:
               }
 
               if (isPullRequest) {
-                if (!body.includes('/agent fix')) {
-                  core.info('No /agent fix on PR comment')
+                const isAsk = body.includes('/agent ask')
+                const isFix = body.includes('/agent fix')
+
+                if (!isAsk && !isFix) {
+                  core.info('No /agent ask or /agent fix on PR comment')
                   return
                 }
 
@@ -167,7 +170,6 @@ jobs:
                   return
                 }
 
-                const feedback = body.replace('/agent fix', '').trim() || body
                 const commentId = context.payload.comment.id
 
                 await github.rest.reactions.createForIssueComment({
@@ -176,6 +178,37 @@ jobs:
                   comment_id: commentId,
                   content: 'eyes'
                 })
+
+                if (isAsk) {
+                  const question = body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.'
+                  const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
+                  const res = await fetch(dispatchUrl, {
+                    method: 'POST',
+                    headers: {
+                      authorization: `token ${process.env.ACTIONS_TOKEN}`,
+                      accept: 'application/vnd.github.v3+json',
+                      'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      ref: consumerRef,
+                      inputs: {
+                        phase: 'ask',
+                        comment_id: String(commentId),
+                        issue_number: String(resolved.issueNumber),
+                        pr_number: String(resolved.prNumber),
+                        question,
+                        author_association: authorAssociation
+                      }
+                    })
+                  })
+                  if (!res.ok) {
+                    const text = await res.text()
+                    throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
+                  }
+                  return
+                }
+
+                const feedback = body.replace('/agent fix', '').trim() || body
 
                 await dispatchReviewFix({
                   commentId,
@@ -189,7 +222,9 @@ jobs:
               }
 
               let phase = null
-              if (body.includes('/agent plan')) {
+              if (body.includes('/agent ask')) {
+                phase = 'ask'
+              } else if (body.includes('/agent plan')) {
                 phase = 'plan'
               } else if (body.includes('/agent implement')) {
                 phase = 'implement'
@@ -227,6 +262,8 @@ jobs:
                 content: 'eyes'
               })
 
+              const question = phase === 'ask' ? body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.' : undefined
+
               const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
               const res = await fetch(dispatchUrl, {
                 method: 'POST',
@@ -241,7 +278,8 @@ jobs:
                     phase,
                     comment_id: commentId,
                     issue_number: issueNumber,
-                    author_association: authorAssociation
+                    author_association: authorAssociation,
+                    ...(question != null ? { question } : {})
                   }
                 })
               })

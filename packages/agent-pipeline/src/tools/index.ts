@@ -3,8 +3,10 @@ import { loadClineSdk } from "../cline.js";
 import { readCacheValue, writeCacheValue } from "../state/cache.js";
 import {
   addLabelToIssue,
+  AGENT_COMMENT_MARKERS,
   getPullRequestMergeState,
   postComment,
+  prependAgentMarker,
   readCheckLogs,
   readCheckRuns,
   readComments,
@@ -341,6 +343,85 @@ export async function createReviewFixTools(
   return tools;
 }
 
+export type AnswerCommentTracker = {
+  posted: boolean;
+  id?: number;
+  body?: string;
+};
+
+export async function createAskTools(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  answerComment: AnswerCommentTracker,
+  prNumber?: number,
+) {
+  const { createTool } = await loadClineSdk();
+  const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
+
+  // Remove postComment and addLabel — ask is read-only
+  const readTools = baseTools.filter(
+    (tool) => tool.name !== "postComment" && tool.name !== "addLabel",
+  );
+
+  const submitAnswer = createTool({
+    name: "submitAnswer",
+    description:
+      "Submit the final answer as a GitHub comment. Required on every ask run — the run is incomplete until you call this.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        body: {
+          type: "string",
+          description: "Markdown answer starting with ## Agent answer",
+        },
+      },
+      required: ["body"],
+    },
+    lifecycle: { completesRun: true },
+    async execute(input: { body: string }) {
+      const markedBody = prependAgentMarker(
+        input.body,
+        AGENT_COMMENT_MARKERS.ask,
+      );
+      const comment = await postComment(
+        octokit,
+        owner,
+        repo,
+        issueNumber,
+        markedBody,
+      );
+      answerComment.posted = true;
+      answerComment.id = comment.id;
+      answerComment.body = markedBody;
+      return { id: comment.id, url: comment.html_url };
+    },
+  });
+
+  const tools = [...readTools, submitAnswer];
+
+  // Optionally add PR comment read tools when PR_NUMBER is set
+  if (prNumber != null) {
+    const readPrCommentsTool = createTool({
+      name: "readPrComments",
+      description: "Read all comments on the agent pull request.",
+      inputSchema: { type: "object", properties: {} },
+      async execute() {
+        const comments = await readComments(octokit, owner, repo, prNumber);
+        return comments.map((comment) => ({
+          id: comment.id,
+          author: comment.user?.login ?? "unknown",
+          body: truncateCommentBodyForAgent(comment.body ?? ""),
+          createdAt: comment.created_at,
+        }));
+      },
+    });
+    tools.push(readPrCommentsTool);
+  }
+
+  return tools;
+}
 export const AGENT_TOOL_NAMES = [
   "readIssue",
   "readComments",

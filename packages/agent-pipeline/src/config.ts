@@ -21,6 +21,7 @@ export const agentConfigSchema = z
         implement: z.string().min(1).default("moonshotai/kimi-k2.7-code"),
         "ci-fix": z.string().min(1).default("moonshotai/kimi-k2.7-code"),
         "review-fix": z.string().min(1).default("moonshotai/kimi-k2.7-code"),
+        ask: z.string().min(1).default("deepseek/deepseek-v4-pro"),
       })
       .default({}),
     ci: z
@@ -70,6 +71,14 @@ export const agentConfigSchema = z
               .default("You are a review fix agent for this repository."),
           })
           .default({}),
+        ask: z
+          .object({
+            role_description: z
+              .string()
+              .min(1)
+              .default("You are a Q&A agent for this repository."),
+          })
+          .default({}),
       })
       .default({}),
     app: z
@@ -94,7 +103,7 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type MergeStrategy = AgentConfig["git"]["merge_strategy"];
 
 export type AgentPhase =
-  "plan" | "implement" | "yolo" | "ci-fix" | "review-fix";
+  "plan" | "implement" | "yolo" | "ci-fix" | "review-fix" | "ask";
 
 export function loadAgentConfig(
   configPath = ".github/agent.config.yml",
@@ -226,6 +235,29 @@ After you have finished all edits, add a final block at the very end of your res
 
 Assess the risk by considering: scope/size, code surface area, infrastructure/workflows touched, security implications, and reversibility.`;
 
+function askPromptBody(): string {
+  return `You are an agent in the **ask** phase — a read-only Q&A mode. Your job is to answer a human question about a GitHub issue or an agent pull request using the issue/PR thread and codebase exploration.
+
+CRITICAL — completion rule:
+- You MUST end every run by calling submitAnswer with your answer.
+- Do not finish by replying in chat or summarizing in text.
+- A run that does not call submitAnswer is a failure.
+
+Workflow:
+1. Call readIssue to understand the issue context.
+2. Call readComments to read the full conversation thread.
+3. If a PR_NUMBER is set, use readComments on that PR to read the PR discussion.
+4. Use list_files, read_files, and search_codebase to explore relevant code as needed.
+5. Formulate a clear, concise answer, then call submitAnswer with your answer body in markdown starting with ## Agent answer.
+
+Guidelines:
+- Answer based on the thread context and codebase exploration only.
+- Do not speculate about things you cannot verify from the codebase or thread.
+- Do not modify any files (no editor, no apply_patch).
+- Read AGENTS.md section **Agent ask** if present for additional tone/scope guidance.
+- Keep answers concise and actionable.`;
+}
+
 function reviewFixPromptBody(config: AgentConfig): string {
   return `A human left review feedback on an open agent pull request. Update the code on the existing branch to address the feedback.
 
@@ -256,6 +288,7 @@ const PHASE_PROMPT_BODY: Record<AgentPhase, (config: AgentConfig) => string> = {
   "ci-fix": () => ciFixPromptBody,
   yolo: () => yoloPromptBody,
   "review-fix": reviewFixPromptBody,
+  ask: () => askPromptBody(),
 };
 
 export function getAppName(config?: AgentConfig): string {
@@ -287,6 +320,7 @@ export const IMPLEMENT_MODEL = agentConfig.models.implement;
 export const YOLO_MODEL = IMPLEMENT_MODEL;
 export const CI_FIX_MODEL = agentConfig.models["ci-fix"];
 export const REVIEW_FIX_MODEL = agentConfig.models["review-fix"];
+export const ASK_MODEL = agentConfig.models.ask;
 export const DEFAULT_MERGE_STRATEGY = agentConfig.git.merge_strategy;
 
 export function getCiMaxRounds(): number {
@@ -346,6 +380,22 @@ export function loadReviewFixEnv(): ReviewFixEnv {
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Missing or invalid review-fix environment: ${missing}`);
+  }
+  return parsed.data;
+}
+
+const askEnvSchema = envSchema.extend({
+  QUESTION: z.string().min(1),
+  PR_NUMBER: z.coerce.number().int().positive().optional(),
+});
+
+export type AskEnv = z.infer<typeof askEnvSchema>;
+
+export function loadAskEnv(): AskEnv {
+  const parsed = askEnvSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
+    throw new Error(`Missing or invalid ask environment: ${missing}`);
   }
   return parsed.data;
 }

@@ -10,6 +10,7 @@ import {
   IMPLEMENT_MODEL,
   loadAgentConfig,
   loadAgentEnv,
+  loadAskEnv,
   loadCiFixEnv,
   loadReviewFixEnv,
   parseRepository,
@@ -28,6 +29,7 @@ const ENV_KEYS = [
   "HEAD_SHA",
   "AGENT_BRANCH",
   "REVIEW_FEEDBACK",
+  "QUESTION",
   "CI_MAX_ROUNDS",
   "AGENT_MODEL_PLAN",
   "AGENT_MODEL_IMPLEMENT",
@@ -405,6 +407,49 @@ describe("config", () => {
       const prompt = buildPhaseSystemPrompt("review-fix", config);
       expect(prompt).toContain("submitPhaseReport");
       expect(prompt).toContain("Agent phase report");
+    });
+    it("includes submitAnswer in ask prompt", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("ask", config);
+      expect(prompt).toContain("submitAnswer");
+      expect(prompt).toContain("## Agent answer");
+    });
+  });
+
+  describe("ask phase", () => {
+    it("has no write tools in tool policies", () => {
+      const policies = buildToolPolicies("ask", []);
+      expect(policies.editor).toBeUndefined();
+      expect(policies.apply_patch).toBeUndefined();
+    });
+
+    it("has read tools in tool policies", () => {
+      const policies = buildToolPolicies("ask", []);
+      expect(policies.read_files).toEqual({ autoApprove: true });
+      expect(policies.search_codebase).toEqual({ autoApprove: true });
+    });
+
+    it("loads ask env with QUESTION required", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+      process.env.QUESTION = "What does this code do?";
+      process.env.PR_NUMBER = "42";
+
+      const env = loadAskEnv();
+      expect(env.QUESTION).toBe("What does this code do?");
+      expect(env.ISSUE_NUMBER).toBe(88);
+      expect(env.PR_NUMBER).toBe(42);
+    });
+
+    it("ask env fails without QUESTION", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+
+      expect(() => loadAskEnv()).toThrow(/Missing or invalid ask environment/);
     });
   });
 

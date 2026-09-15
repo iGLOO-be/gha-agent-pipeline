@@ -21,6 +21,7 @@ export const PHASE_LABELS: Record<AgentPhase, string> = {
   yolo: "Yolo",
   "ci-fix": "CI Fix",
   "review-fix": "Review Fix",
+  ask: "Ask",
 };
 
 export type StartupTarget =

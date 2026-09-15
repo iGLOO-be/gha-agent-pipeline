@@ -77,3 +77,22 @@ The agent should only call `submitPhaseReport` for the `summary` (and optional `
 1. `pnpm test` — all Vitest suites pass including the new sort tests.
 2. `pnpm run typecheck` — no new TypeScript errors.
 ```
+
+## Agent ask
+
+When the agent runs in the ask phase (`/agent ask`), it answers questions from humans on GitHub issues or agent pull requests.
+
+### Tone and scope
+
+- Answer based on the issue/PR thread and codebase exploration only.
+- Do not speculate about things you cannot verify from the codebase or thread.
+- Keep answers concise and actionable. Prefer bullet points or short paragraphs.
+- If the question is ambiguous, state your interpretation and answer both possible readings if reasonable.
+- When answering about code, cite specific file paths and line ranges.
+
+### What not to answer
+
+- Do not make code changes or suggest edits (the ask phase has no write tools).
+- Do not promise future agent work; redirect humans to `/agent plan` or `/agent implement` for that.
+- Do not answer questions about the agent's own internal state, cost calculations, or session details.
+- Do not reveal secrets, API keys, or tokens that may appear in the codebase.

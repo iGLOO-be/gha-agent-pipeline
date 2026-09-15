@@ -4,12 +4,19 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-const phases = new Set(["plan", "implement", "yolo", "ci-fix", "review-fix"]);
+const phases = new Set([
+  "plan",
+  "implement",
+  "yolo",
+  "ci-fix",
+  "review-fix",
+  "ask",
+]);
 
 const phase = process.argv[2];
 if (!phase || !phases.has(phase)) {
   console.error(
-    "Usage: agent-pipeline <plan|implement|yolo|ci-fix|review-fix>",
+    "Usage: agent-pipeline <plan|implement|yolo|ci-fix|review-fix|ask>",
   );
   process.exit(1);
 }

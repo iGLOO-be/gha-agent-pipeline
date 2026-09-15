@@ -78,6 +78,12 @@
           "minLength": 1,
           "description": "Model used for the /agent fix (review) phase.",
           "default": "moonshotai/kimi-k2.7-code"
+        },
+        "ask": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for the /agent ask phase.",
+          "default": "deepseek/deepseek-v4-pro"
         }
       },
       "default": {}
@@ -142,6 +148,18 @@
               "minLength": 1,
               "description": "Role description for the review-fix phase.",
               "default": "You are a review fix agent for this repository."
+            }
+          },
+          "default": {}
+        },
+        "ask": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the ask phase.",
+              "default": "You are a Q&A agent for this repository."
             }
           },
           "default": {}
