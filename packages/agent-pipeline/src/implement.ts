@@ -155,7 +155,6 @@ Branch: ${branch}`,
       "",
       formatPhaseCompletionMarkdown({
         phase: "implement",
-        statusLine: `Pull request [#${pr.number}](${pr.url}) created.`,
         phaseReport,
         sessionUsage: session.usage,
         sessionId: session.sessionId,

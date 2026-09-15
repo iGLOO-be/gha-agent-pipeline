@@ -124,7 +124,7 @@ export function formatPhaseReportForPr(report: PhaseReport): string {
   const lines: string[] = [
     "",
     PHASE_REPORT_MARKER,
-    "## Implementation",
+    "### Implementation",
     "",
     report.summary,
   ];
@@ -159,8 +159,9 @@ export function formatPhaseReportForComment(report: PhaseReport): string {
 
 export interface FormatPhaseCompletionOptions {
   phase: AgentPhase;
-  /** Status line summarizing the runner outcome (e.g. "Pushed a CI fix commit"). */
-  statusLine: string;
+  /** Status line summarizing the runner outcome (e.g. "Pushed a CI fix commit").
+   * Omit to suppress the status line (the caller may provide its own wrapper). */
+  statusLine?: string;
   /** Optional phase report from submitPhaseReport tool (agent-provided business summary). */
   phaseReport?: PhaseReport;
   /** Session usage for run metrics (omits metrics section when undefined). */
@@ -181,7 +182,8 @@ export interface FormatPhaseCompletionOptions {
  * Build a unified end-of-phase markdown block suitable for PR comments
  * (ci-fix, review-fix) or issue completion comments (implement, yolo).
  *
- * Always emits the phase marker + title and a status line. The agent
+ * Always emits the phase marker + title. The status line is optional
+ * (omitted when the caller provides its own wrapper). The agent
  * business report (summary/testPlan) and runner-owned metrics + friction
  * are injected when available.
  */
@@ -193,8 +195,12 @@ export function formatPhaseCompletionMarkdown(
     PHASE_REPORT_MARKER,
     `## Agent phase report (${phaseLabel})`,
     "",
-    opts.statusLine,
   ];
+
+  // Status line (omitted when caller provides its own wrapper)
+  if (opts.statusLine) {
+    sections.push(opts.statusLine);
+  }
 
   // Agent business summary
   if (opts.phaseReport) {

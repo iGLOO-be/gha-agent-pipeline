@@ -55,7 +55,7 @@ describe("phase-report", () => {
       };
       const output = formatPhaseReportForPr(report);
       expect(output).toContain("<!-- agent-phase-report -->");
-      expect(output).toContain("## Implementation");
+      expect(output).toContain("### Implementation");
       expect(output).toContain("Added widget sort utility.");
     });
 
@@ -248,6 +248,20 @@ describe("phase-report", () => {
       expect(output).not.toContain("### Run metrics");
       expect(output).not.toContain("### Run friction");
       expect(output).not.toContain("### Test plan");
+    });
+
+    it("omits statusLine when not provided", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "implement",
+        phaseReport: { summary: "Built feature." },
+      });
+
+      expect(output).toContain("<!-- agent-phase-report -->");
+      expect(output).toContain("## Agent phase report (Implement)");
+      expect(output).toContain("Built feature.");
+      // Should NOT contain any status line text; the caller wraps it.
+      expect(output).not.toContain("Pull request");
+      expect(output).not.toContain("Pushed");
     });
   });
 });
