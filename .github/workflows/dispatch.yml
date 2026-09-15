@@ -159,8 +159,8 @@ jobs:
                 if (busy.busy) {
                   core.info(`Agent already working on issue #${resolved.issueNumber}; skipping /agent fix dispatch`)
                   const busyBody = busy.runUrl
-                    ? `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**\n\n🔗 [Suivre l'exécution en cours](${busy.runUrl})`
-                    : `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**`
+                    ? `🚫 **An agent is already working on this issue (#${resolved.issueNumber}).**\n\n🔗 [Follow current execution](${busy.runUrl})`
+                    : `🚫 **An agent is already working on this issue (#${resolved.issueNumber}).**`
                   await github.rest.issues.createComment({
                     owner,
                     repo,
@@ -244,8 +244,8 @@ jobs:
               if (busy.busy) {
                 core.info(`Agent already working on issue #${issueNumber}; skipping dispatch`)
                 const busyBody = busy.runUrl
-                  ? `🚫 **Un agent travaille déjà sur cette issue (#${issueNumber}).**\n\n🔗 [Suivre l'exécution en cours](${busy.runUrl})`
-                  : `🚫 **Un agent travaille déjà sur cette issue (#${issueNumber}).**`
+                  ? `🚫 **An agent is already working on this issue (#${issueNumber}).**\n\n🔗 [Follow current execution](${busy.runUrl})`
+                  : `🚫 **An agent is already working on this issue (#${issueNumber}).**`
                 await github.rest.issues.createComment({
                   owner,
                   repo,
@@ -314,8 +314,8 @@ jobs:
               if (busy.busy) {
                 core.info(`Agent already working on issue #${resolved.issueNumber}; skipping /agent fix dispatch`)
                 const busyBody = busy.runUrl
-                  ? `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**\n\n🔗 [Suivre l'exécution en cours](${busy.runUrl})`
-                  : `🚫 **Un agent travaille déjà sur cette issue (#${resolved.issueNumber}).**`
+                  ? `🚫 **An agent is already working on this issue (#${resolved.issueNumber}).**\n\n🔗 [Follow current execution](${busy.runUrl})`
+                  : `🚫 **An agent is already working on this issue (#${resolved.issueNumber}).**`
                 await github.rest.issues.createComment({
                   owner,
                   repo,
