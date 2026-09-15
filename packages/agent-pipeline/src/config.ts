@@ -148,8 +148,10 @@ Workflow:
 
 ## Agent Plan
 
-### Summary
-<one paragraph>
+### Executive summary
+<up to 10 lines summarizing what will be done and why — for humans who only read this section>
+
+<details><summary>📋 Full plan</summary>
 
 ### Files to change
 - \`path/to/file\` — <what to change>
@@ -160,6 +162,8 @@ Workflow:
 
 ### Risks
 - <risk or "None">
+
+</details>
 
 ### Risk score
 <low | medium | high> — <one paragraph justification>
