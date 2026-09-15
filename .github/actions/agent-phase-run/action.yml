@@ -7,7 +7,7 @@ description: |
   (package manager, Node version, checkout ref, token generation).
 inputs:
   phase:
-    description: Agent phase to run (plan, implement, yolo, review-fix).
+    description: Agent phase to run (plan, implement, yolo, review-fix, ask).
     required: true
   app_token:
     description: >
@@ -32,6 +32,9 @@ inputs:
     required: false
   reaction_target:
     description: issue_comment or pull_request_review (required for review-fix).
+    required: false
+  question:
+    description: Question text for the ask phase.
     required: false
   pipeline_ref:
     description: Git ref of the pipeline library to install.
@@ -60,12 +63,13 @@ runs:
         GITHUB_TOKEN: ${{ inputs.app_token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         ISSUE_NUMBER: ${{ inputs.issue_number }}
-        PR_NUMBER: ${{ inputs.phase == 'review-fix' && inputs.pr_number || '' }}
+        PR_NUMBER: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.phase == 'ask' && inputs.pr_number || '' }}
         AGENT_BRANCH: ${{ inputs.phase == 'review-fix' && inputs.head_ref || '' }}
         REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
+        QUESTION: ${{ inputs.phase == 'ask' && inputs.question || '' }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
-        SUCCESS_REACTION: ${{ inputs.phase == 'plan' && '+1' || 'rocket' }}
+        SUCCESS_REACTION: ${{ inputs.phase == 'plan' && '+1' || inputs.phase == 'ask' && 'rocket' || 'rocket' }}
       run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
 
     - name: Fallback failure comment
