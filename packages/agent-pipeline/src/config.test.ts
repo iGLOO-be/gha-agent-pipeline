@@ -317,6 +317,22 @@ describe("config", () => {
   });
 
   describe("prompts", () => {
+    it("plan prompt requires an executive summary", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("plan", config);
+      expect(prompt).toContain("Executive summary");
+      expect(prompt).toContain(
+        "up to 10 lines summarizing what will be done and why",
+      );
+    });
+
+    it("plan prompt wraps detailed sections in a <details> block", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("plan", config);
+      expect(prompt).toContain("<details><summary>📋 Full plan</summary>");
+      expect(prompt).toContain("</details>");
+    });
+
     it("uses generic role descriptions by default", () => {
       const config = loadAgentConfig(join(tempDir, "missing.yml"));
       const prompt = buildPhaseSystemPrompt("plan", config);

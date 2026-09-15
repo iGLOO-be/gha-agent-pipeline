@@ -12,6 +12,7 @@ import {
   hasAgentMarkerInComments,
   markerFor,
   normalizeAgentPlanBody,
+  parseRiskLevel,
   prependAgentMarker,
   readComments,
   unescapeToolString,
@@ -73,6 +74,16 @@ describe("tools/github", () => {
       expect(normalizeAgentPlanBody(input)).toBe("## Agent Plan\n\nstep");
     });
 
+    it("preserves <details> HTML tags", () => {
+      const input =
+        "## Agent Plan\n\n### Executive summary\nTL;DR\n\n<details><summary>Full plan</summary>\n\n### Files to change\n- foo.ts\n\n</details>\n\n### Risk score\nlow";
+      const result = normalizeAgentPlanBody(input);
+      expect(result).toContain("<details><summary>Full plan</summary>");
+      expect(result).toContain("</details>");
+      expect(result).toContain("### Executive summary");
+      expect(result).toContain("### Risk score\nlow");
+    });
+
     it("leaves already-normal bodies unchanged", () => {
       const input = "## Agent Plan\nstep";
       expect(normalizeAgentPlanBody(input)).toBe(input);
@@ -88,6 +99,16 @@ describe("tools/github", () => {
     it("extracts a Revised Agent Plan section", () => {
       const text = "intro\n## Revised Agent Plan\n\n- step";
       expect(extractAgentPlan(text)).toBe("## Agent Plan\n- step");
+    });
+
+    it("extracts an Agent Plan section that contains <details> blocks", () => {
+      const text =
+        "intro\n## Agent Plan\n\n### Executive summary\nTL;DR\n\n<details><summary>Full plan</summary>\n\n### Files to change\n- foo.ts\n\n</details>\n\n### Risk score\nlow\n";
+      const result = extractAgentPlan(text);
+      expect(result).toContain("<details><summary>Full plan</summary>");
+      expect(result).toContain("</details>");
+      expect(result).toContain("### Executive summary");
+      expect(result).toContain("### Risk score\nlow");
     });
 
     it("returns null when no plan section is present", () => {
@@ -436,6 +457,30 @@ describe("tools/github", () => {
       );
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe("parseRiskLevel", () => {
+    it("parses risk level from a plan with <details> blocks", () => {
+      const plan =
+        "## Agent Plan\n\n### Executive summary\nTL;DR\n\n<details><summary>Full plan</summary>\n\n### Files to change\n- foo.ts\n\n</details>\n\n### Risk score\nmedium — moderate risk\n";
+      expect(parseRiskLevel(plan)).toBe("medium");
+    });
+
+    it("parses low risk level", () => {
+      expect(
+        parseRiskLevel("## Agent Plan\n\n### Risk score\nlow — safe change"),
+      ).toBe("low");
+    });
+
+    it("parses high risk level", () => {
+      expect(
+        parseRiskLevel("## Agent Plan\n\n### Risk score\nhigh — dangerous"),
+      ).toBe("high");
+    });
+
+    it("returns null when no risk score section is present", () => {
+      expect(parseRiskLevel("## Agent Plan\n\njust a plan")).toBeNull();
     });
   });
 });
