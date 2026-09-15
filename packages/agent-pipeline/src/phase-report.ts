@@ -118,16 +118,12 @@ export async function createSubmitPhaseReportTool(tracker: PhaseReportTracker) {
 
 /**
  * Format the phase report for inclusion in a PR body (implement / yolo).
- * Returns the markdown section ready to append.
+ * Emits the marker and the agent-provided summary (which should include its
+ * own heading per AGENTS.md). Does not inject a heading — the PR body
+ * already provides the structural `## 🤖 Agent PR` heading.
  */
 export function formatPhaseReportForPr(report: PhaseReport): string {
-  const lines: string[] = [
-    "",
-    PHASE_REPORT_MARKER,
-    "### Implementation",
-    "",
-    report.summary,
-  ];
+  const lines: string[] = ["", PHASE_REPORT_MARKER, "", report.summary];
 
   if (report.testPlan) {
     lines.push("", "### Test plan", "", report.testPlan);
