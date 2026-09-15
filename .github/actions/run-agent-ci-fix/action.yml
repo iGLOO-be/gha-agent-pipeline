@@ -41,6 +41,20 @@ inputs:
       this composite when invoked from a tagged library workflow; override explicitly if needed.
     required: false
     default: ""
+  pipeline_install_token:
+    description: >
+      Token used only to checkout/install the pipeline library.
+      Leave empty to use github.token (suitable for public pipeline repos).
+      Set explicitly when the pipeline repo is private and requires the App token.
+    required: false
+    default: ""
+  pipeline_repo:
+    description: >
+      Optional pipeline library short repo name to include in App token scope.
+      Leave empty when the pipeline is public and installed via GITHUB_TOKEN.
+      Required only when the pipeline is private and the App must access it.
+    required: false
+    default: ""
   node_version:
     description: Node.js version for pipeline install and agent CLI steps (match consumer engines).
     required: false
@@ -57,12 +71,13 @@ runs:
         setup_environment: "true"
         app_id: ${{ inputs.app_id }}
         app_private_key: ${{ inputs.app_private_key }}
+        pipeline_repo: ${{ inputs.pipeline_repo }}
 
     - name: Install agent pipeline
       id: pipeline
       uses: $/.github/actions/install-agent-pipeline
       with:
-        token: ${{ steps.setup.outputs.app_token }}
+        token: ${{ inputs.pipeline_install_token != '' && inputs.pipeline_install_token || github.token }}
         pipeline_repository: ${{ inputs.pipeline_repository }}
         pipeline_ref: ${{ inputs.pipeline_ref != '' && inputs.pipeline_ref || github.action_ref || 'main' }}
         node_version: ${{ inputs.node_version }}

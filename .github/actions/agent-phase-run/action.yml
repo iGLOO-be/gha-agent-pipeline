@@ -12,9 +12,16 @@ inputs:
   app_token:
     description: >
       GitHub App token produced by the consumer's setup step
-      (e.g. steps.setup.outputs.app_token). Used for pipeline checkout and all
-      GitHub API operations.
+      (e.g. steps.setup.outputs.app_token). Used for all GitHub API
+      operations (labels, comments, agent GITHUB_TOKEN).
     required: true
+  pipeline_install_token:
+    description: >
+      Token used only to checkout/install the pipeline library.
+      Leave empty to use github.token (suitable for public pipeline repos).
+      Set explicitly when the pipeline repo is private and requires the App token.
+    required: false
+    default: ""
   comment_id:
     description: Comment or review ID that triggered the workflow.
     required: true
@@ -59,7 +66,7 @@ runs:
       id: pipeline
       uses: $/.github/actions/install-agent-pipeline
       with:
-        token: ${{ inputs.app_token }}
+        token: ${{ inputs.pipeline_install_token != '' && inputs.pipeline_install_token || github.token }}
         pipeline_ref: ${{ inputs.pipeline_ref != '' && inputs.pipeline_ref || github.action_ref || 'main' }}
         pipeline_repository: ${{ inputs.pipeline_repository }}
         node_version: ${{ inputs.node_version }}

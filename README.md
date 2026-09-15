@@ -166,7 +166,44 @@ HttpError: Resource not accessible by integration
   at readCheckRuns (packages/agent-pipeline/src/tools/github.ts)
 ```
 
-After changing app permissions, accept the updated installation request on each consumer repo. Same-org consumers often include `gha-agent-pipeline` in the app token `repositories` list for checkout (optional now that the library is public) — see demo `setup-pr-environment`.
+After changing app permissions, accept the updated installation request on each consumer repo.
+
+### Deployment models
+
+The pipeline supports two deployment models depending on repository visibility and App installation scope:
+
+**Model A: Public pipeline + app on consumer only (default)**
+
+This is the default for consumers using the public `iGLOO-be/gha-agent-pipeline` library. The GitHub App is installed **only on the consumer repo**. The workflow `GITHUB_TOKEN` suffices to checkout the public pipeline, while the App token is reserved for privileged consumer operations (branches, commits, issues, PRs, labels).
+
+- No extra configuration required — the new defaults handle this.
+- `pipeline_install_token` is left empty (falls back to `github.token`).
+- `pipeline_repo` is left empty in `setup-pr-environment`.
+
+**Model B: Private pipeline fork + app on both repos**
+
+When the pipeline library is a **private fork**, the GitHub App must be installed on both the consumer repo and the pipeline fork. In this model:
+
+- Pass `pipeline_repo: <your-fork-name>` to `setup-pr-environment` (or `agent-ci-fix.yml`) so the App token includes the fork in its repository scope.
+- Optionally pass `pipeline_install_token` if the install step also needs the App token (typically unnecessary when using the same App for both repos — the `install-agent-pipeline` step will reuse `github.token` for public repos).
+
+Example consumer `agent-phase.yml` for Model B:
+
+```yaml
+- uses: ./.github/actions/setup-pr-environment
+  with:
+    ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
+    app_id: ${{ secrets.APP_ID }}
+    app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+    pipeline_repo: gha-agent-pipeline # include if pipeline is private
+- uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.0
+  with:
+    phase: ${{ inputs.phase }}
+    app_token: ${{ steps.setup.outputs.app_token }}
+    comment_id: ${{ inputs.comment_id }}
+    issue_number: ${{ inputs.issue_number }}
+    pipeline_install_token: ${{ steps.setup.outputs.app_token }} # only if pipeline is private
+```
 
 The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gitignored; agent commits must not include that path (runtime excludes it from `git add`).
 

@@ -17,9 +17,12 @@ inputs:
     description: GitHub App private key for authentication
     required: true
   pipeline_repo:
-    description: Private pipeline library repo name (same org) included in the app token for checkout
+    description: >
+      Optional pipeline library repo name to include in the App token scope.
+      Leave empty when the pipeline is public and installed via GITHUB_TOKEN.
+      When set, the repo is added to the token's repository list for checkout.
     required: false
-    default: gha-agent-pipeline
+    default: ""
 
 outputs:
   app_token:
@@ -38,7 +41,7 @@ runs:
         owner: ${{ github.repository_owner }}
         repositories: |
           ${{ github.event.repository.name }}
-          ${{ inputs.pipeline_repo }}
+          ${{ inputs.pipeline_repo != '' && inputs.pipeline_repo || '' }}
 
     - name: Checkout code
       uses: actions/checkout@v4
