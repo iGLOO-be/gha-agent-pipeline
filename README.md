@@ -15,7 +15,7 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 **This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflow, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
 
-**Repository visibility:** Reusable actions and workflows from another GitHub organization require this repository to be **public** (or the consumer must live in the same org/enterprise). While the repo is private, the consumer’s GitHub App must be **installed on this repo** (Contents read is enough) and the app token must list `gha-agent-pipeline` in `create-github-app-token` `repositories` (see demo `setup-pr-environment`). Making the repo public removes that cross-org restriction; no application secrets are stored in this repository.
+**Repository visibility:** This repository is **public** so consumers in other GitHub organizations can use `iGLOO-be/gha-agent-pipeline/...` actions and reusable workflows. No application secrets are stored here. For a **private fork** of the library, the consumer’s GitHub App must be installed on that fork (Contents read) and the fork must appear in `create-github-app-token` `repositories` (see demo `setup-pr-environment`).
 
 ## Development
 
@@ -166,7 +166,7 @@ HttpError: Resource not accessible by integration
   at readCheckRuns (packages/agent-pipeline/src/tools/github.ts)
 ```
 
-After changing app permissions, accept the updated installation request on each repo (including **`gha-agent-pipeline`**) and keep this repo in the app token `repositories` list — see `setup-pr-environment`.
+After changing app permissions, accept the updated installation request on each consumer repo. Same-org consumers often include `gha-agent-pipeline` in the app token `repositories` list for checkout (optional now that the library is public) — see demo `setup-pr-environment`.
 
 The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gitignored; agent commits must not include that path (runtime excludes it from `git add`).
 
