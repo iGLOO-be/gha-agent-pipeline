@@ -55,7 +55,6 @@ describe("phase-report", () => {
       };
       const output = formatPhaseReportForPr(report);
       expect(output).toContain("<!-- agent-phase-report -->");
-      expect(output).toContain("## Implementation");
       expect(output).toContain("Added widget sort utility.");
     });
 
@@ -248,6 +247,28 @@ describe("phase-report", () => {
       expect(output).not.toContain("### Run metrics");
       expect(output).not.toContain("### Run friction");
       expect(output).not.toContain("### Test plan");
+    });
+
+    it("omits statusLine when not provided", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "implement",
+        phaseReport: { summary: "Built feature." },
+      });
+
+      expect(output).toContain("<!-- agent-phase-report -->");
+      expect(output).toContain("## Agent phase report (Implement)");
+      expect(output).toContain("Built feature.");
+      // The heading must be followed directly by the summary (blank line
+      // separation only), with no status line text in between.
+      const lines = output.split("\n");
+      const headingIdx = lines.findIndex((l) =>
+        l.includes("## Agent phase report (Implement)"),
+      );
+      expect(headingIdx).toBeGreaterThanOrEqual(0);
+      const nextNonEmpty = lines
+        .slice(headingIdx + 1)
+        .find((l) => l.trim().length > 0);
+      expect(nextNonEmpty).toBe("Built feature.");
     });
   });
 });

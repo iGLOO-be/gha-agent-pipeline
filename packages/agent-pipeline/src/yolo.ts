@@ -178,7 +178,6 @@ Branch: ${branch}`,
       "",
       formatPhaseCompletionMarkdown({
         phase: "yolo",
-        statusLine: `Pull request [#${pr.number}](${pr.url}) created.`,
         phaseReport,
         sessionUsage: session.usage,
         sessionId: session.sessionId,

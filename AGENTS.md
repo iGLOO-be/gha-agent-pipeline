@@ -66,7 +66,7 @@ The agent should only call `submitPhaseReport` for the `summary` (and optional `
 ### Example
 
 ```
-## Implementation
+### Implementation
 
 - Added `widgetSort` to `src/widgets/sort.ts` — handles ASC / DESC with locale-aware comparisons.
 - Patched `src/widgets/index.ts` to export the new sort utility.
@@ -77,6 +77,8 @@ The agent should only call `submitPhaseReport` for the `summary` (and optional `
 1. `pnpm test` — all Vitest suites pass including the new sort tests.
 2. `pnpm run typecheck` — no new TypeScript errors.
 ```
+
+Agent summaries submitted via `submitPhaseReport` must use `###` headings or lower; never emit top-level `##` headings — the runner provides the structural heading. Similarly, do not emit `### Run metrics` or `### Run friction` sections; those are injected automatically by the runner.
 
 ## Agent ask
 

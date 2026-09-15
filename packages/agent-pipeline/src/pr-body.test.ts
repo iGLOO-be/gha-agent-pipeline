@@ -95,11 +95,11 @@ describe("pr-body", () => {
       issueTitle: "Issue",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
       phaseReportMarkdown:
-        "<!-- agent-phase-report -->\n## Implementation\n\nSummary text.",
+        "<!-- agent-phase-report -->\n\n### Implementation\n\nSummary text.",
     });
 
     expect(body).toContain("<!-- agent-phase-report -->");
-    expect(body).toContain("## Implementation");
+    expect(body).toContain("### Implementation");
     expect(body).toContain("Summary text.");
   });
 
@@ -111,6 +111,6 @@ describe("pr-body", () => {
     });
 
     expect(body).not.toContain("<!-- agent-phase-report -->");
-    expect(body).not.toContain("## Implementation\n");
+    expect(body).not.toContain("### Implementation\n");
   });
 });
