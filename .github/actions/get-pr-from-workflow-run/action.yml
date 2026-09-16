@@ -33,7 +33,27 @@ runs:
       id: read-config
       shell: bash
       run: |
-        PREFIX=$(grep -oP 'branch_prefix:\s*\K\S+' .github/agent.config.yml 2>/dev/null || echo agent)
+        PREFIX="agent"
+        if [ -f .github/agent.config.yml ]; then
+          PARSED=$(node -e "
+            const fs = require('fs');
+            try {
+              const content = fs.readFileSync('.github/agent.config.yml', 'utf8');
+              const match = content.match(/^\s*branch_prefix:\s*(.+)$/m);
+              if (match) {
+                const val = match[1].trim().replace(/^['\"]|['\"]$/g, '');
+                process.stdout.write(val || 'agent');
+              } else {
+                process.stdout.write('agent');
+              }
+            } catch {
+              process.stdout.write('agent');
+            }
+          ")
+          if [ -n "$PARSED" ]; then
+            PREFIX="$PARSED"
+          fi
+        fi
         echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
 
     - name: Resolve agent PR
@@ -44,7 +64,7 @@ runs:
       with:
         script: |
           const prefix = process.env.AGENT_BRANCH_PREFIX || 'agent'
-          const prefixEscaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
           const run = context.payload.workflow_run
           const headBranch = run.head_branch || ''
@@ -80,7 +100,7 @@ runs:
             return
           }
 
-          const match = headBranch.match(new RegExp('^' + prefixEscaped + '/(\\d+)-'))
+          const match = headBranch.match(new RegExp('^' + escapedPrefix + '/(\\d+)-'))
           if (!match) {
             core.setOutput('skip', 'true')
             core.info(`Could not parse issue number from branch ${headBranch}`)
