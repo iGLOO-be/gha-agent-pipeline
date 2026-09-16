@@ -84,8 +84,12 @@ jobs:
                 pull_number: prNumber
               })
               if (!pr.head.ref.startsWith('agent/')) {
-                core.info(`Skipping non-agent PR branch: ${pr.head.ref}`)
-                return null
+                core.info(`Non-agent PR branch: ${pr.head.ref}; treating PR #${pr.number} as both issue and PR`)
+                return {
+                  prNumber: pr.number,
+                  issueNumber: pr.number,
+                  headRef: pr.head.ref
+                }
               }
               const match = pr.head.ref.match(/^agent\/(\d+)-/)
               if (!match) {
