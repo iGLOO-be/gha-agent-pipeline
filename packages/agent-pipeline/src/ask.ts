@@ -6,10 +6,14 @@ import {
   parseRepository,
   ASK_MODEL,
 } from "./config.js";
-import { safeFormatUsageMarkdown } from "./gha-log.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
+import {
+  appendRunFrictionStepSummary,
+  createRunFrictionCollector,
+} from "./run-friction.js";
+import { formatPhaseCompletionMarkdown } from "./phase-report.js";
 import {
   AGENT_COMMENT_MARKERS,
   createOctokit,
@@ -20,6 +24,7 @@ import {
   updateComment,
 } from "./tools/github.js";
 import { createAskTools, type AnswerCommentTracker } from "./tools/index.js";
+import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 
 async function main() {
   const env = loadAskEnv();
@@ -31,15 +36,19 @@ async function main() {
     const issue = await readIssue(octokit, owner, repo, env.ISSUE_NUMBER);
     const comments = await readComments(octokit, owner, repo, env.ISSUE_NUMBER);
     const conversation = formatCommentsForPrompt(comments);
+    const runFriction = createRunFrictionCollector();
     const answerComment: AnswerCommentTracker = { posted: false };
 
-    const tools = await createAskTools(
-      octokit,
-      owner,
-      repo,
-      env.ISSUE_NUMBER,
-      answerComment,
-      env.PR_NUMBER,
+    const tools = await withReportRunFrictionTool(
+      await createAskTools(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        answerComment,
+        env.PR_NUMBER,
+      ),
+      runFriction,
     );
 
     const question = env.QUESTION;
@@ -52,6 +61,7 @@ async function main() {
       modelId: ASK_MODEL,
       systemPrompt: buildPhaseSystemPrompt("ask", config),
       tools,
+      runFriction,
       sessionMetadata: {
         phase: "ask",
         issueNumber: env.ISSUE_NUMBER,
@@ -70,6 +80,8 @@ ${prContext}
 Question: ${question}`,
     });
 
+    appendRunFrictionStepSummary(runFriction, "ask");
+
     await ensureAnswerCommentPosted(
       octokit,
       owner,
@@ -79,24 +91,40 @@ Question: ${question}`,
       answerComment,
     );
 
-    const usageSection = safeFormatUsageMarkdown(session.usage, {
-      heading: "### Usage (ask run)",
+    // Build a unified comment: marker + Question + answer + completion block
+    const completionBlock = formatPhaseCompletionMarkdown({
+      phase: "ask",
+      sessionUsage: session.usage,
       sessionId: session.sessionId,
       modelId: session.modelId,
       iterations: session.iterations,
       toolCallsCount: session.toolCallsCount,
+      runFriction,
+      collapsibleMetrics: true,
     });
-    if (usageSection && answerComment.id && answerComment.body) {
+
+    if (answerComment.id && answerComment.body) {
       try {
-        await updateComment(
-          octokit,
-          owner,
-          repo,
-          answerComment.id,
-          answerComment.body + "\n\n" + usageSection,
-        );
+        const markerLine = "<!-- agent-ask -->";
+        let answerContent = answerComment.body;
+        if (answerContent.startsWith(markerLine)) {
+          answerContent = answerContent.slice(markerLine.length).trimStart();
+        }
+        const newBody = [
+          markerLine,
+          "",
+          "**Question:** " + question,
+          "",
+          answerContent,
+          "",
+          completionBlock,
+        ].join("\n");
+        await updateComment(octokit, owner, repo, answerComment.id, newBody);
       } catch (error) {
-        console.warn("Failed to append usage to answer comment:", error);
+        console.warn(
+          "Failed to append completion block to answer comment:",
+          error,
+        );
       }
     }
 

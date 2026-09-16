@@ -172,6 +172,10 @@ export interface FormatPhaseCompletionOptions {
   toolCallsCount?: number;
   /** Run friction collector for the run friction section. */
   runFriction?: RunFrictionCollector;
+  /** When true, wraps the ### Run metrics section in a
+   * <details><summary>Run metrics</summary>…</details> block
+   * for collapsibility in GitHub comments. Defaults to false. */
+  collapsibleMetrics?: boolean;
 }
 
 /**
@@ -218,7 +222,25 @@ export function formatPhaseCompletionMarkdown(
       toolCallsCount: opts.toolCallsCount,
     });
     if (usageMd) {
-      sections.push("", usageMd);
+      if (opts.collapsibleMetrics) {
+        // Wrap in <details> for collapsibility. The usage markdown starts
+        // with a leading newline; strip it and demote the heading one level
+        // so it nests properly inside the collapsible block.
+        const demoted = usageMd
+          .replace(/^\n/, "")
+          .replace(/^### Run metrics/m, "#### Run metrics");
+        const wrapper = [
+          "<details>",
+          "<summary>Run metrics</summary>",
+          "",
+          demoted,
+          "",
+          "</details>",
+        ].join("\n");
+        sections.push("", wrapper);
+      } else {
+        sections.push("", usageMd);
+      }
     }
   }
 

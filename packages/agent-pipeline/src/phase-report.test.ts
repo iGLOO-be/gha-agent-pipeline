@@ -270,5 +270,64 @@ describe("phase-report", () => {
         .find((l) => l.trim().length > 0);
       expect(nextNonEmpty).toBe("Built feature.");
     });
+
+    it("wraps metrics in <details> when collapsibleMetrics is true", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "implement",
+        statusLine: "PR #42 created.",
+        sessionUsage: {
+          inputTokens: 600,
+          outputTokens: 200,
+          cacheReadTokens: 300,
+          cacheWriteTokens: 0,
+          totalCost: 0.003,
+        },
+        sessionId: "sess-collapse",
+        modelId: "deepseek/v3",
+        collapsibleMetrics: true,
+      });
+
+      expect(output).toContain("<details>");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("</details>");
+      // Heading is demoted inside the details block
+      expect(output).toContain("#### Run metrics");
+      // The H3-level heading should not appear; use regex anchored to
+      // line start so the substring match inside "#### Run metrics"
+      // does not trigger a false positive.
+      expect(output).not.toMatch(/^### Run metrics$/m);
+    });
+
+    it("does not emit <details> block when sessionUsage is absent with collapsibleMetrics true", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "ci-fix",
+        statusLine: "No changes needed.",
+        collapsibleMetrics: true,
+      });
+
+      expect(output).not.toContain("<details>");
+      expect(output).not.toContain("<summary>");
+      expect(output).not.toContain("### Run metrics");
+    });
+
+    it("default (false/omitted) produces flat ### Run metrics without <details>", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "implement",
+        statusLine: "PR #42 created.",
+        sessionUsage: {
+          inputTokens: 600,
+          outputTokens: 200,
+          cacheReadTokens: 300,
+          cacheWriteTokens: 0,
+          totalCost: 0.003,
+        },
+        sessionId: "sess-flat",
+        modelId: "deepseek/v3",
+      });
+
+      expect(output).toContain("### Run metrics");
+      expect(output).not.toContain("<details>");
+      expect(output).not.toContain("<summary>");
+    });
   });
 });
