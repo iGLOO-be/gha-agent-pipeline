@@ -1,0 +1,23 @@
+{
+  "consumers": [
+    {
+      "repo": "iGLOO-be/gha-agent-demo",
+      "issue_language": "fr",
+      "notes": "Reference consumer; document README + AGENTS"
+    },
+    {
+      "repo": "iGLOO-be/foldio-support-agent",
+      "issue_language": "fr",
+      "notes": "Custom CI wrappers; run-agent-ci-fix composites"
+    },
+    {
+      "repo": "Foldio/foldio-app",
+      "issue_language": "fr",
+      "notes": "Internal ops doc gha-agent-pipeline.md"
+    }
+  ],
+  "defaults": {
+    "issue_title": "chore: upgrade gha-agent-pipeline pin to v{version}",
+    "trigger_comment": "/agent yolo"
+  }
+}

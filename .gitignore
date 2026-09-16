@@ -9,3 +9,6 @@ gha-agent-pipeline/
 
 # Graphify knowledge graph (generated, reproducible)
 graphify-out/
+
+# Release skill: consumer repo list (local only; see .local/consumers.example.json)
+.local/consumers.json
