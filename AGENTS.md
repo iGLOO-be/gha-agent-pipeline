@@ -16,7 +16,7 @@ Guide for agents working on [`iGLOO-be/gha-agent-pipeline`](https://github.com/i
 - `schema/agent.config.v1.schema.json` — config contract for consumers
 - `.github/agent.config.yml` — agent config for dogfooding on this monorepo
 - `.github/workflows/` — `dispatch.yml`, `agent-ci-fix.yml` / `agent-ci-success.yml` (`workflow_call`), dogfood `agent-on-ci-failure.yml` / `agent-on-ci-success.yml`, `agent.yml` + `agent-phase.yml`, `ci.yml`
-- `.github/actions/` — **Public:** `agent-phase-run`, `run-agent-ci-fix`, `install-agent-pipeline`. **Internal:** `get-pr-from-workflow-run`, `get-pr-from-check-suite`, legacy label/comment composites, plus **`setup-pr-environment`** (dogfood only)
+- `.github/actions/` — **Public (post-setup):** `agent-phase-run`, `agent-ci-fix-run`. **Public (consumer wiring):** `get-pr-from-workflow-run`. **Public (pipeline install):** `install-agent-pipeline`. **Deprecated:** `run-agent-ci-fix`. **Internal:** `get-pr-from-check-suite`, `report-failure-fallback`, `manage-agent-working-label`, legacy label/comment composites, plus **`setup-pr-environment`** (dogfood only)
 
 ## Dev commands
 
