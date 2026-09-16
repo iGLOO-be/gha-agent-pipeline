@@ -4,14 +4,14 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 
 ## Status (Phase 2)
 
-| Piece              | Location                                                                                                                                                                                             |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                                                    |
-| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                                                         |
-| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml), [`agent-ci-fix.yml`](./.github/workflows/agent-ci-fix.yml), [`agent-ci-success.yml`](./.github/workflows/agent-ci-success.yml) (`workflow_call`) |
-| Composite actions  | **Public:** `agent-phase-run`, `run-agent-ci-fix`, `install-agent-pipeline`. **Internal:** `get-pr-from-workflow-run`, `get-pr-from-check-suite`, legacy label/comment composites                    |
+| Piece              | Location                                                                                                                                                                                                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                                                                                                                                               |
+| Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                                                                                                                                                    |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml), [`agent-ci-fix.yml`](./.github/workflows/agent-ci-fix.yml), [`agent-ci-success.yml`](./.github/workflows/agent-ci-success.yml) (`workflow_call`)                                                                                            |
+| Composite actions  | **Public (post-setup):** `agent-phase-run`, `agent-ci-fix-run`. **Public (consumer wiring):** `get-pr-from-workflow-run`. **Public (pipeline install):** `install-agent-pipeline`. **Deprecated:** `run-agent-ci-fix`. **Internal:** `get-pr-from-check-suite`, legacy label/comment composites |
 
-**Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Slash phases use `agent-phase-run@ref`; CI loops use thin `workflow_run` wrappers (see below). Do **not** copy library composites such as `get-pr-from-workflow-run` or `get-pr-from-check-suite` into consumer repos.
+**Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Slash phases use `agent-phase-run@ref`; CI loops use `agent-ci-fix-run@ref` (post-setup). The `get-pr-from-workflow-run` composite is public for consumer use in CI fix jobs. Do **not** copy library composites into consumer repos.
 
 **This repo also dogfoods** the same consumer wiring as [gha-agent-demo](https://github.com/iGLOO-be/gha-agent-demo) ([#3](https://github.com/iGLOO-be/gha-agent-pipeline/issues/3)): `agent.yml`, phase workflow, [`.github/agent.config.yml`](./.github/agent.config.yml), and local [`setup-pr-environment`](./.github/actions/setup-pr-environment/action.yml).
 
@@ -85,7 +85,7 @@ jobs:
 **Pinning:** Internal composites in `agent-phase-run` use the [`$/`](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/) self-repository syntax so they match the tag or SHA you pin on `agent-phase-run`. The pipeline CLI checkout uses the same ref as that pin unless you set `pipeline_ref` explicitly (for example `pipeline_ref: main` to float the runtime on `main` while keeping composite definitions on a release tag).
 
 ```yaml
-# .github/workflows/agent-on-ci-failure.yml (consumer) — thin wrapper
+# .github/workflows/agent-on-ci-failure.yml (consumer) — thin wrapper (legacy)
 on:
   workflow_run:
     workflows: [CI]
@@ -98,6 +98,51 @@ jobs:
     if: github.event.workflow_run.conclusion == 'failure'
     uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.1.3
     secrets: inherit
+```
+
+If your consumer environment differs from the library's default (different package manager, Node version, or token scope), use the **split pattern** so you own setup:
+
+```yaml
+# .github/workflows/agent-on-ci-failure.yml (consumer) — split pattern (recommended)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+concurrency:
+  group: agent-ci-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+jobs:
+  ci-fix:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve agent PR
+        id: pr
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/get-pr-from-workflow-run@v0.2.0
+
+      - if: steps.pr.outputs.skip == 'true'
+        run: echo "Skipping agent CI fix"
+
+      - name: Setup environment
+        id: setup
+        uses: ./.github/actions/setup-pr-environment
+        with:
+          ref: ${{ steps.pr.outputs.head_ref }}
+          app_id: ${{ secrets.APP_ID }}
+          app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Run agent CI fix
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-ci-fix-run@v0.2.0
+        with:
+          app_token: ${{ steps.setup.outputs.app_token }}
+          issue_number: ${{ steps.pr.outputs.issue_number }}
+          pr_number: ${{ steps.pr.outputs.pr_number }}
+          head_ref: ${{ steps.pr.outputs.head_ref }}
+          head_sha: ${{ steps.pr.outputs.head_sha }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 (Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.1.3` when `conclusion == 'success'`.)
@@ -119,16 +164,18 @@ jobs:
 
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
-**Pin these library refs at `@v0.1.3`**
+**Pin these library refs at `@v0.1.3`** (or latest release)
 
 - `dispatch.yml`
 - `agent-phase-run`
-- `agent-ci-fix.yml`
+- `agent-ci-fix-run` (new split pattern, post-setup only)
+- `agent-ci-fix.yml` (legacy thin wrapper — bundles setup + run)
 - `agent-ci-success.yml`
+- `get-pr-from-workflow-run` (for split-pattern CI fix jobs)
 
 **Do not copy into the consumer**
 
-- `get-pr-from-workflow-run`, `get-pr-from-check-suite`, or other internal composites unless you maintain a fork.
+- `install-agent-pipeline`, `report-failure-fallback`, `manage-agent-working-label`, or other internal composites. These are referenced via `$/` from public composites and match the ref of the public composite you pin.
 
 ## Dogfooding (slash commands on this repo)
 

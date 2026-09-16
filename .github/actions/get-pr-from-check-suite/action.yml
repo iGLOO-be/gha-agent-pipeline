@@ -38,7 +38,7 @@ runs:
               const content = fs.readFileSync('.github/agent.config.yml', 'utf8');
               const match = content.match(/^\s*branch_prefix:\s*(.+)$/m);
               if (match) {
-                const val = match[1].trim().replace(/^['\"]|['\"]\$/g, '');
+                const val = match[1].trim().replace(/^['\"]|['\"]$/g, '');
                 process.stdout.write(val || 'agent');
               } else {
                 process.stdout.write('agent');
@@ -61,7 +61,7 @@ runs:
       with:
         script: |
           const prefix = process.env.AGENT_BRANCH_PREFIX || 'agent'
-          const escapedPrefix = prefix.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&')
+          const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
           const suite = context.payload.check_suite
           const headBranch = suite.head_branch || ''

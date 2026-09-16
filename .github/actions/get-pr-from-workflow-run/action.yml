@@ -1,5 +1,8 @@
 name: Get PR from workflow run
-description: Resolve an open agent PR for a completed CI workflow run
+description: >
+  Public composite for consumer use. Resolves an open agent PR for a completed
+  CI workflow_run event. Consumers use this in their own agent-on-ci-failure.yml
+  jobs before calling agent-ci-fix-run (or before setup and agent-ci-fix-run).
 
 inputs:
   required_label:
@@ -38,7 +41,7 @@ runs:
               const content = fs.readFileSync('.github/agent.config.yml', 'utf8');
               const match = content.match(/^\s*branch_prefix:\s*(.+)$/m);
               if (match) {
-                const val = match[1].trim().replace(/^['\"]|['\"]\$/g, '');
+                const val = match[1].trim().replace(/^['\"]|['\"]$/g, '');
                 process.stdout.write(val || 'agent');
               } else {
                 process.stdout.write('agent');
@@ -61,7 +64,7 @@ runs:
       with:
         script: |
           const prefix = process.env.AGENT_BRANCH_PREFIX || 'agent'
-          const escapedPrefix = prefix.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&')
+          const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
           const run = context.payload.workflow_run
           const headBranch = run.head_branch || ''

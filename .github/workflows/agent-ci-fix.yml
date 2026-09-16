@@ -47,23 +47,34 @@ jobs:
 
       - name: Resolve agent PR
         id: pr
-        uses: ./.github/actions/get-pr-from-workflow-run
+        uses: $/.github/actions/get-pr-from-workflow-run
 
       - name: Skip when not an agent PR
         if: steps.pr.outputs.skip == 'true'
         run: echo "Skipping agent CI fix"
 
-      - name: Run agent CI fix
+      - name: Setup environment
+        id: setup
         if: steps.pr.outputs.skip != 'true'
-        uses: ./.github/actions/run-agent-ci-fix
+        uses: ./.github/actions/setup-pr-environment
         with:
+          ref: ${{ steps.pr.outputs.head_ref }}
+          setup_environment: "true"
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-          openrouter_api_key: ${{ secrets.OPENROUTER_API_KEY }}
+          pipeline_repo: ${{ inputs.pipeline_repo }}
+
+      - name: Run agent CI fix
+        id: ci-fix
+        if: steps.pr.outputs.skip != 'true'
+        uses: $/.github/actions/agent-ci-fix-run
+        with:
+          app_token: ${{ steps.setup.outputs.app_token }}
           issue_number: ${{ steps.pr.outputs.issue_number }}
           pr_number: ${{ steps.pr.outputs.pr_number }}
           head_ref: ${{ steps.pr.outputs.head_ref }}
           head_sha: ${{ steps.pr.outputs.head_sha }}
           max_rounds: ${{ inputs.max_rounds }}
           pipeline_install_token: ${{ inputs.pipeline_install_token }}
-          pipeline_repo: ${{ inputs.pipeline_repo }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

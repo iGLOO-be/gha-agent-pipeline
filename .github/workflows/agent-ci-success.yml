@@ -21,7 +21,7 @@ jobs:
 
       - name: Resolve agent PR
         id: pr
-        uses: ./.github/actions/get-pr-from-workflow-run
+        uses: $/.github/actions/get-pr-from-workflow-run
 
       - name: Skip when not an agent PR
         if: steps.pr.outputs.skip == 'true'
@@ -30,7 +30,7 @@ jobs:
       - name: Setup environment
         if: steps.pr.outputs.skip != 'true'
         id: setup
-        uses: ./.github/actions/setup-pr-environment
+        uses: $/.github/actions/setup-pr-environment
         with:
           setup_environment: "false"
           app_id: ${{ secrets.APP_ID }}
