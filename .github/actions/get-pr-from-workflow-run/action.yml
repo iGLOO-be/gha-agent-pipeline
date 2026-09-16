@@ -1,5 +1,8 @@
 name: Get PR from workflow run
-description: Resolve an open agent PR for a completed CI workflow run
+description: >
+  Public composite for consumer use. Resolves an open agent PR for a completed
+  CI workflow_run event. Consumers use this in their own agent-on-ci-failure.yml
+  jobs before calling agent-ci-fix-run (or before setup and agent-ci-fix-run).
 
 inputs:
   required_label:
