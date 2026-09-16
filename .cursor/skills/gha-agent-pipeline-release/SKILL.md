@@ -76,12 +76,12 @@ Skip `/agent yolo` if the user only wanted notification issues.
 
 ### Consumer-specific patterns
 
-| Pattern | What to mention in the issue |
-|--------|------------------------------|
-| Standard consumer | `dispatch.yml`, `agent-phase-run`, `agent-ci-fix.yml`, `agent-ci-success.yml` |
-| Custom CI wrappers | Also bump `get-pr-from-workflow-run` and forked `run-agent-ci-fix` internal composites |
-| Skipped versions | If consumer is on `v0.1.1` and release is `v0.1.3`, summarize intermediate release notes (e.g. v0.1.2) |
-| foldio-app | Include `docs/internal/tech/operations/gha-agent-pipeline.md` when present |
+| Pattern            | What to mention in the issue                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| Standard consumer  | `dispatch.yml`, `agent-phase-run`, `agent-ci-fix.yml`, `agent-ci-success.yml`                          |
+| Custom CI wrappers | Also bump `get-pr-from-workflow-run` and forked `run-agent-ci-fix` internal composites                 |
+| Skipped versions   | If consumer is on `v0.1.1` and release is `v0.1.3`, summarize intermediate release notes (e.g. v0.1.2) |
+| foldio-app         | Include `docs/internal/tech/operations/gha-agent-pipeline.md` when present                             |
 
 ## Phase 4 — Report back
 

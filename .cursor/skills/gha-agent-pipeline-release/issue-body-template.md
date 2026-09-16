@@ -19,11 +19,11 @@ La bibliothèque [`iGLOO-be/gha-agent-pipeline`](https://github.com/iGLOO-be/gha
 
 Remplacer **toutes** les références `iGLOO-be/gha-agent-pipeline/...@vOLD` par **`@vX.Y.Z`**.
 
-| Fichier | Éléments |
-| --- | --- |
-| `.github/workflows/agent.yml` | `dispatch.yml` |
+| Fichier                             | Éléments          |
+| ----------------------------------- | ----------------- |
+| `.github/workflows/agent.yml`       | `dispatch.yml`    |
 | `.github/workflows/agent-phase.yml` | `agent-phase-run` |
-| … | … |
+| …                                   | …                 |
 
 ```bash
 rg 'gha-agent-pipeline@v0' .
