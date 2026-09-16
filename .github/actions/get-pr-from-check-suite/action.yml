@@ -26,16 +26,28 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Read branch prefix from config
+      id: read-config
+      shell: bash
+      run: |
+        PREFIX=$(grep -oP 'branch_prefix:\s*\K\S+' .github/agent.config.yml 2>/dev/null || echo agent)
+        echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+
     - name: Resolve agent PR
       id: resolve
       uses: actions/github-script@v7
+      env:
+        AGENT_BRANCH_PREFIX: ${{ steps.read-config.outputs.prefix }}
       with:
         script: |
+          const prefix = process.env.AGENT_BRANCH_PREFIX || 'agent'
+          const prefixEscaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
           const suite = context.payload.check_suite
           const headBranch = suite.head_branch || ''
           const headSha = suite.head_sha || ''
 
-          if (!headBranch.startsWith('agent/')) {
+          if (!headBranch.startsWith(prefix + '/')) {
             core.setOutput('skip', 'true')
             core.info(`Skipping non-agent branch: ${headBranch}`)
             return
@@ -71,7 +83,7 @@ runs:
             return
           }
 
-          const match = headBranch.match(/^agent\/(\d+)-/)
+          const match = headBranch.match(new RegExp('^' + prefixEscaped + '/(\\d+)-'))
           if (!match) {
             core.setOutput('skip', 'true')
             core.info(`Could not parse issue number from branch ${headBranch}`)

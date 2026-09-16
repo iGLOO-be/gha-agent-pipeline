@@ -77,13 +77,30 @@ jobs:
               })
             }
 
+            async function getBranchPrefix() {
+              try {
+                const { data } = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: '.github/agent.config.yml'
+                })
+                const yaml = Buffer.from(data.content, 'base64').toString('utf8')
+                const match = yaml.match(/branch_prefix:\s*(\S+)/)
+                return match ? match[1] : 'agent'
+              } catch {
+                return 'agent'
+              }
+            }
+
             async function resolveAgentPullRequest(prNumber) {
+              const prefix = await getBranchPrefix()
+              const prefixEscaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
               const { data: pr } = await github.rest.pulls.get({
                 owner,
                 repo,
                 pull_number: prNumber
               })
-              if (!pr.head.ref.startsWith('agent/')) {
+              if (!pr.head.ref.startsWith(prefix + '/')) {
                 core.info(`Non-agent PR branch: ${pr.head.ref}; treating PR #${pr.number} as both issue and PR`)
                 return {
                   prNumber: pr.number,
@@ -91,7 +108,7 @@ jobs:
                   headRef: pr.head.ref
                 }
               }
-              const match = pr.head.ref.match(/^agent\/(\d+)-/)
+              const match = pr.head.ref.match(new RegExp('^' + prefixEscaped + '/(\\d+)-'))
               if (!match) {
                 core.info(`Could not parse issue number from branch ${pr.head.ref}`)
                 return null
