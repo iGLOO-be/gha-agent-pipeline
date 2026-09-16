@@ -47,7 +47,7 @@ jobs:
 
       - name: Resolve agent PR
         id: pr
-        uses: ./.github/actions/get-pr-from-workflow-run
+        uses: $/.github/actions/get-pr-from-workflow-run
 
       - name: Skip when not an agent PR
         if: steps.pr.outputs.skip == 'true'
@@ -55,7 +55,7 @@ jobs:
 
       - name: Run agent CI fix
         if: steps.pr.outputs.skip != 'true'
-        uses: ./.github/actions/run-agent-ci-fix
+        uses: $/.github/actions/run-agent-ci-fix
         with:
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
