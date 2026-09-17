@@ -32,7 +32,12 @@ inputs:
     description: Pull request number (required for review-fix).
     required: false
   head_ref:
-    description: PR head branch (required for review-fix).
+    description: PR head branch (required for review-fix; optional for yolo when targeting an existing branch).
+    required: false
+  base_branch:
+    description: >
+      Git base branch for sync and new branch creation when `.github/agent.config.yml`
+      is missing on the checked-out ref (e.g. `next`). Passed as AGENT_BASE_BRANCH to the CLI.
     required: false
   review_feedback:
     description: Review feedback text for the agent (required for review-fix).
@@ -79,7 +84,8 @@ runs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         ISSUE_NUMBER: ${{ inputs.issue_number }}
         PR_NUMBER: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.phase == 'ask' && inputs.pr_number || '' }}
-        AGENT_BRANCH: ${{ inputs.phase == 'review-fix' && inputs.head_ref || '' }}
+        AGENT_BRANCH: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'yolo') && inputs.head_ref || '' }}
+        AGENT_BASE_BRANCH: ${{ inputs.base_branch }}
         REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
         QUESTION: ${{ inputs.phase == 'ask' && inputs.question || '' }}
         COMMENT_ID: ${{ inputs.comment_id }}

@@ -86,6 +86,7 @@ jobs:
           issue_number: ${{ inputs.issue_number }}
           pr_number: ${{ inputs.pr_number }}
           head_ref: ${{ inputs.head_ref }}
+          base_branch: main
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
           question: ${{ inputs.question }}

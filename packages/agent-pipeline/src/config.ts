@@ -81,6 +81,11 @@ export const agentConfigSchema = z
           .default({}),
       })
       .default({}),
+    tools: z
+      .object({
+        run_commands_timeout_ms: z.number().int().min(1000).default(600_000),
+      })
+      .default({}),
     app: z
       .object({
         name: z.string().min(1).optional(),
@@ -96,6 +101,7 @@ export const agentConfigSchema = z
     models: data.models,
     ci: data.ci,
     prompts: data.prompts,
+    tools: data.tools,
     app: data.app,
   }));
 
@@ -104,6 +110,25 @@ export type MergeStrategy = AgentConfig["git"]["merge_strategy"];
 
 export type AgentPhase =
   "plan" | "implement" | "yolo" | "ci-fix" | "review-fix" | "ask";
+
+function applyAgentConfigEnvOverrides(config: AgentConfig): AgentConfig {
+  const baseBranchOverride = process.env.AGENT_BASE_BRANCH?.trim();
+  if (!baseBranchOverride) {
+    return config;
+  }
+  const previousBase = config.git.base_branch;
+  return {
+    ...config,
+    git: {
+      ...config.git,
+      base_branch: baseBranchOverride,
+      pr_target:
+        config.git.pr_target === previousBase
+          ? baseBranchOverride
+          : config.git.pr_target,
+    },
+  };
+}
 
 export function loadAgentConfig(
   configPath = ".github/agent.config.yml",
@@ -122,8 +147,23 @@ export function loadAgentConfig(
     throw new Error(`Invalid ${configPath}: ${issues}`);
   }
 
-  return parsed.data;
+  return applyAgentConfigEnvOverrides(parsed.data);
 }
+
+export function getRunCommandsTimeoutMs(config?: AgentConfig): number {
+  const envRaw = process.env.AGENT_RUN_COMMANDS_TIMEOUT_MS;
+  if (envRaw) {
+    const parsed = Number.parseInt(envRaw, 10);
+    if (Number.isFinite(parsed) && parsed >= 1000) {
+      return parsed;
+    }
+  }
+  const resolved = config ?? loadAgentConfig();
+  return resolved.tools.run_commands_timeout_ms;
+}
+
+const GIT_SHALLOW_WORKSPACE_HINT = `
+Git on CI checkouts is often shallow. Do not run \`git fetch --unshallow\` on large monorepos. Prefer \`git show origin/<ref>:path\` to read files at a ref, or \`git fetch origin <ref> --depth=1\` followed by \`git checkout FETCH_HEAD\` when you need a tree at that ref.`;
 
 const planPromptBody = `Your job is to read the GitHub issue, explore the codebase with read_files and search_codebase, and post a structured implementation plan.
 
@@ -190,6 +230,7 @@ Workflow:
 2. Use list_files, read_files, search_codebase, editor, and apply_patch to inspect and modify files.
 3. Keep changes minimal and focused on the issue.
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+${GIT_SHALLOW_WORKSPACE_HINT}
 
 ${FILE_EDIT_SYSTEM_HINT}
 
@@ -208,6 +249,7 @@ Workflow:
 2. Use list_files, read_files, search_codebase, editor, and apply_patch to fix the code.
 3. Keep changes minimal and focused on CI failures.
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+${GIT_SHALLOW_WORKSPACE_HINT}
 
 ${FILE_EDIT_SYSTEM_HINT}
 
@@ -224,6 +266,7 @@ Workflow:
 2. Use list_files, read_files, search_codebase, editor, and apply_patch to inspect and modify files.
 3. Keep changes minimal and focused on the issue.
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+${GIT_SHALLOW_WORKSPACE_HINT}
 
 ${FILE_EDIT_SYSTEM_HINT}
 
@@ -271,6 +314,7 @@ Workflow:
 1. Read the review feedback and PR discussion.
 2. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
 3. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+${GIT_SHALLOW_WORKSPACE_HINT}
 
 Merge handling:
 - The runner synchronizes the branch with ${config.git.base_branch} using the default "${config.git.merge_strategy}" strategy before this session.
@@ -340,11 +384,19 @@ export function getCiMaxRounds(): number {
   return agentConfig.ci.max_rounds;
 }
 
+const optionalEnvString = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  return value;
+}, z.string().min(1).optional());
+
 const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().min(1),
   GITHUB_TOKEN: z.string().min(1),
   GITHUB_REPOSITORY: z.string().min(1),
   ISSUE_NUMBER: z.coerce.number().int().positive(),
+  AGENT_BRANCH: optionalEnvString,
 });
 
 const ciFixEnvSchema = envSchema.extend({

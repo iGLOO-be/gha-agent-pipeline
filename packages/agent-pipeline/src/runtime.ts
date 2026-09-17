@@ -3,6 +3,7 @@ import { createWorkspaceScopedEditorExecutor } from "./cline/workspace-scoped-ed
 import { createWorkspaceScopedFileReadExecutor } from "./cline/workspace-file-read.js";
 import { loadClineSdk } from "./cline.js";
 import {
+  getRunCommandsTimeoutMs,
   buildToolPolicies,
   getAppName,
   loadAgentConfig,
@@ -145,6 +146,10 @@ async function runAgentSessionAttempt(
 
     const readFile = await createWorkspaceScopedFileReadExecutor(cwd);
     const editor = await createWorkspaceScopedEditorExecutor(cwd);
+    const { createDefaultShellExecutor } = await loadClineSdk();
+    const bash = createDefaultShellExecutor({
+      timeoutMs: getRunCommandsTimeoutMs(config),
+    });
 
     const session = await cline.start({
       prompt: input.prompt,
@@ -171,6 +176,7 @@ async function runAgentSessionAttempt(
         toolExecutors: {
           readFile,
           editor,
+          bash,
         },
       },
       sessionMetadata: {

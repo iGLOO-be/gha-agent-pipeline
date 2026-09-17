@@ -178,6 +178,18 @@
         }
       },
       "default": {}
+    },
+    "tools": {
+      "type": "object",
+      "properties": {
+        "run_commands_timeout_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Timeout in milliseconds for each command in the Cline run_commands tool.",
+          "default": 600000
+        }
+      },
+      "default": {}
     }
   },
   "default": {}

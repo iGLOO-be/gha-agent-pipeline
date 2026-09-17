@@ -258,11 +258,16 @@ The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gi
 
 The CLI phases read the following environment variables. Common variables (`OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`) are required by all phases.
 
+| Variable                        | Phases                   | Description                                                                                                                                                   |
+| ------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_BASE_BRANCH`             | git sync / branch create | Overrides `git.base_branch` when set (via workflow `base_branch` input on `agent-phase-run`). Use when the checked-out ref has no `.github/agent.config.yml`. |
+| `AGENT_RUN_COMMANDS_TIMEOUT_MS` | all tool phases          | Overrides `tools.run_commands_timeout_ms` for the Cline `run_commands` tool (default 600000 ms).                                                              |
+
 | Phase        | Required                                                       | Optional / routing                                                                             |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `plan`       | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
 | `implement`  | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
-| `yolo`       | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
+| `yolo`       | `ISSUE_NUMBER`                                                 | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`         |
 | `review-fix` | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH`, `REVIEW_FEEDBACK` | `COMMENT_ID`, `REACTION_TARGET` (`issue_comment` or `pull_request_review`), `SUCCESS_REACTION` |
 | `ci-fix`     | `ISSUE_NUMBER`, `PR_NUMBER`, `HEAD_SHA`, `AGENT_BRANCH`        | (none — no trigger comment/reaction)                                                           |
 | `ask`        | `ISSUE_NUMBER`, `QUESTION`                                     | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                    |

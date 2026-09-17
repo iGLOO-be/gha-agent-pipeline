@@ -9,8 +9,6 @@ import {
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
 
-const { git: gitConfig } = loadAgentConfig();
-
 export async function commitAll(message: string): Promise<boolean> {
   const add = await runShell(gitAddAllExcludingPipelineCheckoutCommand());
   if (add.exitCode !== 0) {
@@ -125,8 +123,9 @@ export async function createPullRequest(
   title: string,
   body: string,
   branch: string,
-  base = gitConfig.pr_target,
+  base?: string,
 ): Promise<{ url: string; number: number }> {
+  const prTarget = base ?? loadAgentConfig().git.pr_target;
   const tempDir = await mkdtemp(join(tmpdir(), "agent-pr-"));
   const bodyPath = join(tempDir, "body.md");
 
@@ -134,7 +133,7 @@ export async function createPullRequest(
     await writeFile(bodyPath, body, "utf8");
 
     const result = await runGh(
-      `gh pr create --title ${JSON.stringify(title)} --body-file ${JSON.stringify(bodyPath)} --head ${branch} --base ${base}`,
+      `gh pr create --title ${JSON.stringify(title)} --body-file ${JSON.stringify(bodyPath)} --head ${branch} --base ${prTarget}`,
     );
     if (result.exitCode !== 0) {
       const existingUrl = result.stderr.match(
@@ -161,4 +160,32 @@ function extractPRNumberFromUrl(url: string): number {
     throw new Error(`Could not extract PR number from URL: ${url}`);
   }
   return parseInt(match[1], 10);
+}
+
+export async function findOpenPullRequestForBranch(
+  branch: string,
+): Promise<{ url: string; number: number } | null> {
+  const result = await runGh(
+    `gh pr list --head ${JSON.stringify(branch)} --state open --json number,url --limit 1`,
+  );
+  if (result.exitCode !== 0) {
+    return null;
+  }
+  const trimmed = result.stdout.trim();
+  if (!trimmed || trimmed === "[]") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as Array<{
+      number: number;
+      url: string;
+    }>;
+    const first = parsed[0];
+    if (!first?.url || first.number == null) {
+      return null;
+    }
+    return { url: first.url, number: first.number };
+  } catch {
+    return null;
+  }
 }
