@@ -7,6 +7,7 @@ import {
   buildToolPolicies,
   getAppName,
   getCiMaxRounds,
+  getRunCommandsTimeoutMs,
   IMPLEMENT_MODEL,
   loadAgentConfig,
   loadAgentEnv,
@@ -31,6 +32,8 @@ const ENV_KEYS = [
   "REVIEW_FEEDBACK",
   "QUESTION",
   "CI_MAX_ROUNDS",
+  "AGENT_BASE_BRANCH",
+  "AGENT_RUN_COMMANDS_TIMEOUT_MS",
   "AGENT_MODEL_PLAN",
   "AGENT_MODEL_IMPLEMENT",
 ] as const;
@@ -87,7 +90,18 @@ describe("config", () => {
         GITHUB_TOKEN: "gh-token",
         GITHUB_REPOSITORY: "owner/repo",
         ISSUE_NUMBER: 88,
+        AGENT_BRANCH: undefined,
       });
+    });
+
+    it("loads optional AGENT_BRANCH", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+      process.env.AGENT_BRANCH = "agent/88-fix";
+
+      expect(loadAgentEnv().AGENT_BRANCH).toBe("agent/88-fix");
     });
 
     it("reports missing or invalid fields", () => {
@@ -160,7 +174,7 @@ describe("config", () => {
       process.env.ISSUE_NUMBER = "88";
 
       expect(() => loadReviewFixEnv()).toThrow(
-        "Missing or invalid review-fix environment: PR_NUMBER, AGENT_BRANCH, REVIEW_FEEDBACK",
+        "Missing or invalid review-fix environment: AGENT_BRANCH, PR_NUMBER, REVIEW_FEEDBACK",
       );
     });
   });
@@ -231,6 +245,25 @@ describe("config", () => {
       expect(config.models["ci-fix"]).toBe("moonshotai/kimi-k2.7-code");
       expect(config.models["review-fix"]).toBe("moonshotai/kimi-k2.7-code");
       expect(config.ci.max_rounds).toBe(3);
+      expect(config.tools.run_commands_timeout_ms).toBe(600_000);
+    });
+
+    it("applies AGENT_BASE_BRANCH when the config file is missing", () => {
+      process.env.AGENT_BASE_BRANCH = "next";
+      const config = loadAgentConfig(join(tempDir, "agent.config.yml"));
+      expect(config.git.base_branch).toBe("next");
+      expect(config.git.pr_target).toBe("next");
+    });
+
+    it("AGENT_BASE_BRANCH overrides YAML git.base_branch", () => {
+      process.env.AGENT_BASE_BRANCH = "next";
+      const configPath = join(tempDir, "agent.config.yml");
+      writeFileSync(
+        configPath,
+        ["version: 1", "git:", "  base_branch: main"].join("\n"),
+      );
+      const config = loadAgentConfig(configPath);
+      expect(config.git.base_branch).toBe("next");
     });
 
     it("loads values from a valid YAML config", () => {
@@ -285,6 +318,30 @@ describe("config", () => {
       );
 
       expect(() => loadAgentConfig(configPath)).toThrow(/Invalid/);
+    });
+  });
+
+  describe("getRunCommandsTimeoutMs", () => {
+    it("defaults to 600000 ms", () => {
+      expect(getRunCommandsTimeoutMs()).toBe(600_000);
+    });
+
+    it("prefers AGENT_RUN_COMMANDS_TIMEOUT_MS", () => {
+      process.env.AGENT_RUN_COMMANDS_TIMEOUT_MS = "900000";
+      expect(getRunCommandsTimeoutMs()).toBe(900_000);
+    });
+
+    it("loads override from YAML tools.run_commands_timeout_ms", () => {
+      const configPath = join(tempDir, "agent.config.yml");
+      writeFileSync(
+        configPath,
+        ["version: 1", "tools:", "  run_commands_timeout_ms: 120000"].join(
+          "\n",
+        ),
+      );
+      expect(getRunCommandsTimeoutMs(loadAgentConfig(configPath))).toBe(
+        120_000,
+      );
     });
   });
 

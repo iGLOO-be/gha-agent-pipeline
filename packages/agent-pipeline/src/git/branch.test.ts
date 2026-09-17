@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { branchName, slugifyTitle } from "./branch.js";
+import { branchName, resolveYoloBranchName, slugifyTitle } from "./branch.js";
 
 describe("git/branch", () => {
   describe("slugifyTitle", () => {
@@ -42,6 +42,20 @@ describe("git/branch", () => {
 
     it("falls back to 'change' for an empty slug with a custom prefix", () => {
       expect(branchName(42, "!!!", "bot")).toBe("bot/42-change");
+    });
+  });
+
+  describe("resolveYoloBranchName", () => {
+    it("uses AGENT_BRANCH when provided", () => {
+      expect(
+        resolveYoloBranchName(99, "Some title", "feature/existing-branch"),
+      ).toBe("feature/existing-branch");
+    });
+
+    it("falls back to branchName when AGENT_BRANCH is omitted", () => {
+      expect(resolveYoloBranchName(42, "Add widgets", undefined, "bot")).toBe(
+        branchName(42, "Add widgets", "bot"),
+      );
     });
   });
 });
