@@ -41,6 +41,7 @@ pnpm exec agent-pipeline plan   # requires OPENROUTER_API_KEY, GITHUB_TOKEN, etc
 - Any change to the runtime must include or update tests
 - Do not add Next.js or consumer app code to this repository
 - Runners (`runs-on`) belong in **consumer** workflows, not in `agent.config.yml`
+- Consumer `setup-pr-environment` (or equivalent) should install **`ripgrep`** (`rg`) on the agent phase runner — see [README — Agent runner tooling](README.md#agent-runner-tooling-ripgrep)
 - Before finishing work, run `pnpm test && pnpm run typecheck && pnpm run format:check` to verify all checks pass. CI enforces these in the PR workflow.
 
 ## Phase 2 tracking

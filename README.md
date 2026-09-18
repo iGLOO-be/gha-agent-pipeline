@@ -87,6 +87,27 @@ jobs:
 
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
 
+### Agent runner tooling (`ripgrep`)
+
+Agent phases use shell search heavily; **`rg` (ripgrep)** on the phase runner is much faster than falling back to `grep -R`. Install it in the consumer setup composite (before `agent-phase-run`), not in the library.
+
+**Ubuntu / Blacksmith runners** (idempotent step in `setup-pr-environment` or `setup-agent-environment`):
+
+```yaml
+- name: Install ripgrep
+  shell: bash
+  run: |
+    if command -v rg >/dev/null 2>&1; then
+      rg --version
+      exit 0
+    fi
+    sudo apt-get update -qq
+    sudo apt-get install -y ripgrep
+    rg --version
+```
+
+Do not rely on `ubuntu-latest` shipping `rg` forever, and custom runner images may omit it. Verify in the **Agent phase** job log that `rg --version` runs successfully after setup.
+
 **Node version:** `install-agent-pipeline` (via `agent-phase-run`) runs `setup-node` again after your consumer setup step, so pass `node_version` on `agent-phase-run` to match `engines.node` / `.node-version` (default `22` for backward compatibility).
 
 **Pinning:** Internal composites in `agent-phase-run` use the [`$/`](https://github.blog/changelog/2026-07-30-reference-same-repository-actions-with-self-repository-syntax/) self-repository syntax so they match the tag or SHA you pin on `agent-phase-run`. The pipeline CLI checkout uses the same ref as that pin unless you set `pipeline_ref` explicitly (for example `pipeline_ref: main` to float the runtime on `main` while keeping composite definitions on a release tag).
