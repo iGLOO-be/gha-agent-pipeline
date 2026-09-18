@@ -48,31 +48,16 @@ on:
     types: [submitted]
 jobs:
   dispatch:
-    # Skip the job (no runner) unless the comment/review is an allowed /agent slash command.
-    if: |
-      (
-        github.event_name == 'pull_request_review' &&
-        contains(github.event.review.body || '', '/agent fix') &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
-      ) || (
-        github.event_name == 'issue_comment' &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
-        (
-          contains(github.event.comment.body || '', '/agent ask') ||
-          contains(github.event.comment.body || '', '/agent plan') ||
-          contains(github.event.comment.body || '', '/agent implement') ||
-          contains(github.event.comment.body || '', '/agent yolo') ||
-          contains(github.event.comment.body || '', '/agent fix')
-        )
-      )
     uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.2.2
     secrets: inherit
-    # Optional: override the default ubuntu-latest dispatch runner (since v0.2.2)
+    # Optional (v0.2.2+): run dispatch on another runner pool, e.g. Blacksmith
     # with:
     #   runner: blacksmith-2vcpu-ubuntu-2404
 ```
 
-**Dispatch runner (`runner` input, v0.2.2+):** `dispatch.yml` defaults to `ubuntu-latest`. Consumers on alternate runner pools can pass `with: runner: <label>` on the `uses:` job (same pattern as `runs-on` on a normal job).
+**Dispatch filtering (v0.2.2+):** `dispatch.yml` skips its job (no runner allocated) unless the triggering comment or review contains an allowed `/agent` slash command from an `OWNER`, `MEMBER`, or `COLLABORATOR`. Consumers do not need to duplicate this `if` in `agent.yml`; bumping `dispatch.yml` is enough. The parent **Agent pipeline** workflow run still appears on every `issue_comment` / `pull_request_review` (GitHub has no body filter on `on:`), but dispatch minutes are not consumed on no-op events.
+
+**Dispatch runner (`runner` input, v0.2.2+):** defaults to `ubuntu-latest`. Pass `with: runner: <label>` on the `uses:` job to override (same as choosing `runs-on` for a normal job).
 
 ```yaml
 # .github/workflows/agent-phase.yml (consumer) — excerpt
@@ -175,14 +160,14 @@ jobs:
 
 **Required files on the consumer repo**
 
-| Path                                        | Role                                                       |
-| ------------------------------------------- | ---------------------------------------------------------- |
-| `.github/agent.config.yml`                  | Agent config (schema v1)                                   |
-| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.2.2` (+ job `if` filter) |
-| `.github/workflows/agent-phase.yml`         | **Fixed filename** — target of library dispatch            |
-| `.github/workflows/agent-on-ci-failure.yml` | `workflow_run` on failed **`CI`** workflow                 |
-| `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow             |
-| `.github/actions/setup-pr-environment/`     | Checkout, App token, pnpm (consumer-owned)                 |
+| Path                                        | Role                                            |
+| ------------------------------------------- | ----------------------------------------------- |
+| `.github/agent.config.yml`                  | Agent config (schema v1)                        |
+| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.2.2`          |
+| `.github/workflows/agent-phase.yml`         | **Fixed filename** — target of library dispatch |
+| `.github/workflows/agent-on-ci-failure.yml` | `workflow_run` on failed **`CI`** workflow      |
+| `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
+| `.github/actions/setup-pr-environment/`     | Checkout, App token, pnpm (consumer-owned)      |
 
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
