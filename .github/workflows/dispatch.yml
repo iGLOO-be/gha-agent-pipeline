@@ -3,6 +3,12 @@ name: Agent slash dispatch
 # Invoked from the consumer repo (issue_comment / pull_request_review live there).
 on:
   workflow_call:
+    inputs:
+      runner:
+        description: GitHub Actions runner label for the dispatch job
+        type: string
+        required: false
+        default: ubuntu-latest
     secrets:
       APP_ID:
         required: true
@@ -17,7 +23,23 @@ permissions:
 
 jobs:
   dispatch:
-    runs-on: ubuntu-latest
+    if: |
+      (
+        github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body || '', '/agent fix') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
+      ) || (
+        github.event_name == 'issue_comment' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        (
+          contains(github.event.comment.body || '', '/agent ask') ||
+          contains(github.event.comment.body || '', '/agent plan') ||
+          contains(github.event.comment.body || '', '/agent implement') ||
+          contains(github.event.comment.body || '', '/agent yolo') ||
+          contains(github.event.comment.body || '', '/agent fix')
+        )
+      )
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 5
     steps:
       - name: Generate GitHub App token
