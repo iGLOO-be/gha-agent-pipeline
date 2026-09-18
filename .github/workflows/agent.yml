@@ -15,5 +15,21 @@ permissions:
 
 jobs:
   dispatch:
+    if: |
+      (
+        github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body || '', '/agent fix') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
+      ) || (
+        github.event_name == 'issue_comment' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        (
+          contains(github.event.comment.body || '', '/agent ask') ||
+          contains(github.event.comment.body || '', '/agent plan') ||
+          contains(github.event.comment.body || '', '/agent implement') ||
+          contains(github.event.comment.body || '', '/agent yolo') ||
+          contains(github.event.comment.body || '', '/agent fix')
+        )
+      )
     uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@main
     secrets: inherit
