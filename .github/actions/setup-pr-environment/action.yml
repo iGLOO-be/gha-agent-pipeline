@@ -77,6 +77,17 @@ runs:
       run: |
         git remote set-url origin https://x-access-token:${{ steps.app_token.outputs.token }}@github.com/${{ github.repository }}.git
 
+    - name: Install ripgrep
+      shell: bash
+      run: |
+        if command -v rg >/dev/null 2>&1; then
+          rg --version
+          exit 0
+        fi
+        sudo apt-get update -qq
+        sudo apt-get install -y ripgrep
+        rg --version
+
     - name: Install graphify
       if: inputs.setup_environment == 'true'
       shell: bash
