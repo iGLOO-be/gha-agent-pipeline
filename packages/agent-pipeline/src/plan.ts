@@ -18,10 +18,13 @@ import {
   extractAgentPlan,
   findPlanComment,
   formatCommentsForPrompt,
+  appendRiskScoreSection,
   manageRiskLabels,
   normalizeAgentPlanBody,
+  normalizeRiskLevel,
   parseRiskLevel,
   postComment,
+  stripRiskScoreSection,
   prependAgentMarker,
   readComments,
   readIssue,
@@ -55,16 +58,47 @@ async function createPlanTools(
       properties: {
         body: {
           type: "string",
-          description: "Markdown plan starting with ## Agent Plan",
+          description:
+            "Markdown plan starting with ## Agent Plan (do not include ### Risk score — use riskLevel and riskJustification)",
+        },
+        riskLevel: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description: "Overall implementation risk for labeling and review.",
+        },
+        riskJustification: {
+          type: "string",
+          description:
+            "One short paragraph explaining the risk level (scope, reversibility, infra, security).",
         },
       },
-      required: ["body"],
+      required: ["body", "riskLevel", "riskJustification"],
     },
     lifecycle: { completesRun: true },
-    async execute(input: { body: string }) {
-      const normalizedBody = normalizeAgentPlanBody(input.body);
-      const markedBody = prependAgentMarker(
+    async execute(input: {
+      body: string;
+      riskLevel: string;
+      riskJustification: string;
+    }) {
+      const riskLevel = normalizeRiskLevel(input.riskLevel);
+      if (!riskLevel) {
+        throw new Error(`Invalid riskLevel: ${input.riskLevel}`);
+      }
+      const riskJustification = input.riskJustification.trim();
+      if (!riskJustification) {
+        throw new Error("riskJustification must not be empty");
+      }
+
+      const normalizedBody = stripRiskScoreSection(
+        normalizeAgentPlanBody(input.body),
+      );
+      const planBody = appendRiskScoreSection(
         normalizedBody,
+        riskLevel,
+        riskJustification,
+      );
+      const markedBody = prependAgentMarker(
+        planBody,
         AGENT_COMMENT_MARKERS.plan,
       );
       const comment = await postComment(
@@ -101,14 +135,6 @@ async function createPlanTools(
         // Continue execution even if label addition fails
       }
 
-      // Manage risk label based on the plan's risk score
-      const parsedRiskLevel = parseRiskLevel(normalizedBody);
-      if (!parsedRiskLevel) {
-        console.warn(
-          "Could not parse risk level from plan; defaulting to medium.",
-        );
-      }
-      const riskLevel = parsedRiskLevel ?? "medium";
       try {
         await manageRiskLabels(octokit, owner, repo, issueNumber, riskLevel);
       } catch (error) {

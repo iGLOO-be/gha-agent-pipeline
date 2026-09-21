@@ -12,7 +12,9 @@ import {
   hasAgentMarkerInComments,
   markerFor,
   normalizeAgentPlanBody,
+  appendRiskScoreSection,
   parseRiskLevel,
+  stripRiskScoreSection,
   prependAgentMarker,
   readComments,
   unescapeToolString,
@@ -481,6 +483,27 @@ describe("tools/github", () => {
 
     it("returns null when no risk score section is present", () => {
       expect(parseRiskLevel("## Agent Plan\n\njust a plan")).toBeNull();
+    });
+
+    it("parses capitalized risk level on the first line (Foldio-style)", () => {
+      expect(
+        parseRiskLevel(
+          "### Risk score\n\nLow — single-file, local refactor with zero behavioral change.",
+        ),
+      ).toBe("low");
+    });
+  });
+
+  describe("appendRiskScoreSection", () => {
+    it("appends a risk section and strips any legacy duplicate", () => {
+      const body =
+        "## Agent Plan\n\n### Next steps\n- review\n\n### Risk score\nold — ignore";
+      const result = appendRiskScoreSection(body, "low", "Safe change.");
+      expect(result).toContain("### Risk score\n\nlow — Safe change.");
+      expect(result).not.toContain("old — ignore");
+      expect(stripRiskScoreSection(result)).toBe(
+        "## Agent Plan\n\n### Next steps\n- review",
+      );
     });
   });
 });

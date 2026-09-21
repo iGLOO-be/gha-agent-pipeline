@@ -431,8 +431,9 @@ describe("config", () => {
       expect(buildPhaseSystemPrompt("ci-fix", config)).toContain(
         "The pull request failed CI.",
       );
-      expect(buildPhaseSystemPrompt("yolo", config)).toContain(
-        "### Risk Score:",
+      expect(buildPhaseSystemPrompt("yolo", config)).toContain("riskLevel");
+      expect(buildPhaseSystemPrompt("plan", config)).toContain(
+        "riskJustification",
       );
     });
 

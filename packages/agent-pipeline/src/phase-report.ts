@@ -1,5 +1,6 @@
 import type { AgentPhase } from "./config.js";
 import { loadClineSdk } from "./cline.js";
+import { normalizeRiskLevel, type RiskLevel } from "./tools/github.js";
 import { redactSensitiveStrings, safeFormatUsageMarkdown } from "./gha-log.js";
 import { PHASE_LABELS } from "./lifecycle.js";
 import {
@@ -15,7 +16,15 @@ export interface PhaseReport {
   summary: string;
   /** Optional test plan (truncated to ~4k chars after redaction). */
   testPlan?: string;
+  /** Yolo (and future phases): structured risk for labels — not parsed from markdown. */
+  riskLevel?: RiskLevel;
+  riskJustification?: string;
 }
+
+export type SubmitPhaseReportOptions = {
+  /** When true, riskLevel and riskJustification are required tool args (yolo). */
+  requireRiskAssessment?: boolean;
+};
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -65,14 +74,39 @@ export function createPhaseReportTracker(): PhaseReportTracker {
 
 export const SUBMIT_PHASE_REPORT_TOOL_NAME = "submitPhaseReport";
 
-export async function createSubmitPhaseReportTool(tracker: PhaseReportTracker) {
+export async function createSubmitPhaseReportTool(
+  tracker: PhaseReportTracker,
+  options: SubmitPhaseReportOptions = {},
+) {
   const { createTool } = await loadClineSdk();
+  const requireRisk = options.requireRiskAssessment === true;
+
+  const riskProperties = {
+    riskLevel: {
+      type: "string",
+      enum: ["low", "medium", "high"],
+      description:
+        "Overall implementation risk for agent-risk-* labels and the issue comment.",
+    },
+    riskJustification: {
+      type: "string",
+      description:
+        "One short paragraph explaining the risk level (scope, reversibility, infra, security).",
+    },
+  };
+
+  const required = requireRisk
+    ? ["summary", "riskLevel", "riskJustification"]
+    : ["summary"];
 
   return createTool({
     name: SUBMIT_PHASE_REPORT_TOOL_NAME,
     description:
       "Submit a structured markdown report for the current phase. " +
       "Call this after finishing all edits to summarize what was done for human reviewers. " +
+      (requireRisk
+        ? "You must include riskLevel and riskJustification for labeling. "
+        : "") +
       "Last submission wins if called multiple times.",
     lifecycle: { completesRun: true },
     inputSchema: {
@@ -88,10 +122,45 @@ export async function createSubmitPhaseReportTool(tracker: PhaseReportTracker) {
           description:
             "Optional markdown section describing how to test the changes.",
         },
+        ...(requireRisk ? riskProperties : {}),
       },
-      required: ["summary"],
+      required,
     },
-    async execute(input: { summary: string; testPlan?: string }) {
+    async execute(input: {
+      summary: string;
+      testPlan?: string;
+      riskLevel?: string;
+      riskJustification?: string;
+    }) {
+      let riskLevel: RiskLevel | undefined;
+      let riskJustification: string | undefined;
+
+      if (requireRisk) {
+        const level = normalizeRiskLevel(input.riskLevel ?? "");
+        if (!level) {
+          throw new Error(`Invalid riskLevel: ${input.riskLevel}`);
+        }
+        const justification = (input.riskJustification ?? "").trim();
+        if (!justification) {
+          throw new Error("riskJustification must not be empty");
+        }
+        riskLevel = level;
+        riskJustification = truncate(
+          redactSensitiveStrings(justification),
+          TEST_PLAN_MAX_CHARS,
+        );
+      } else if (input.riskLevel || input.riskJustification) {
+        const level = normalizeRiskLevel(input.riskLevel ?? "");
+        const justification = (input.riskJustification ?? "").trim();
+        if (level && justification) {
+          riskLevel = level;
+          riskJustification = truncate(
+            redactSensitiveStrings(justification),
+            TEST_PLAN_MAX_CHARS,
+          );
+        }
+      }
+
       const report: PhaseReport = {
         summary: truncate(
           redactSensitiveStrings(input.summary),
@@ -103,12 +172,15 @@ export async function createSubmitPhaseReportTool(tracker: PhaseReportTracker) {
               TEST_PLAN_MAX_CHARS,
             )
           : undefined,
+        riskLevel,
+        riskJustification,
       };
       tracker.submit(report);
       return {
         submitted: true,
         summaryLength: report.summary.length,
         testPlanLength: report.testPlan?.length,
+        riskLevel: report.riskLevel,
       };
     },
   });
@@ -264,7 +336,8 @@ export function formatPhaseCompletionMarkdown(
 export async function appendSubmitPhaseReportTool<T extends { name: string }>(
   tools: T[],
   tracker: PhaseReportTracker,
+  options?: SubmitPhaseReportOptions,
 ): Promise<T[]> {
-  const tool = await createSubmitPhaseReportTool(tracker);
+  const tool = await createSubmitPhaseReportTool(tracker, options);
   return [...tools, tool as T];
 }

@@ -697,12 +697,52 @@ const RISK_LABEL_CONFIG: Record<
   },
 };
 
+export function normalizeRiskLevel(value: string): RiskLevel | null {
+  const normalized = value.trim().toLowerCase();
+  return RISK_LEVELS.includes(normalized as RiskLevel)
+    ? (normalized as RiskLevel)
+    : null;
+}
+
+export function formatRiskScoreSection(
+  level: RiskLevel,
+  justification: string,
+): string {
+  return `### Risk score\n\n${level} — ${justification.trim()}`;
+}
+
+/** Removes an embedded ### Risk score section (legacy plans that included it in body). */
+export function stripRiskScoreSection(body: string): string {
+  return body
+    .replace(/\n?### Risk [Ss]core[:\s]*\n[\s\S]*?(?=\n### |\n## |$)/, "")
+    .trimEnd();
+}
+
+export function appendRiskScoreSection(
+  body: string,
+  level: RiskLevel,
+  justification: string,
+): string {
+  const withoutRisk = stripRiskScoreSection(body);
+  return `${withoutRisk}\n\n${formatRiskScoreSection(level, justification)}`;
+}
+
 export function parseRiskLevel(text: string): RiskLevel | null {
   const sectionMatch = text.match(
-    /### Risk [Ss]core[:\s]*\n?[\s\S]*?\b(low|medium|high)\b/,
+    /### Risk [Ss]core[:\s]*\n?([\s\S]*?)(?:\n### |\n## |---|\n$|$)/,
   );
   if (sectionMatch) {
-    return sectionMatch[1] as RiskLevel;
+    const lines = sectionMatch[1]
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const first = lines[0];
+    if (first) {
+      const prefixMatch = first.match(/^[-:]?\s*(low|medium|high)\b/i);
+      if (prefixMatch) {
+        return prefixMatch[1].toLowerCase() as RiskLevel;
+      }
+    }
   }
   const inlineMatch = text.match(/\brisk[:\s]+(low|medium|high)\b/i);
   if (inlineMatch) {
