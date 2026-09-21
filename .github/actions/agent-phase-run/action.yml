@@ -1,13 +1,13 @@
 name: Run agent phase (post-setup)
 description: |
   Orchestrates the shared post-environment-setup steps for the slash-command
-  agent phases (plan, implement, yolo, review-fix). Consumers keep their own
+  agent phases (plan, implement, yolo, review-fix, ask, code-review). Consumers keep their own
   `setup-pr-environment` step (checkout + package manager + token) and then
   call this composite once. This composite never performs environment setup
   (package manager, Node version, checkout ref, token generation).
 inputs:
   phase:
-    description: Agent phase to run (plan, implement, yolo, review-fix, ask).
+    description: Agent phase to run (plan, implement, yolo, review-fix, ask, code-review).
     required: true
   app_token:
     description: >
@@ -29,10 +29,10 @@ inputs:
     description: Issue number this run targets.
     required: true
   pr_number:
-    description: Pull request number (required for review-fix).
+    description: Pull request number (required for review-fix and code-review).
     required: false
   head_ref:
-    description: PR head branch (required for review-fix; optional for yolo when targeting an existing branch).
+    description: PR head branch (required for review-fix and code-review; optional for yolo when targeting an existing branch).
     required: false
   base_branch:
     description: >
@@ -47,6 +47,9 @@ inputs:
     required: false
   question:
     description: Question text for the ask phase.
+    required: false
+  review_instructions:
+    description: Optional extra instructions for the code-review phase.
     required: false
   pipeline_ref:
     description: >
@@ -83,11 +86,12 @@ runs:
         GITHUB_TOKEN: ${{ inputs.app_token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         ISSUE_NUMBER: ${{ inputs.issue_number }}
-        PR_NUMBER: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.phase == 'ask' && inputs.pr_number || '' }}
-        AGENT_BRANCH: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'yolo') && inputs.head_ref || '' }}
+        PR_NUMBER: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'ask' || inputs.phase == 'code-review') && inputs.pr_number || '' }}
+        AGENT_BRANCH: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'yolo' || inputs.phase == 'code-review') && inputs.head_ref || '' }}
         AGENT_BASE_BRANCH: ${{ inputs.base_branch }}
         REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
         QUESTION: ${{ inputs.phase == 'ask' && inputs.question || '' }}
+        REVIEW_INSTRUCTIONS: ${{ inputs.phase == 'code-review' && inputs.review_instructions || '' }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
         SUCCESS_REACTION: ${{ inputs.phase == 'plan' && '+1' || inputs.phase == 'ask' && 'rocket' || 'rocket' }}
@@ -99,12 +103,12 @@ runs:
       with:
         token: ${{ inputs.app_token || github.token }}
         phase: ${{ inputs.phase }}
-        target_type: ${{ inputs.phase == 'review-fix' && 'pr' || 'issue' }}
-        target_number: ${{ inputs.phase == 'review-fix' && inputs.pr_number || inputs.issue_number }}
-        source_issue_number: ${{ inputs.phase == 'review-fix' && inputs.issue_number || '' }}
+        target_type: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'code-review') && 'pr' || 'issue' }}
+        target_number: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'code-review') && inputs.pr_number || inputs.issue_number }}
+        source_issue_number: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'code-review') && inputs.issue_number || '' }}
 
     - name: Remove agent-working label on PR
-      if: always() && inputs.phase == 'review-fix'
+      if: always() && (inputs.phase == 'review-fix' || inputs.phase == 'code-review')
       uses: $/.github/actions/manage-agent-working-label
       with:
         action: remove

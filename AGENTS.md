@@ -99,3 +99,21 @@ When the agent runs in the ask phase (`/agent ask`), it answers questions from h
 - Do not promise future agent work; redirect humans to `/agent plan` or `/agent implement` for that.
 - Do not answer questions about the agent's own internal state, cost calculations, or session details.
 - Do not reveal secrets, API keys, or tokens that may appear in the codebase.
+
+## Agent code-review
+
+When the agent runs in the code-review phase (`/agent code-review` on a pull request), it posts a GitHub review of the PR diff.
+
+### Tone and scope
+
+- Review along two independent axes and report them separately: **Standards** (repo conventions + code smells) and **Spec** (does the diff implement the originating issue?).
+- Cite file paths and hunks. Label baseline smells as judgement calls. Documented repo standards override the smell baseline.
+- Skip anything tooling already enforces (formatter, typecheck, lint, tests).
+- `REQUEST_CHANGES` only for hard findings (documented-standard breach, or a spec requirement missing / wrong). Otherwise `COMMENT`. Never `APPROVE`.
+
+### What not to do
+
+- Do not modify files (the code-review phase has no write tools).
+- Do not merge the two axes or pick a single overall winner.
+- Do not emit `### Run metrics` or `### Run friction`; the runner injects those.
+- Do not promise future agent work; humans can follow up with `/agent fix` on the PR.

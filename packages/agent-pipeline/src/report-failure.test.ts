@@ -105,6 +105,10 @@ describe("report-failure", () => {
       expect(failureMarkerForPhase("review-fix")).toBe(
         "agent-review-fix-failed",
       );
+      expect(failureMarkerForPhase("ask")).toBe("agent-ask-failed");
+      expect(failureMarkerForPhase("code-review")).toBe(
+        "agent-code-review-failed",
+      );
     });
   });
 
@@ -144,6 +148,15 @@ describe("report-failure", () => {
       expect(body).toContain("## Agent Review Fix Failed");
       expect(body).toContain("agent-review-fix-failed");
       expect(body).toContain("review-fix failed");
+    });
+
+    it("builds a code-review failure body", () => {
+      process.env.GITHUB_RUN_ID = "99";
+      const body = buildBody("code-review", new Error("code-review failed"));
+
+      expect(body).toContain("## Agent Code Review Failed");
+      expect(body).toContain("agent-code-review-failed");
+      expect(body).toContain("code-review failed");
     });
 
     it("builds a ci-fix failure body", () => {

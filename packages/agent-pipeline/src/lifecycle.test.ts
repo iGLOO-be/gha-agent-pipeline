@@ -120,6 +120,8 @@ describe("lifecycle", () => {
       ["yolo", "Yolo"],
       ["review-fix", "Review Fix"],
       ["ci-fix", "CI Fix"],
+      ["ask", "Ask"],
+      ["code-review", "Code Review"],
     ] as Array<[AgentPhase, string]>)(
       'renders label for phase "%s"',
       (phase, label) => {

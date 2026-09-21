@@ -36,7 +36,8 @@ jobs:
           contains(github.event.comment.body || '', '/agent plan') ||
           contains(github.event.comment.body || '', '/agent implement') ||
           contains(github.event.comment.body || '', '/agent yolo') ||
-          contains(github.event.comment.body || '', '/agent fix')
+          contains(github.event.comment.body || '', '/agent fix') ||
+          contains(github.event.comment.body || '', '/agent code-review')
         )
       )
     runs-on: ${{ inputs.runner }}
@@ -60,6 +61,44 @@ jobs:
             const owner = context.repo.owner
             const repo = context.repo.repo
             const consumerRef = context.payload.repository.default_branch
+
+            async function dispatchCodeReview({
+              commentId,
+              prNumber,
+              issueNumber,
+              headRef,
+              reviewInstructions,
+              authorAssociation
+            }) {
+              await fetch(
+                `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`,
+                {
+                  method: 'POST',
+                  headers: {
+                    authorization: `token ${process.env.ACTIONS_TOKEN}`,
+                    accept: 'application/vnd.github.v3+json',
+                    'content-type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    ref: consumerRef,
+                    inputs: {
+                      phase: 'code-review',
+                      comment_id: String(commentId),
+                      pr_number: String(prNumber),
+                      issue_number: String(issueNumber),
+                      head_ref: headRef,
+                      review_instructions: reviewInstructions,
+                      author_association: authorAssociation
+                    }
+                  })
+                }
+              ).then(async (res) => {
+                if (!res.ok) {
+                  const text = await res.text()
+                  throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
+                }
+              })
+            }
 
             async function dispatchReviewFix({
               commentId,
@@ -193,9 +232,10 @@ jobs:
               if (isPullRequest) {
                 const isAsk = body.includes('/agent ask')
                 const isFix = body.includes('/agent fix')
+                const isCodeReview = body.includes('/agent code-review')
 
-                if (!isAsk && !isFix) {
-                  core.info('No /agent ask or /agent fix on PR comment')
+                if (!isAsk && !isFix && !isCodeReview) {
+                  core.info('No /agent ask, /agent fix, or /agent code-review on PR comment')
                   return
                 }
 
@@ -225,6 +265,19 @@ jobs:
                   comment_id: commentId,
                   content: 'eyes'
                 })
+
+                if (isCodeReview) {
+                  const reviewInstructions = body.replace('/agent code-review', '').trim()
+                  await dispatchCodeReview({
+                    commentId,
+                    prNumber: resolved.prNumber,
+                    issueNumber: resolved.issueNumber,
+                    headRef: resolved.headRef,
+                    reviewInstructions,
+                    authorAssociation
+                  })
+                  return
+                }
 
                 if (isAsk) {
                   const question = body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.'
@@ -264,6 +317,16 @@ jobs:
                   headRef: resolved.headRef,
                   reviewFeedback: feedback,
                   reactionTarget: 'issue_comment'
+                })
+                return
+              }
+
+              if (body.includes('/agent code-review')) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: context.payload.issue.number,
+                  body: '`/agent code-review` only works on a pull request comment.'
                 })
                 return
               }
