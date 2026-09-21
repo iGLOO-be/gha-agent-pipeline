@@ -138,6 +138,58 @@ jobs:
               })
             }
 
+            function isAutomatedReviewAuthor(login) {
+              if (!login) return true
+              const lower = String(login).toLowerCase()
+              if (lower === 'github-actions[bot]') return true
+              return lower.endsWith('[bot]')
+            }
+
+            function formatReviewCommentsForDispatch(comments) {
+              return comments
+                .map((c) => {
+                  const author = c.user?.login ?? 'unknown'
+                  const line = c.line != null ? `:${c.line}` : ''
+                  const body = (c.body || '').trim()
+                  return `- ${c.path}${line} (id=${c.id}, ${author}): ${body}`
+                })
+                .join('\n')
+            }
+
+            async function appendHumanPrReviewComments(prNumber, feedback) {
+              const stripped = feedback.replace(/\/agent\s+fix/gi, '').trim()
+              const needsContext =
+                /#discussion_r\d/i.test(feedback) || stripped.length === 0
+              if (!needsContext) return feedback
+              try {
+                const all = await github.paginate(github.rest.pulls.listReviewComments, {
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  per_page: 100
+                })
+                const human = all.filter((c) => !isAutomatedReviewAuthor(c.user?.login))
+                if (human.length === 0) return feedback
+                return (
+                  feedback +
+                  '\n\n--- Review line comments ---\n' +
+                  formatReviewCommentsForDispatch(human)
+                )
+              } catch (error) {
+                core.warning(`Could not load PR review comments for dispatch: ${error.message}`)
+                return feedback
+              }
+            }
+
+            function appendReviewLineComments(feedback, reviewComments) {
+              if (!reviewComments || reviewComments.length === 0) return feedback
+              return (
+                feedback +
+                '\n\n--- Review line comments ---\n' +
+                formatReviewCommentsForDispatch(reviewComments)
+              )
+            }
+
             async function getBranchPrefix() {
               try {
                 const { data } = await github.rest.repos.getContent({
@@ -309,13 +361,17 @@ jobs:
                 }
 
                 const feedback = body.replace('/agent fix', '').trim() || body
+                const reviewFeedback = await appendHumanPrReviewComments(
+                  resolved.prNumber,
+                  feedback
+                )
 
                 await dispatchReviewFix({
                   commentId,
                   prNumber: resolved.prNumber,
                   issueNumber: resolved.issueNumber,
                   headRef: resolved.headRef,
-                  reviewFeedback: feedback,
+                  reviewFeedback,
                   reactionTarget: 'issue_comment'
                 })
                 return
@@ -437,13 +493,15 @@ jobs:
 
               const feedback = body.replace('/agent fix', '').trim() || body
 
+              let reviewComments = []
               try {
-                const { data: reviewComments } = await github.rest.pulls.listCommentsForReview({
+                const { data } = await github.rest.pulls.listCommentsForReview({
                   owner,
                   repo,
                   pull_number: prNumber,
                   review_id: review.id,
                 })
+                reviewComments = data
                 if (reviewComments.length > 0) {
                   await github.rest.reactions.createForPullRequestReviewComment({
                     owner,
@@ -460,12 +518,14 @@ jobs:
                 core.warning(`Could not add eyes reaction to review: ${error.message}`)
               }
 
+              const reviewFeedback = appendReviewLineComments(feedback, reviewComments)
+
               await dispatchReviewFix({
                 commentId: review.id,
                 prNumber: resolved.prNumber,
                 issueNumber: resolved.issueNumber,
                 headRef: resolved.headRef,
-                reviewFeedback: feedback,
+                reviewFeedback,
                 reactionTarget: 'pull_request_review',
               })
             }

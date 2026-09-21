@@ -24,6 +24,7 @@ import {
   createOctokit,
   findPlanComment,
   formatPrCommentsForPrompt,
+  buildReviewFixReviewCommentContext,
   assertPullRequestNotConflicting,
   postComment,
   readComments,
@@ -75,6 +76,28 @@ async function main() {
       env.PR_NUMBER,
     );
     const prThread = formatPrCommentsForPrompt(prComments);
+    const triggerCommentIdRaw = process.env.COMMENT_ID;
+    const triggerCommentId =
+      triggerCommentIdRaw != null && triggerCommentIdRaw !== ""
+        ? Number(triggerCommentIdRaw)
+        : undefined;
+    const reviewCommentContext = await buildReviewFixReviewCommentContext(
+      octokit,
+      owner,
+      repo,
+      env.PR_NUMBER,
+      {
+        reviewFeedback: env.REVIEW_FEEDBACK,
+        reactionTarget: process.env.REACTION_TARGET,
+        triggerCommentId: Number.isFinite(triggerCommentId)
+          ? triggerCommentId
+          : undefined,
+      },
+    );
+    const reviewContextWarnings =
+      reviewCommentContext.warnings.length > 0
+        ? `\n\nWarnings:\n${reviewCommentContext.warnings.map((w) => `- ${w}`).join("\n")}`
+        : "";
     const prMergeState = await getPullRequestMergeState(
       octokit,
       owner,
@@ -150,6 +173,12 @@ Issue: ${issue.title}
 
 Latest review / fix trigger:
 ${env.REVIEW_FEEDBACK}
+
+Referenced review comments (from trigger / review submission):
+${reviewCommentContext.referencedSection}${reviewContextWarnings}
+
+PR review comments (line comments on diff, human authors):
+${reviewCommentContext.lineCommentsSection}
 
 Approved plan (context):
 ${plan ?? "(no plan comment found)"}

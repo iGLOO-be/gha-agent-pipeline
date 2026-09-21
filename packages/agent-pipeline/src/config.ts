@@ -368,9 +368,10 @@ function reviewFixPromptBody(config: AgentConfig): string {
   return `A human left review feedback on an open agent pull request. Update the code on the existing branch to address the feedback.
 
 Workflow:
-1. Read the review feedback and PR discussion.
-2. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
-3. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+1. Read the review feedback, referenced review comments, and PR discussion injected below. Use readPullRequestReviewComments if you need to re-fetch line comments.
+2. Do not use fetch_web_content for github.com pull request or discussion URLs on this repository — they require authentication and are already loaded by the runner when possible.
+3. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
+4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
 ${GIT_SHALLOW_WORKSPACE_HINT}
 
 Merge handling:

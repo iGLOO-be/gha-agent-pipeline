@@ -10,9 +10,12 @@ import {
   findPlanComment,
   findPlanCommentUrl,
   formatCommentsForPrompt,
+  formatReviewCommentsForPrompt,
   hasAgentMarkerInComments,
+  isAutomatedReviewAuthor,
   markerFor,
   normalizeAgentPlanBody,
+  parseReviewCommentIdsFromText,
   appendRiskScoreSection,
   parseRiskLevel,
   stripRiskScoreSection,
@@ -460,6 +463,41 @@ describe("tools/github", () => {
       );
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe("parseReviewCommentIdsFromText", () => {
+    it("parses discussion_r anchors and pull comment URLs", () => {
+      const text =
+        "Fix https://github.com/org/repo/pull/1#discussion_r4039927492 and /pulls/1/comments/99";
+      expect(parseReviewCommentIdsFromText(text)).toEqual([4039927492, 99]);
+    });
+  });
+
+  describe("formatReviewCommentsForPrompt", () => {
+    it("formats path, line, author, and body", () => {
+      const out = formatReviewCommentsForPrompt([
+        {
+          id: 1,
+          path: "src/a.ts",
+          line: 10,
+          body: "Please fix",
+          user: { login: "reviewer" },
+        },
+      ]);
+      expect(out).toContain("id=1");
+      expect(out).toContain("src/a.ts line 10");
+      expect(out).toContain("Please fix");
+    });
+  });
+
+  describe("isAutomatedReviewAuthor", () => {
+    it("treats bot logins as automated", () => {
+      expect(isAutomatedReviewAuthor("github-actions[bot]")).toBe(true);
+      expect(isAutomatedReviewAuthor("foldio-app-agent-gha-agent[bot]")).toBe(
+        true,
+      );
+      expect(isAutomatedReviewAuthor("human")).toBe(false);
     });
   });
 
