@@ -84,6 +84,12 @@
           "minLength": 1,
           "description": "Model used for the /agent ask phase.",
           "default": "deepseek/deepseek-v4-pro"
+        },
+        "code-review": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for the /agent code-review phase.",
+          "default": "deepseek/deepseek-v4-pro"
         }
       },
       "default": {}
@@ -160,6 +166,18 @@
               "minLength": 1,
               "description": "Role description for the ask phase.",
               "default": "You are a Q&A agent for this repository."
+            }
+          },
+          "default": {}
+        },
+        "code-review": {
+          "type": "object",
+          "properties": {
+            "role_description": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Role description for the code-review phase.",
+              "default": "You are a code review agent for this repository."
             }
           },
           "default": {}

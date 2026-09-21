@@ -190,6 +190,8 @@ jobs:
 | `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
 | `.github/actions/setup-pr-environment/`     | Checkout, App token, pnpm (consumer-owned)      |
 
+When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
+
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
 **Pin these library refs at `@v0.2.2`** (or latest release)
@@ -207,12 +209,14 @@ Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the trigg
 
 ## Dogfooding (slash commands on this repo)
 
-After the consumer workflows are on **`main`**, comment on an issue:
+After the consumer workflows are on **`main`**, comment on an issue or PR:
 
 - `/agent plan` — explore and post a plan
 - `/agent implement` — implement from the plan and open a PR
 - `/agent yolo` — implement directly from the issue
 - `/agent fix` — on an agent PR (comment or submitted review)
+- `/agent code-review` — two-axis review (Standards + Spec) posted as a GitHub review on a PR
+- `/agent ask` — read-only Q&A on an issue or PR
 
 Dispatch runs phase workflows from the default branch (`main`), not from open PR branches.
 
@@ -291,14 +295,15 @@ The CLI phases read the following environment variables. Common variables (`OPEN
 | `AGENT_BASE_BRANCH`             | git sync / branch create | Overrides `git.base_branch` when set (via workflow `base_branch` input on `agent-phase-run`). Use when the checked-out ref has no `.github/agent.config.yml`. |
 | `AGENT_RUN_COMMANDS_TIMEOUT_MS` | all tool phases          | Overrides `tools.run_commands_timeout_ms` for the Cline `run_commands` tool (default 600000 ms).                                                              |
 
-| Phase        | Required                                                       | Optional / routing                                                                             |
-| ------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `plan`       | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
-| `implement`  | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
-| `yolo`       | `ISSUE_NUMBER`                                                 | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`         |
-| `review-fix` | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH`, `REVIEW_FEEDBACK` | `COMMENT_ID`, `REACTION_TARGET` (`issue_comment` or `pull_request_review`), `SUCCESS_REACTION` |
-| `ci-fix`     | `ISSUE_NUMBER`, `PR_NUMBER`, `HEAD_SHA`, `AGENT_BRANCH`        | (none — no trigger comment/reaction)                                                           |
-| `ask`        | `ISSUE_NUMBER`, `QUESTION`                                     | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                    |
+| Phase         | Required                                                       | Optional / routing                                                                             |
+| ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `plan`        | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
+| `implement`   | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
+| `yolo`        | `ISSUE_NUMBER`                                                 | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`         |
+| `review-fix`  | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH`, `REVIEW_FEEDBACK` | `COMMENT_ID`, `REACTION_TARGET` (`issue_comment` or `pull_request_review`), `SUCCESS_REACTION` |
+| `ci-fix`      | `ISSUE_NUMBER`, `PR_NUMBER`, `HEAD_SHA`, `AGENT_BRANCH`        | (none — no trigger comment/reaction)                                                           |
+| `ask`         | `ISSUE_NUMBER`, `QUESTION`                                     | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                    |
+| `code-review` | `ISSUE_NUMBER`, `PR_NUMBER`                                    | `REVIEW_INSTRUCTIONS`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)          |
 
 Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript `runAgentPhase()` wrapper before and after the phase `main()`. The `agent-phase.yml` workflow must not repeat those steps (it only runs the CLI and keeps `always()` label cleanup as a safety net).
 

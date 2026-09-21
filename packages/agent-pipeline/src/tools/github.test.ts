@@ -5,6 +5,7 @@ import {
   AGENT_COMMENT_MARKERS,
   buildRunUrl,
   clearAgentResumeLabels,
+  createPullRequestReview,
   extractAgentPlan,
   findPlanComment,
   findPlanCommentUrl,
@@ -504,6 +505,124 @@ describe("tools/github", () => {
       expect(stripRiskScoreSection(result)).toBe(
         "## Agent Plan\n\n### Next steps\n- review",
       );
+    });
+  });
+
+  describe("createPullRequestReview", () => {
+    function makeOctokit(
+      createReview: (args: {
+        event: string;
+        comments?: unknown;
+      }) => Promise<{ data: { id: number; html_url: string } }>,
+    ) {
+      return {
+        pulls: {
+          get: async () => ({ data: { head: { sha: "abc123" } } }),
+          createReview,
+        },
+      } as unknown as Parameters<typeof createPullRequestReview>[0];
+    }
+
+    function unprocessable(message: string) {
+      const error = new Error(message) as Error & { status: number };
+      error.status = 422;
+      return error;
+    }
+
+    it("posts COMMENT with inline comments", async () => {
+      const createReview = async (args: {
+        event: string;
+        comments?: unknown;
+      }) => {
+        expect(args.event).toBe("COMMENT");
+        expect(args.comments).toEqual([
+          {
+            path: "src/foo.ts",
+            body: "nit",
+            line: 12,
+            side: "RIGHT",
+          },
+        ]);
+        return { data: { id: 9, html_url: "https://example/review/9" } };
+      };
+
+      const result = await createPullRequestReview(
+        makeOctokit(createReview),
+        "owner",
+        "repo",
+        42,
+        {
+          event: "COMMENT",
+          body: "## Standards\nnone",
+          comments: [{ path: "src/foo.ts", line: 12, body: "nit" }],
+        },
+      );
+      expect(result.id).toBe(9);
+    });
+
+    it("retries without inline comments on 422", async () => {
+      const events: Array<{ event: string; hasComments: boolean }> = [];
+      const createReview = async (args: {
+        event: string;
+        comments?: unknown;
+      }) => {
+        events.push({
+          event: args.event,
+          hasComments: Boolean(args.comments),
+        });
+        if (args.comments) {
+          throw unprocessable(
+            "Pull request review thread line must be part of the diff",
+          );
+        }
+        return { data: { id: 11, html_url: "https://example/review/11" } };
+      };
+
+      const result = await createPullRequestReview(
+        makeOctokit(createReview),
+        "owner",
+        "repo",
+        42,
+        {
+          event: "COMMENT",
+          body: "## Standards\nnone",
+          comments: [{ path: "src/foo.ts", line: 99, body: "bad line" }],
+        },
+      );
+      expect(result.id).toBe(11);
+      expect(events).toEqual([
+        { event: "COMMENT", hasComments: true },
+        { event: "COMMENT", hasComments: false },
+      ]);
+    });
+
+    it("falls back from REQUEST_CHANGES to COMMENT on own-PR 422", async () => {
+      const events: string[] = [];
+      const createReview = async (args: {
+        event: string;
+        comments?: unknown;
+      }) => {
+        events.push(args.event);
+        if (args.event === "REQUEST_CHANGES") {
+          throw unprocessable(
+            "Can not request changes on your own pull request",
+          );
+        }
+        return { data: { id: 12, html_url: "https://example/review/12" } };
+      };
+
+      const result = await createPullRequestReview(
+        makeOctokit(createReview),
+        "owner",
+        "repo",
+        42,
+        {
+          event: "REQUEST_CHANGES",
+          body: "## Spec\nmissing",
+        },
+      );
+      expect(result.id).toBe(12);
+      expect(events).toEqual(["REQUEST_CHANGES", "COMMENT"]);
     });
   });
 });

@@ -11,12 +11,13 @@ const phases = new Set([
   "ci-fix",
   "review-fix",
   "ask",
+  "code-review",
 ]);
 
 const phase = process.argv[2];
 if (!phase || !phases.has(phase)) {
   console.error(
-    "Usage: agent-pipeline <plan|implement|yolo|ci-fix|review-fix|ask>",
+    "Usage: agent-pipeline <plan|implement|yolo|ci-fix|review-fix|ask|code-review>",
   );
   process.exit(1);
 }

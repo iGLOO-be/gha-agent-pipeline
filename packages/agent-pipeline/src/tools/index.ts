@@ -4,6 +4,7 @@ import { readCacheValue, writeCacheValue } from "../state/cache.js";
 import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
+  createPullRequestReview,
   getPullRequestMergeState,
   postComment,
   prependAgentMarker,
@@ -12,6 +13,8 @@ import {
   readComments,
   readIssue,
   truncateCommentBodyForAgent,
+  type PullRequestReviewCommentInput,
+  type PullRequestReviewEvent,
 } from "./github.js";
 import { getConflictFiles } from "../git/sync.js";
 import { listFiles } from "./list-files.js";
@@ -422,6 +425,124 @@ export async function createAskTools(
 
   return tools;
 }
+
+export type ReviewTracker = {
+  posted: boolean;
+  id?: number;
+  body?: string;
+  htmlUrl?: string;
+};
+
+export async function createCodeReviewTools(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  prNumber: number,
+  review: ReviewTracker,
+) {
+  const { createTool } = await loadClineSdk();
+  const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
+
+  const readTools = baseTools.filter(
+    (tool) => tool.name !== "postComment" && tool.name !== "addLabel",
+  );
+
+  const submitReview = createTool({
+    name: "submitReview",
+    description:
+      "Submit the final two-axis code review as a GitHub pull request review. Required on every code-review run — the run is incomplete until you call this.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        event: {
+          type: "string",
+          enum: ["COMMENT", "REQUEST_CHANGES"],
+          description:
+            "COMMENT when there are no hard findings; REQUEST_CHANGES for documented-standard breaches or spec misses. Never APPROVE.",
+        },
+        body: {
+          type: "string",
+          description:
+            "Markdown review starting with ## Standards then ## Spec",
+        },
+        comments: {
+          type: "array",
+          description: "Optional inline comments on the PR diff",
+          items: {
+            type: "object",
+            properties: {
+              path: {
+                type: "string",
+                description: "File path relative to the repo root",
+              },
+              line: {
+                type: "integer",
+                description: "Line number in the new file (RIGHT side)",
+              },
+              side: {
+                type: "string",
+                enum: ["LEFT", "RIGHT"],
+                description: "Diff side; defaults to RIGHT",
+              },
+              body: {
+                type: "string",
+                description: "Inline comment markdown",
+              },
+            },
+            required: ["path", "line", "body"],
+          },
+        },
+      },
+      required: ["event", "body"],
+    },
+    lifecycle: { completesRun: true },
+    async execute(input: {
+      event: PullRequestReviewEvent;
+      body: string;
+      comments?: PullRequestReviewCommentInput[];
+    }) {
+      const markedBody = prependAgentMarker(
+        input.body,
+        AGENT_COMMENT_MARKERS.codeReview,
+      );
+      const posted = await createPullRequestReview(
+        octokit,
+        owner,
+        repo,
+        prNumber,
+        {
+          event: input.event,
+          body: markedBody,
+          comments: input.comments,
+        },
+      );
+      review.posted = true;
+      review.id = posted.id;
+      review.body = markedBody;
+      review.htmlUrl = posted.html_url;
+      return { id: posted.id, url: posted.html_url, event: posted.state };
+    },
+  });
+
+  const readPrCommentsTool = createTool({
+    name: "readPrComments",
+    description: "Read all comments on the pull request.",
+    inputSchema: { type: "object", properties: {} },
+    async execute() {
+      const comments = await readComments(octokit, owner, repo, prNumber);
+      return comments.map((comment) => ({
+        id: comment.id,
+        author: comment.user?.login ?? "unknown",
+        body: truncateCommentBodyForAgent(comment.body ?? ""),
+        createdAt: comment.created_at,
+      }));
+    },
+  });
+
+  return [...readTools, submitReview, readPrCommentsTool];
+}
+
 export const AGENT_TOOL_NAMES = [
   "readIssue",
   "readComments",

@@ -32,6 +32,8 @@ export const AGENT_COMMENT_MARKERS = {
   blocked: "agent-blocked",
   ask: "agent-ask",
   askFailed: "agent-ask-failed",
+  codeReview: "agent-code-review",
+  codeReviewFailed: "agent-code-review-failed",
 } as const;
 
 /** Lifecycle label applied while an agent phase is running. */
@@ -820,4 +822,123 @@ export async function manageRiskLabels(
     issueNumber,
     `agent-risk-${level}`,
   );
+}
+
+export type PullRequestReviewEvent = "COMMENT" | "REQUEST_CHANGES";
+
+export type PullRequestReviewCommentInput = {
+  path: string;
+  body: string;
+  line: number;
+  side?: "LEFT" | "RIGHT";
+};
+
+export type CreatePullRequestReviewInput = {
+  event: PullRequestReviewEvent;
+  body: string;
+  comments?: PullRequestReviewCommentInput[];
+};
+
+function httpStatus(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status: unknown }).status;
+    if (typeof status === "number") {
+      return status;
+    }
+  }
+  return undefined;
+}
+
+function isUnprocessable(error: unknown): boolean {
+  return httpStatus(error) === 422;
+}
+
+function toReviewComments(
+  comments: PullRequestReviewCommentInput[] | undefined,
+) {
+  if (!comments || comments.length === 0) {
+    return undefined;
+  }
+  return comments.map((comment) => ({
+    path: comment.path,
+    body: comment.body,
+    line: comment.line,
+    side: comment.side ?? "RIGHT",
+  }));
+}
+
+export async function createPullRequestReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  input: CreatePullRequestReviewInput,
+) {
+  const { data: pr } = await octokit.pulls.get({
+    owner,
+    repo,
+    pull_number: prNumber,
+  });
+  const commitId = pr.head.sha;
+
+  const post = async (
+    event: PullRequestReviewEvent,
+    comments?: PullRequestReviewCommentInput[],
+  ) => {
+    const { data } = await octokit.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      commit_id: commitId,
+      event,
+      body: input.body,
+      comments: toReviewComments(comments),
+    });
+    return data;
+  };
+
+  const comments = input.comments;
+  try {
+    return await post(input.event, comments);
+  } catch (error) {
+    if (comments && comments.length > 0 && isUnprocessable(error)) {
+      try {
+        return await post(input.event, undefined);
+      } catch (retryError) {
+        if (input.event === "REQUEST_CHANGES" && isUnprocessable(retryError)) {
+          return await post("COMMENT", undefined);
+        }
+        throw retryError;
+      }
+    }
+    if (input.event === "REQUEST_CHANGES" && isUnprocessable(error)) {
+      try {
+        return await post("COMMENT", comments);
+      } catch (retryError) {
+        if (comments && comments.length > 0 && isUnprocessable(retryError)) {
+          return await post("COMMENT", undefined);
+        }
+        throw retryError;
+      }
+    }
+    throw error;
+  }
+}
+
+export async function updatePullRequestReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+  body: string,
+) {
+  const { data } = await octokit.pulls.updateReview({
+    owner,
+    repo,
+    pull_number: prNumber,
+    review_id: reviewId,
+    body,
+  });
+  return data;
 }

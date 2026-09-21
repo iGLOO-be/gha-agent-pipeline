@@ -22,6 +22,7 @@ export const agentConfigSchema = z
         "ci-fix": z.string().min(1).default("moonshotai/kimi-k2.7-code"),
         "review-fix": z.string().min(1).default("moonshotai/kimi-k2.7-code"),
         ask: z.string().min(1).default("deepseek/deepseek-v4-pro"),
+        "code-review": z.string().min(1).default("deepseek/deepseek-v4-pro"),
       })
       .default({}),
     ci: z
@@ -79,6 +80,14 @@ export const agentConfigSchema = z
               .default("You are a Q&A agent for this repository."),
           })
           .default({}),
+        "code-review": z
+          .object({
+            role_description: z
+              .string()
+              .min(1)
+              .default("You are a code review agent for this repository."),
+          })
+          .default({}),
       })
       .default({}),
     tools: z
@@ -109,7 +118,13 @@ export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type MergeStrategy = AgentConfig["git"]["merge_strategy"];
 
 export type AgentPhase =
-  "plan" | "implement" | "yolo" | "ci-fix" | "review-fix" | "ask";
+  | "plan"
+  | "implement"
+  | "yolo"
+  | "ci-fix"
+  | "review-fix"
+  | "ask"
+  | "code-review";
 
 function applyAgentConfigEnvOverrides(config: AgentConfig): AgentConfig {
   const baseBranchOverride = process.env.AGENT_BASE_BRANCH?.trim();
@@ -276,6 +291,56 @@ Do not commit, push, or open a PR yourself. The runner will handle git operation
 
 When you call \`submitPhaseReport\`, you **must** include \`riskLevel\` (\`low\` | \`medium\` | \`high\`) and \`riskJustification\` (one paragraph). The runner applies agent-risk-* labels from these fields — do not add a separate risk block in chat output.`;
 
+function codeReviewPromptBody(): string {
+  return `You are an agent in the **code-review** phase — a read-only two-axis review of the pull request diff. Your job is to review whether the change follows this repo's documented coding standards and whether it faithfully implements the originating issue / spec.
+
+CRITICAL — completion rule:
+- You MUST end every run by calling submitReview.
+- Do not finish by replying in chat or summarizing in text.
+- A run that does not call submitReview is a failure.
+
+The two axes are deliberately separate. Do not merge, rerank, or pick a single winner across them:
+
+- **Standards**: does the diff conform to documented repo standards, plus the smell baseline below?
+- **Spec**: does the diff faithfully implement the originating issue / spec?
+
+Workflow:
+1. Read the injected diff, commit list, source issue, and PR body. Use readIssue / readComments / readPrComments if you need more thread context.
+2. Use list_files, read_files, and search_codebase to inspect files named in the diff. Do not modify any files (no editor, no apply_patch).
+3. Call submitReview with:
+   - \`event\`: \`REQUEST_CHANGES\` only when there is a **hard** finding (documented-standard breach, or a spec requirement missing / wrong). Otherwise \`COMMENT\`. Never \`APPROVE\`.
+   - \`body\`: markdown that starts with \`## Standards\` then \`## Spec\`. Report each axis independently. Under each heading, list findings per file/hunk, or say there are none.
+   - \`comments\` (optional): inline comments on the PR diff (\`path\`, \`line\`, optional \`side\` defaulting to RIGHT, \`body\`). Only comment on lines that appear in the injected diff.
+
+Standards rules:
+- A documented repo standard always wins over the smell baseline.
+- Documented-standard breaches can be hard findings. Baseline smells are always judgement calls — label them as such (e.g. "possible Feature Envy").
+- Skip anything tooling already enforces (formatter, typecheck, lint, tests).
+
+Smell baseline (Fowler, *Refactoring* ch.3) — what it is → how to fix:
+- **Mysterious Name**: a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no honest name comes, the design's murky.
+- **Duplicated Code**: the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
+- **Feature Envy**: a method that reaches into another object's data more than its own. → move the method onto the data it envies.
+- **Data Clumps**: the same few fields or params keep travelling together (a type wanting to be born). → bundle them into one type, pass that.
+- **Primitive Obsession**: a primitive or string standing in for a domain concept that deserves its own type. → give the concept its own small type.
+- **Repeated Switches**: the same \`switch\`/\`if\`-cascade on the same type recurs across the change. → replace with polymorphism, or one map both sites share.
+- **Shotgun Surgery**: one logical change forces scattered edits across many files in the diff. → gather what changes together into one module.
+- **Divergent Change**: one file or module is edited for several unrelated reasons. → split so each module changes for one reason.
+- **Speculative Generality**: abstraction, parameters, or hooks added for needs the spec doesn't have. → delete it; inline back until a real need shows.
+- **Message Chains**: long \`a.b().c().d()\` navigation the caller shouldn't depend on. → hide the walk behind one method on the first object.
+- **Middle Man**: a class or function that mostly just delegates onward. → cut it, call the real target direct.
+- **Refused Bequest**: a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
+
+Spec report:
+- (a) requirements the spec asked for that are missing or partial
+- (b) behaviour in the diff that wasn't asked for (scope creep)
+- (c) requirements that look implemented but where the implementation looks wrong
+Quote the spec line for each finding. If there is no spec, say so under \`## Spec\` and skip that axis.
+
+Do not emit \`### Run metrics\` or \`### Run friction\`; those are injected automatically by the runner.
+Read AGENTS.md section **Agent code-review** if present for additional tone/scope guidance.`;
+}
+
 function askPromptBody(): string {
   return `You are an agent in the **ask** phase — a read-only Q&A mode. Your job is to answer a human question about a GitHub issue or an agent pull request using the issue/PR thread and codebase exploration.
 
@@ -331,6 +396,7 @@ const PHASE_PROMPT_BODY: Record<AgentPhase, (config: AgentConfig) => string> = {
   yolo: () => yoloPromptBody,
   "review-fix": reviewFixPromptBody,
   ask: () => askPromptBody(),
+  "code-review": () => codeReviewPromptBody(),
 };
 
 export function getAppName(config?: AgentConfig): string {
@@ -363,6 +429,7 @@ export const YOLO_MODEL = IMPLEMENT_MODEL;
 export const CI_FIX_MODEL = agentConfig.models["ci-fix"];
 export const REVIEW_FIX_MODEL = agentConfig.models["review-fix"];
 export const ASK_MODEL = agentConfig.models.ask;
+export const CODE_REVIEW_MODEL = agentConfig.models["code-review"];
 export const DEFAULT_MERGE_STRATEGY = agentConfig.git.merge_strategy;
 
 export function getCiMaxRounds(): number {
@@ -454,6 +521,22 @@ export function loadAskEnv(): AskEnv {
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Missing or invalid ask environment: ${missing}`);
+  }
+  return parsed.data;
+}
+
+const codeReviewEnvSchema = envSchema.extend({
+  PR_NUMBER: z.coerce.number().int().positive(),
+  REVIEW_INSTRUCTIONS: optionalEnvString,
+});
+
+export type CodeReviewEnv = z.infer<typeof codeReviewEnvSchema>;
+
+export function loadCodeReviewEnv(): CodeReviewEnv {
+  const parsed = codeReviewEnvSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
+    throw new Error(`Missing or invalid code-review environment: ${missing}`);
   }
   return parsed.data;
 }

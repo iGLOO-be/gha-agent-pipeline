@@ -15,6 +15,7 @@ models:
   ci-fix: deepseek/deepseek-v4-pro
   review-fix: deepseek/deepseek-v4-pro
   ask: deepseek/deepseek-v4-pro
+  code-review: deepseek/deepseek-v4-pro
 
 prompts:
   plan:
@@ -29,6 +30,8 @@ prompts:
     role_description: You are a review fix agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
   ask:
     role_description: You are a Q&A agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
+  code-review:
+    role_description: You are a code review agent for the gha-agent-pipeline monorepo (TypeScript library, packages/agent-pipeline, Vitest, GitHub Actions composites).
 
 ci:
   max_rounds: 3

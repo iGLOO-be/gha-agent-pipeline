@@ -13,6 +13,7 @@ on:
           - yolo
           - review-fix
           - ask
+          - code-review
       comment_id:
         description: Comment or review ID that triggered the workflow
         required: true
@@ -30,11 +31,11 @@ on:
         required: false
         type: string
       pr_number:
-        description: Pull request number (required for review-fix)
+        description: Pull request number (required for review-fix and code-review)
         required: false
         type: string
       head_ref:
-        description: PR head branch (required for review-fix)
+        description: PR head branch (required for review-fix and code-review)
         required: false
         type: string
       review_feedback:
@@ -47,6 +48,10 @@ on:
         type: string
       question:
         description: Question text for the ask phase
+        required: false
+        type: string
+      review_instructions:
+        description: Optional extra instructions for the code-review phase
         required: false
         type: string
 
@@ -90,6 +95,7 @@ jobs:
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
           question: ${{ inputs.question }}
+          review_instructions: ${{ inputs.review_instructions }}
           node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

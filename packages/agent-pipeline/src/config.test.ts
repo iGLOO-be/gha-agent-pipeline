@@ -13,6 +13,7 @@ import {
   loadAgentEnv,
   loadAskEnv,
   loadCiFixEnv,
+  loadCodeReviewEnv,
   loadReviewFixEnv,
   parseRepository,
   PLAN_MODEL,
@@ -31,6 +32,7 @@ const ENV_KEYS = [
   "AGENT_BRANCH",
   "REVIEW_FEEDBACK",
   "QUESTION",
+  "REVIEW_INSTRUCTIONS",
   "CI_MAX_ROUNDS",
   "AGENT_BASE_BRANCH",
   "AGENT_RUN_COMMANDS_TIMEOUT_MS",
@@ -244,6 +246,8 @@ describe("config", () => {
       expect(config.models.implement).toBe("moonshotai/kimi-k2.7-code");
       expect(config.models["ci-fix"]).toBe("moonshotai/kimi-k2.7-code");
       expect(config.models["review-fix"]).toBe("moonshotai/kimi-k2.7-code");
+      expect(config.models.ask).toBe("deepseek/deepseek-v4-pro");
+      expect(config.models["code-review"]).toBe("deepseek/deepseek-v4-pro");
       expect(config.ci.max_rounds).toBe(3);
       expect(config.tools.run_commands_timeout_ms).toBe(600_000);
     });
@@ -488,6 +492,16 @@ describe("config", () => {
       expect(prompt).toContain("submitAnswer");
       expect(prompt).toContain("## Agent answer");
     });
+
+    it("includes submitReview and two axes in code-review prompt", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const prompt = buildPhaseSystemPrompt("code-review", config);
+      expect(prompt).toContain("submitReview");
+      expect(prompt).toContain("## Standards");
+      expect(prompt).toContain("## Spec");
+      expect(prompt).toContain("REQUEST_CHANGES");
+      expect(prompt).toContain("Never `APPROVE`");
+    });
   });
 
   describe("ask phase", () => {
@@ -536,6 +550,57 @@ describe("config", () => {
       process.env.ISSUE_NUMBER = "88";
 
       expect(() => loadAskEnv()).toThrow(/Missing or invalid ask environment/);
+    });
+  });
+
+  describe("code-review phase", () => {
+    it("has no write tools in tool policies", () => {
+      const policies = buildToolPolicies("code-review", []);
+      expect(policies.editor).toBeUndefined();
+      expect(policies.apply_patch).toBeUndefined();
+    });
+
+    it("has read tools in tool policies", () => {
+      const policies = buildToolPolicies("code-review", []);
+      expect(policies.read_files).toEqual({ autoApprove: true });
+      expect(policies.search_codebase).toEqual({ autoApprove: true });
+    });
+
+    it("loads code-review env with PR_NUMBER required", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+      process.env.PR_NUMBER = "42";
+      process.env.REVIEW_INSTRUCTIONS = "focus on dispatch";
+
+      const env = loadCodeReviewEnv();
+      expect(env.ISSUE_NUMBER).toBe(88);
+      expect(env.PR_NUMBER).toBe(42);
+      expect(env.REVIEW_INSTRUCTIONS).toBe("focus on dispatch");
+    });
+
+    it("loads code-review env when REVIEW_INSTRUCTIONS is empty", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+      process.env.PR_NUMBER = "42";
+      process.env.REVIEW_INSTRUCTIONS = "";
+
+      const env = loadCodeReviewEnv();
+      expect(env.REVIEW_INSTRUCTIONS).toBeUndefined();
+    });
+
+    it("code-review env fails without PR_NUMBER", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+
+      expect(() => loadCodeReviewEnv()).toThrow(
+        /Missing or invalid code-review environment/,
+      );
     });
   });
 

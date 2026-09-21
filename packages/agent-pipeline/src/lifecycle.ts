@@ -22,6 +22,7 @@ export const PHASE_LABELS: Record<AgentPhase, string> = {
   "ci-fix": "CI Fix",
   "review-fix": "Review Fix",
   ask: "Ask",
+  "code-review": "Code Review",
 };
 
 export type StartupTarget =

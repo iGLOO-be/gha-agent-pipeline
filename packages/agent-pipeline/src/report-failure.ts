@@ -38,6 +38,10 @@ const PHASE_META = {
     title: "Agent Ask Failed",
     description: "answering the question",
   },
+  "code-review": {
+    title: "Agent Code Review Failed",
+    description: "reviewing the pull request",
+  },
 } as const;
 
 export type FailurePhase = keyof typeof PHASE_META;
@@ -109,6 +113,8 @@ export function failureMarkerForPhase(phase: FailurePhase): AgentCommentMarker {
       return AGENT_COMMENT_MARKERS.ciFixFailed;
     case "ask":
       return AGENT_COMMENT_MARKERS.askFailed;
+    case "code-review":
+      return AGENT_COMMENT_MARKERS.codeReviewFailed;
     default:
       return AGENT_COMMENT_MARKERS.implementFailed;
   }
