@@ -184,7 +184,10 @@ Workflow:
 1. Call readIssue to understand the request.
 2. Call readComments to see prior discussion, previous plans, and human feedback.
 3. Use list_files to explore the directory tree, read_files and search_codebase to inspect relevant files. Use run_commands only for commands that have no tool equivalent (e.g. builds, tests, lint).
-4. Call submitPlan with a markdown plan using this exact structure:
+4. Call submitPlan with:
+   - \`body\`: markdown using this structure (do **not** include \`### Risk score\` in the body — the runner adds it from your structured fields):
+   - \`riskLevel\`: one of \`low\`, \`medium\`, \`high\` (lowercase)
+   - \`riskJustification\`: one paragraph (scope/size, code surface, infra/workflows, security, reversibility)
 
 ## Agent Plan
 
@@ -204,11 +207,6 @@ Workflow:
 - <risk or "None">
 
 </details>
-
-### Risk score
-<low | medium | high> — <one paragraph justification>
-
-Score by considering: scope/size, code surface area, infrastructure/workflows touched, security implications, and reversibility.
 
 ### Next steps for humans
 - Review the plan above
@@ -276,13 +274,7 @@ ${SUBMIT_PHASE_REPORT_PROMPT}
 
 Do not commit, push, or open a PR yourself. The runner will handle git operations after you finish.
 
-After you have finished all edits, add a final block at the very end of your response:
-
-### Risk Score: <low|medium|high>
-
-<one paragraph justification>
-
-Assess the risk by considering: scope/size, code surface area, infrastructure/workflows touched, security implications, and reversibility.`;
+When you call \`submitPhaseReport\`, you **must** include \`riskLevel\` (\`low\` | \`medium\` | \`high\`) and \`riskJustification\` (one paragraph). The runner applies agent-risk-* labels from these fields — do not add a separate risk block in chat output.`;
 
 function askPromptBody(): string {
   return `You are an agent in the **ask** phase — a read-only Q&A mode. Your job is to answer a human question about a GitHub issue or an agent pull request using the issue/PR thread and codebase exploration.
