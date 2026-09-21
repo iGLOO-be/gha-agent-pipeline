@@ -457,6 +457,8 @@ describe("config", () => {
       const prompt = buildPhaseSystemPrompt("review-fix", config);
       expect(prompt).toContain("develop");
       expect(prompt).toContain("rebase");
+      expect(prompt).toContain("fetch_web_content");
+      expect(prompt).toContain("readPullRequestReviewComments");
     });
 
     it("includes submitPhaseReport in implement prompt", () => {

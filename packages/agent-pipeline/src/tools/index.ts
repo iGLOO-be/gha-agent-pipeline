@@ -12,6 +12,10 @@ import {
   readCheckRuns,
   readComments,
   readIssue,
+  readPullRequestReviewComments,
+  getPullRequestReviewComment,
+  formatReviewCommentsForPrompt,
+  isAutomatedReviewAuthor,
   truncateCommentBodyForAgent,
   type PullRequestReviewCommentInput,
   type PullRequestReviewEvent,
@@ -322,6 +326,59 @@ export async function createReviewFixTools(
     },
   });
 
+  const readPullRequestReviewCommentsTool = createTool({
+    name: "readPullRequestReviewComments",
+    description:
+      "List pull request review comments (inline comments on the diff). Optionally filter to specific comment IDs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        commentIds: {
+          type: "array",
+          items: { type: "number" },
+          description:
+            "Optional review comment IDs to fetch; when omitted, returns human line comments on the PR (up to 100).",
+        },
+      },
+    },
+    async execute(input: { commentIds?: number[] }) {
+      if (input.commentIds != null && input.commentIds.length > 0) {
+        const comments = await Promise.all(
+          input.commentIds.map((id) =>
+            getPullRequestReviewComment(octokit, owner, repo, id),
+          ),
+        );
+        return {
+          markdown: formatReviewCommentsForPrompt(comments),
+          comments: comments.map((c) => ({
+            id: c.id,
+            path: c.path,
+            line: c.line,
+            author: c.user?.login ?? "unknown",
+            body: c.body ?? "",
+          })),
+        };
+      }
+      const all = await readPullRequestReviewComments(
+        octokit,
+        owner,
+        repo,
+        prNumber,
+      );
+      const human = all.filter((c) => !isAutomatedReviewAuthor(c.user?.login));
+      return {
+        markdown: formatReviewCommentsForPrompt(human.slice(0, 100)),
+        comments: human.slice(0, 100).map((c) => ({
+          id: c.id,
+          path: c.path,
+          line: c.line,
+          author: c.user?.login ?? "unknown",
+          body: c.body ?? "",
+        })),
+      };
+    },
+  });
+
   const getMergeStatusTool = createTool({
     name: "getMergeStatus",
     description:
@@ -338,7 +395,12 @@ export async function createReviewFixTools(
 
   const withoutPost = baseTools.filter((tool) => tool.name !== "postComment");
 
-  const tools = [...withoutPost, postPrCommentTool, getMergeStatusTool];
+  const tools = [
+    ...withoutPost,
+    postPrCommentTool,
+    readPullRequestReviewCommentsTool,
+    getMergeStatusTool,
+  ];
 
   if (tracker) {
     return appendSubmitPhaseReportTool(tools, tracker);

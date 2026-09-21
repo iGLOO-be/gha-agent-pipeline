@@ -379,6 +379,189 @@ export function formatPrCommentsForPrompt(
     .join("\n\n");
 }
 
+export type PullRequestReviewCommentForPrompt = {
+  id: number;
+  path: string;
+  line?: number | null;
+  body: string | null;
+  user?: { login?: string | null } | null;
+  diff_hunk?: string | null;
+};
+
+export function parseReviewCommentIdsFromText(text: string): number[] {
+  const ids = new Set<number>();
+  const patterns = [/#discussion_r(\d+)/gi, /\/pulls\/\d+\/comments\/(\d+)/gi];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const id = Number(match[1]);
+      if (Number.isFinite(id)) {
+        ids.add(id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+export function isAutomatedReviewAuthor(
+  login: string | undefined | null,
+): boolean {
+  if (!login) {
+    return true;
+  }
+  const lower = login.toLowerCase();
+  if (lower === "github-actions[bot]") {
+    return true;
+  }
+  return lower.endsWith("[bot]");
+}
+
+export function formatReviewCommentsForPrompt(
+  comments: PullRequestReviewCommentForPrompt[],
+  options?: { maxDiffHunkChars?: number },
+): string {
+  if (comments.length === 0) {
+    return "(no review line comments)";
+  }
+  const maxHunk = options?.maxDiffHunkChars ?? 400;
+  return comments
+    .map((comment) => {
+      const author = comment.user?.login ?? "unknown";
+      const line = comment.line != null ? ` line ${comment.line}` : "";
+      const body = (comment.body ?? "").trim();
+      const hunk = comment.diff_hunk
+        ? `\nDiff context:\n${comment.diff_hunk.slice(0, maxHunk)}${
+            comment.diff_hunk.length > maxHunk ? "…" : ""
+          }`
+        : "";
+      return `--- Review comment id=${comment.id} on ${comment.path}${line} (${author}) ---\n${body}${hunk}`;
+    })
+    .join("\n\n");
+}
+
+export async function readPullRequestReviewComments(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+) {
+  return octokit.paginate(octokit.rest.pulls.listReviewComments, {
+    owner,
+    repo,
+    pull_number: prNumber,
+    per_page: 100,
+  });
+}
+
+export async function getPullRequestReviewComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  commentId: number,
+) {
+  const { data } = await octokit.pulls.getReviewComment({
+    owner,
+    repo,
+    comment_id: commentId,
+  });
+  return data;
+}
+
+export async function listReviewCommentsForReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+) {
+  const { data } = await octokit.pulls.listCommentsForReview({
+    owner,
+    repo,
+    pull_number: prNumber,
+    review_id: reviewId,
+  });
+  return data;
+}
+
+export async function buildReviewFixReviewCommentContext(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  options: {
+    reviewFeedback: string;
+    reactionTarget?: string;
+    triggerCommentId?: number;
+  },
+): Promise<{
+  referencedSection: string;
+  lineCommentsSection: string;
+  warnings: string[];
+}> {
+  const warnings: string[] = [];
+  const referencedIds = parseReviewCommentIdsFromText(options.reviewFeedback);
+  const referencedComments: PullRequestReviewCommentForPrompt[] = [];
+
+  for (const id of referencedIds) {
+    try {
+      referencedComments.push(
+        await getPullRequestReviewComment(octokit, owner, repo, id),
+      );
+    } catch {
+      warnings.push(
+        `Could not load review comment id=${id} from the API (it may have been deleted).`,
+      );
+    }
+  }
+
+  if (
+    options.reactionTarget === "pull_request_review" &&
+    options.triggerCommentId != null
+  ) {
+    try {
+      const fromReview = await listReviewCommentsForReview(
+        octokit,
+        owner,
+        repo,
+        prNumber,
+        options.triggerCommentId,
+      );
+      for (const comment of fromReview) {
+        if (!referencedComments.some((c) => c.id === comment.id)) {
+          referencedComments.push(comment);
+        }
+      }
+    } catch {
+      warnings.push(
+        `Could not load line comments for review id=${options.triggerCommentId}.`,
+      );
+    }
+  }
+
+  let allLineComments: PullRequestReviewCommentForPrompt[] = [];
+  try {
+    allLineComments = await readPullRequestReviewComments(
+      octokit,
+      owner,
+      repo,
+      prNumber,
+    );
+  } catch {
+    warnings.push("Could not list pull request review comments for this PR.");
+  }
+
+  const humanLineComments = allLineComments.filter(
+    (comment) => !isAutomatedReviewAuthor(comment.user?.login),
+  );
+
+  return {
+    referencedSection: formatReviewCommentsForPrompt(referencedComments),
+    lineCommentsSection: formatReviewCommentsForPrompt(
+      humanLineComments.slice(0, 100),
+    ),
+    warnings,
+  };
+}
+
 export async function getPullRequestMergeState(
   octokit: Octokit,
   owner: string,
@@ -650,12 +833,13 @@ export async function addReactionToPullRequestReview(
   reviewId: number,
   content: ReactionContent,
 ) {
-  const { data: reviewComments } = await octokit.pulls.listCommentsForReview({
+  const reviewComments = await listReviewCommentsForReview(
+    octokit,
     owner,
     repo,
-    pull_number: prNumber,
-    review_id: reviewId,
-  });
+    prNumber,
+    reviewId,
+  );
   if (reviewComments.length === 0) {
     console.log(
       "No review comments available to react to; GitHub does not support reactions on pull request reviews directly.",
