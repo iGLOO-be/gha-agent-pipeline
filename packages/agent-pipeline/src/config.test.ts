@@ -480,6 +480,7 @@ describe("config", () => {
       const prompt = buildPhaseSystemPrompt("ci-fix", config);
       expect(prompt).toContain("submitPhaseReport");
       expect(prompt).toContain("Agent phase report");
+      expect(prompt).toContain("commitMessage");
     });
 
     it("includes submitPhaseReport in review-fix prompt", () => {
@@ -487,6 +488,7 @@ describe("config", () => {
       const prompt = buildPhaseSystemPrompt("review-fix", config);
       expect(prompt).toContain("submitPhaseReport");
       expect(prompt).toContain("Agent phase report");
+      expect(prompt).toContain("commitMessage");
     });
     it("includes submitAnswer in ask prompt", () => {
       const config = loadAgentConfig(join(tempDir, "missing.yml"));

@@ -1,9 +1,13 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  COMMIT_MESSAGE_MAX_CHARS,
   createPhaseReportTracker,
+  createSubmitPhaseReportTool,
   formatPhaseReportForPr,
   formatPhaseReportForComment,
   formatPhaseCompletionMarkdown,
+  normalizeAgentCommitMessage,
+  resolveAgentCommitMessage,
   SUBMIT_PHASE_REPORT_TOOL_NAME,
   type PhaseReport,
 } from "./phase-report.js";
@@ -102,6 +106,74 @@ describe("phase-report", () => {
   describe("tool name", () => {
     it("exports the canonical tool name", () => {
       expect(SUBMIT_PHASE_REPORT_TOOL_NAME).toBe("submitPhaseReport");
+    });
+  });
+
+  describe("normalizeAgentCommitMessage", () => {
+    it("trims and collapses whitespace", () => {
+      expect(normalizeAgentCommitMessage("  fix(review):  foo\nbar  ")).toBe(
+        "fix(review): foo bar",
+      );
+    });
+
+    it("returns undefined for empty input", () => {
+      expect(normalizeAgentCommitMessage("   ")).toBeUndefined();
+      expect(normalizeAgentCommitMessage(undefined)).toBeUndefined();
+    });
+
+    it("truncates long subjects", () => {
+      const long = "x".repeat(COMMIT_MESSAGE_MAX_CHARS + 50);
+      const normalized = normalizeAgentCommitMessage(long);
+      expect(normalized).toHaveLength(COMMIT_MESSAGE_MAX_CHARS);
+      expect(normalized?.endsWith("…")).toBe(true);
+    });
+  });
+
+  describe("resolveAgentCommitMessage", () => {
+    it("uses agent message when present", () => {
+      expect(
+        resolveAgentCommitMessage(
+          { summary: "s", commitMessage: "fix(review): tighten types" },
+          "fallback",
+        ),
+      ).toBe("fix(review): tighten types");
+    });
+
+    it("falls back when commit message is missing or invalid", () => {
+      expect(resolveAgentCommitMessage(undefined, "fallback")).toBe("fallback");
+      expect(
+        resolveAgentCommitMessage({ summary: "s", commitMessage: "  " }, "fb"),
+      ).toBe("fb");
+    });
+  });
+
+  describe("createSubmitPhaseReportTool commitMessage", () => {
+    it("stores commitMessage when allowCommitMessage is true", async () => {
+      const tracker = createPhaseReportTracker();
+      const tool = await createSubmitPhaseReportTool(tracker, {
+        allowCommitMessage: true,
+      });
+      await tool.execute({
+        summary: "Done",
+        commitMessage: "fix(ci): resolve lint in parser",
+      });
+      expect(tracker.report?.commitMessage).toBe(
+        "fix(ci): resolve lint in parser",
+      );
+    });
+
+    it("preserves commitMessage when a later call omits it", async () => {
+      const tracker = createPhaseReportTracker();
+      const tool = await createSubmitPhaseReportTool(tracker, {
+        allowCommitMessage: true,
+      });
+      await tool.execute({
+        summary: "First",
+        commitMessage: "fix(review): address naming",
+      });
+      await tool.execute({ summary: "Second" });
+      expect(tracker.report?.summary).toBe("Second");
+      expect(tracker.report?.commitMessage).toBe("fix(review): address naming");
     });
   });
 

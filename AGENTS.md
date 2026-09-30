@@ -59,10 +59,13 @@ The runner wraps this into a unified end-of-phase block (`## Agent phase report 
 
 The agent should only call `submitPhaseReport` for the `summary` (and optional `testPlan`). If the agent omits it, the runner emits a neutral fallback so the comment still shows the status + metrics.
 
+On **ci-fix** and **review-fix**, the agent may also pass an optional **`commitMessage`** (single-line git commit subject). The runner uses it for the post-session commit when valid; otherwise it keeps the default `fix(ci): …` or `fix(review): …` message. The commit message is not echoed in the PR comment.
+
 ### Report structure
 
 - **summary** (required): markdown describing what changed, which files were touched, and why.
 - **test plan** (optional): markdown describing how to verify the changes.
+- **commitMessage** (optional, ci-fix / review-fix only): single-line conventional commit subject for the runner’s git commit.
 
 ### Example
 

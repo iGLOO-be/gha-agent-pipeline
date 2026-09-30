@@ -37,6 +37,7 @@ import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
+  resolveAgentCommitMessage,
 } from "./phase-report.js";
 
 function buildConflictPriorityHint(
@@ -213,7 +214,10 @@ Branch: ${env.AGENT_BRANCH}`,
 
     const pushResult = await commitAndPushBranch(
       env.AGENT_BRANCH,
-      `fix(review): address feedback on PR #${env.PR_NUMBER}`,
+      resolveAgentCommitMessage(
+        phaseReport,
+        `fix(review): address feedback on PR #${env.PR_NUMBER}`,
+      ),
     );
 
     if (pushResult.status === "noChanges") {

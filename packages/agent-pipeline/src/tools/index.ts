@@ -285,7 +285,9 @@ export async function createCiFixTools(
   ];
 
   if (tracker) {
-    return appendSubmitPhaseReportTool(tools, tracker);
+    return appendSubmitPhaseReportTool(tools, tracker, {
+      allowCommitMessage: true,
+    });
   }
   return tools;
 }
@@ -403,7 +405,9 @@ export async function createReviewFixTools(
   ];
 
   if (tracker) {
-    return appendSubmitPhaseReportTool(tools, tracker);
+    return appendSubmitPhaseReportTool(tools, tracker, {
+      allowCommitMessage: true,
+    });
   }
   return tools;
 }
