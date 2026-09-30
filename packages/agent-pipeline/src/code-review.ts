@@ -34,16 +34,16 @@ import {
   appendRunFrictionStepSummary,
   createRunFrictionCollector,
 } from "./run-friction.js";
-import { formatPhaseCompletionMarkdown } from "./phase-report.js";
+import { buildCodeReviewPhaseComment } from "./code-review-completion.js";
 import {
   AGENT_COMMENT_MARKERS,
   createOctokit,
   createPullRequestReview,
   formatCommentsForPrompt,
+  postComment,
   prependAgentMarker,
   readComments,
   readIssue,
-  updatePullRequestReview,
   type PullRequestReviewEvent,
 } from "./tools/github.js";
 import { createCodeReviewTools, type ReviewTracker } from "./tools/index.js";
@@ -226,45 +226,22 @@ ${reviewDiff.diff || "(empty diff)"}
       review,
     );
 
-    const completionBlock = formatPhaseCompletionMarkdown({
-      phase: "code-review",
-      sessionUsage: session.usage,
-      sessionId: session.sessionId,
-      modelId: session.modelId,
-      iterations: session.iterations,
-      toolCallsCount: session.toolCallsCount,
-      runFriction,
-      collapsibleMetrics: true,
-    });
-
-    if (review.id && review.body) {
-      try {
-        const markerLine = markerForCodeReview();
-        let reviewContent = review.body;
-        if (reviewContent.startsWith(markerLine)) {
-          reviewContent = reviewContent.slice(markerLine.length).trimStart();
-        }
-        const newBody = [
-          markerLine,
-          "",
-          reviewContent,
-          "",
-          completionBlock,
-        ].join("\n");
-        await updatePullRequestReview(
-          octokit,
-          owner,
-          repo,
-          env.PR_NUMBER,
-          review.id,
-          newBody,
-        );
-      } catch (error) {
-        console.warn(
-          "Failed to append completion block to code review:",
-          error,
-        );
-      }
+    if (review.posted) {
+      await postComment(
+        octokit,
+        owner,
+        repo,
+        env.PR_NUMBER,
+        buildCodeReviewPhaseComment({
+          reviewHtmlUrl: review.htmlUrl,
+          sessionUsage: session.usage,
+          sessionId: session.sessionId,
+          modelId: session.modelId,
+          iterations: session.iterations,
+          toolCallsCount: session.toolCallsCount,
+          runFriction,
+        }),
+      );
     }
 
     console.log("\nCode-review agent completed.");
@@ -283,10 +260,6 @@ ${reviewDiff.diff || "(empty diff)"}
     );
     throw error;
   }
-}
-
-function markerForCodeReview(): string {
-  return `<!-- ${AGENT_COMMENT_MARKERS.codeReview} -->`;
 }
 
 async function ensureReviewPosted(

@@ -264,6 +264,26 @@ describe("phase-report", () => {
       expect(output).not.toContain("### Test plan");
     });
 
+    it("skips empty business summary when skipEmptyPhaseReportPlaceholder is set", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "code-review",
+        statusLine: "Review posted — [view review](https://example.com/review)",
+        skipEmptyPhaseReportPlaceholder: true,
+        sessionUsage: {
+          inputTokens: 500,
+          outputTokens: 200,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalCost: 0.0005,
+        },
+        sessionId: "sess-cr",
+      });
+
+      expect(output).toContain("Review posted");
+      expect(output).not.toContain("_No business summary was submitted._");
+      expect(output).toContain("### Run metrics");
+    });
+
     it("omits metrics section when sessionUsage is absent", () => {
       const collector = createRunFrictionCollector();
       collector.record({
