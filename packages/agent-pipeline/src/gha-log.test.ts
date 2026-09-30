@@ -251,11 +251,11 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
       const assistantGroupIdx = calls.indexOf("::group::Assistant output");
       const assistantEndIdx = calls.indexOf("::endgroup::");
       const toolGroupIdx = calls.indexOf("::group::Tool: read_files");
-      const inputIdx = calls.findIndex((c) =>
+      const inputIdx = calls.findIndex((c: string) =>
         c.includes("[tool input] read_files"),
       );
 
