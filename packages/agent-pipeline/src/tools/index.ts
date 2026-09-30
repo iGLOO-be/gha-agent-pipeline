@@ -13,6 +13,7 @@ import {
   readComments,
   readIssue,
   readPullRequestReviewComments,
+  resolvePullRequestReviewThread,
   getPullRequestReviewComment,
   formatReviewCommentsForPrompt,
   isAutomatedReviewAuthor,
@@ -499,6 +500,10 @@ export type ReviewTracker = {
   htmlUrl?: string;
 };
 
+export type CodeReviewToolsOptions = {
+  followUpEnabled?: boolean;
+};
+
 export async function createCodeReviewTools(
   octokit: Octokit,
   owner: string,
@@ -506,6 +511,7 @@ export async function createCodeReviewTools(
   issueNumber: number,
   prNumber: number,
   review: ReviewTracker,
+  options: CodeReviewToolsOptions = {},
 ) {
   const { createTool } = await loadClineSdk();
   const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
@@ -608,7 +614,103 @@ export async function createCodeReviewTools(
     },
   });
 
-  return [...readTools, submitReview, readPrCommentsTool];
+  const tools = [...readTools, submitReview, readPrCommentsTool];
+
+  if (options.followUpEnabled) {
+    const readPullRequestReviewCommentsTool = createTool({
+      name: "readPullRequestReviewComments",
+      description:
+        "List pull request review comments (inline comments on the diff), including prior agent comments.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          commentIds: {
+            type: "array",
+            items: { type: "number" },
+            description:
+              "Optional review comment IDs to fetch; when omitted, returns line comments on the PR (up to 100).",
+          },
+        },
+      },
+      async execute(input: { commentIds?: number[] }) {
+        if (input.commentIds != null && input.commentIds.length > 0) {
+          const comments = await Promise.all(
+            input.commentIds.map((id) =>
+              getPullRequestReviewComment(octokit, owner, repo, id),
+            ),
+          );
+          return {
+            markdown: formatReviewCommentsForPrompt(comments),
+            comments: comments.map((c) => ({
+              id: c.id,
+              path: c.path,
+              line: c.line,
+              author: c.user?.login ?? "unknown",
+              body: c.body ?? "",
+            })),
+          };
+        }
+        const all = await readPullRequestReviewComments(
+          octokit,
+          owner,
+          repo,
+          prNumber,
+        );
+        return {
+          markdown: formatReviewCommentsForPrompt(all.slice(0, 100)),
+          comments: all.slice(0, 100).map((c) => ({
+            id: c.id,
+            path: c.path,
+            line: c.line,
+            author: c.user?.login ?? "unknown",
+            body: c.body ?? "",
+          })),
+        };
+      },
+    });
+
+    const resolveReviewThreads = createTool({
+      name: "resolveReviewThreads",
+      description:
+        "Resolve GitHub pull request review threads after verifying the feedback is addressed in the current code.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          threadIds: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "GraphQL thread ids from the follow-up context (e.g. PRRT_...).",
+          },
+        },
+        required: ["threadIds"],
+      },
+      async execute(input: { threadIds: string[] }) {
+        const results: {
+          threadId: string;
+          ok: boolean;
+          error?: string;
+        }[] = [];
+        for (const threadId of input.threadIds) {
+          try {
+            await resolvePullRequestReviewThread(octokit, threadId);
+            results.push({ threadId, ok: true });
+          } catch (error) {
+            results.push({
+              threadId,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        return { results };
+      },
+    });
+
+    tools.push(readPullRequestReviewCommentsTool, resolveReviewThreads);
+  }
+
+  return tools;
 }
 
 export const AGENT_TOOL_NAMES = [

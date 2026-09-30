@@ -501,6 +501,8 @@ describe("config", () => {
       const config = loadAgentConfig(join(tempDir, "missing.yml"));
       const prompt = buildPhaseSystemPrompt("code-review", config);
       expect(prompt).toContain("submitReview");
+      expect(prompt).toContain("resolveReviewThreads");
+      expect(prompt).toContain("## Follow-up");
       expect(prompt).toContain("## Walkthrough");
       expect(prompt).toContain("## Merge risk");
       expect(prompt).toContain("## Pre-merge checks");

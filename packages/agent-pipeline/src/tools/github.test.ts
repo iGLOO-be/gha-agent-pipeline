@@ -11,6 +11,7 @@ import {
   findPlanCommentUrl,
   formatCommentsForPrompt,
   formatReviewCommentsForPrompt,
+  formatReviewThreadsForPrompt,
   hasAgentMarkerInComments,
   isAutomatedReviewAuthor,
   markerFor,
@@ -471,6 +472,30 @@ describe("tools/github", () => {
       const text =
         "Fix https://github.com/org/repo/pull/1#discussion_r4039927492 and /pulls/1/comments/99";
       expect(parseReviewCommentIdsFromText(text)).toEqual([4039927492, 99]);
+    });
+  });
+
+  describe("formatReviewThreadsForPrompt", () => {
+    it("formats thread id, path, and root comment", () => {
+      const out = formatReviewThreadsForPrompt([
+        {
+          id: "PRRT_abc",
+          isResolved: false,
+          isOutdated: false,
+          comments: [
+            {
+              id: 42,
+              body: "Use const",
+              path: "src/a.ts",
+              line: 3,
+              authorLogin: "github-actions[bot]",
+            },
+          ],
+        },
+      ]);
+      expect(out).toContain("PRRT_abc");
+      expect(out).toContain("src/a.ts line 3");
+      expect(out).toContain("Use const");
     });
   });
 

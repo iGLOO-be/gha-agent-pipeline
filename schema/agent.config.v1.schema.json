@@ -235,6 +235,19 @@
           "type": "boolean",
           "description": "When true, append default ignores (lockfiles, node_modules, dist).",
           "default": false
+        },
+        "follow_up": {
+          "type": "object",
+          "description": "Follow-up behavior when /agent code-review runs again on the same PR.",
+          "properties": {
+            "resolve_threads": {
+              "type": "string",
+              "enum": ["agent_only", "all_authors", "off"],
+              "description": "agent_only: triage and resolve open threads from the agent bot; all_authors: include human review threads; off: skip follow-up tooling and context.",
+              "default": "agent_only"
+            }
+          },
+          "default": {}
         }
       },
       "default": {}

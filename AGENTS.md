@@ -109,7 +109,8 @@ When the agent runs in the code-review phase (`/agent code-review` on a pull req
 
 ### Tone and scope
 
-- Open the review body with a **Walkthrough** (human summary), **Merge risk**, and **Pre-merge checks**, then report **Standards** and **Spec** as two independent axes (do not merge or rerank them).
+- On repeat `/agent code-review` runs, triage open review threads from the injected follow-up context: verify fixes in the current code, call `resolveReviewThreads` when clearly addressed, and summarize under **Follow-up** when that context was provided.
+- Open the review body with **Follow-up** (when applicable), then **Walkthrough** (human summary), **Merge risk**, and **Pre-merge checks**, then report **Standards** and **Spec** as two independent axes (do not merge or rerank them).
 - Put actionable detail on the diff: inline comments with `_Category_ | _Severity_ | _Effort_`, suggested fix diffs, and read-only evidence (`rg` / `git`) when useful.
 - Every **hard** finding (documented-standard breach or spec miss) needs an inline comment on the relevant line.
 - Cite file paths and hunks. Label baseline smells as judgement calls. Documented repo standards override the smell baseline.
@@ -118,7 +119,7 @@ When the agent runs in the code-review phase (`/agent code-review` on a pull req
 
 ### What not to do
 
-- Do not modify files (the code-review phase has no write tools).
+- Do not modify repository files (the code-review phase has no editor); resolving review threads on GitHub is allowed via `resolveReviewThreads`.
 - Do not merge the two axes or pick a single overall winner.
 - Do not emit `### Run metrics` or `### Run friction`; the runner injects those.
 - Do not promise future agent work; humans can follow up with `/agent fix` on the PR.
