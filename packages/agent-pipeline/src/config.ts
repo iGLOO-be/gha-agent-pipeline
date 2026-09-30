@@ -14,7 +14,11 @@ export const agentConfigSchema = z
         branch_prefix: z.string().min(1).default("agent"),
         merge_strategy: z.enum(["merge", "rebase"]).default("merge"),
       })
-      .default({}),
+      .default(() => ({
+        base_branch: "main",
+        branch_prefix: "agent",
+        merge_strategy: "merge" as const,
+      })),
     models: z
       .object({
         plan: z.string().min(1).default("deepseek/deepseek-v4-pro"),
@@ -24,12 +28,21 @@ export const agentConfigSchema = z
         ask: z.string().min(1).default("deepseek/deepseek-v4-pro"),
         "code-review": z.string().min(1).default("deepseek/deepseek-v4-pro"),
       })
-      .default({}),
+      .default(() => ({
+        plan: "deepseek/deepseek-v4-pro",
+        implement: "moonshotai/kimi-k2.7-code",
+        "ci-fix": "moonshotai/kimi-k2.7-code",
+        "review-fix": "moonshotai/kimi-k2.7-code",
+        ask: "deepseek/deepseek-v4-pro",
+        "code-review": "deepseek/deepseek-v4-pro",
+      })),
     ci: z
       .object({
         max_rounds: z.number().int().positive().default(3),
       })
-      .default({}),
+      .default(() => ({
+        max_rounds: 3,
+      })),
     prompts: z
       .object({
         plan: z
@@ -39,7 +52,9 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are a planning agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description: "You are a planning agent for this repository.",
+          })),
         implement: z
           .object({
             role_description: z
@@ -47,7 +62,10 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are an implementation agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description:
+              "You are an implementation agent for this repository.",
+          })),
         "ci-fix": z
           .object({
             role_description: z
@@ -55,7 +73,9 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are a CI fix agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description: "You are a CI fix agent for this repository.",
+          })),
         yolo: z
           .object({
             role_description: z
@@ -63,7 +83,10 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are an implementation agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description:
+              "You are an implementation agent for this repository.",
+          })),
         "review-fix": z
           .object({
             role_description: z
@@ -71,7 +94,9 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are a review fix agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description: "You are a review fix agent for this repository.",
+          })),
         ask: z
           .object({
             role_description: z
@@ -79,7 +104,9 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are a Q&A agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description: "You are a Q&A agent for this repository.",
+          })),
         "code-review": z
           .object({
             role_description: z
@@ -87,19 +114,44 @@ export const agentConfigSchema = z
               .min(1)
               .default("You are a code review agent for this repository."),
           })
-          .default({}),
+          .default(() => ({
+            role_description:
+              "You are a code review agent for this repository.",
+          })),
       })
-      .default({}),
+      .default(() => ({
+        plan: {
+          role_description: "You are a planning agent for this repository.",
+        },
+        implement: {
+          role_description:
+            "You are an implementation agent for this repository.",
+        },
+        "ci-fix": {
+          role_description: "You are a CI fix agent for this repository.",
+        },
+        yolo: {
+          role_description:
+            "You are an implementation agent for this repository.",
+        },
+        "review-fix": {
+          role_description: "You are a review fix agent for this repository.",
+        },
+        ask: { role_description: "You are a Q&A agent for this repository." },
+        "code-review": {
+          role_description: "You are a code review agent for this repository.",
+        },
+      })),
     tools: z
       .object({
         run_commands_timeout_ms: z.number().int().min(1000).default(600_000),
       })
-      .default({}),
+      .default(() => ({ run_commands_timeout_ms: 600_000 })),
     app: z
       .object({
         name: z.string().min(1).optional(),
       })
-      .default({}),
+      .default(() => ({})),
   })
   .transform((data) => ({
     version: data.version,
