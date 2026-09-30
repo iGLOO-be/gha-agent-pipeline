@@ -201,6 +201,65 @@ describe("gha-log", () => {
       expect(calls).toContain("::endgroup::");
     });
 
+    it("summarizes list_files output with entry paths, not [object Object]", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      const entries = [
+        { path: "src/a.ts", type: "file" },
+        { path: "src/b.ts", type: "file" },
+        { path: "src/c.ts", type: "file" },
+        { path: "src/d.ts", type: "file" },
+        { path: "src/e.ts", type: "file" },
+        { path: "src/f.ts", type: "file" },
+      ];
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "list_files",
+            toolCallId: "call-lf-out",
+            input: { path: "src", recursive: true },
+          },
+        },
+      });
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_end",
+            contentType: "tool",
+            toolName: "list_files",
+            toolCallId: "call-lf-out",
+            output: { entries },
+          },
+        },
+      });
+
+      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      expect(
+        calls.some((c) =>
+          c.includes(
+            "[tool output] list_files: 6 entries: src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts +1 more",
+          ),
+        ),
+      ).toBe(true);
+      expect(calls.some((c) => c.includes("[object Object]"))).toBe(false);
+    });
+
     it("does not double-log output when hook.tool_result arrives after content_end", () => {
       process.env.GITHUB_ACTIONS = "true";
       const listeners: Array<(event: any) => void> = [];
