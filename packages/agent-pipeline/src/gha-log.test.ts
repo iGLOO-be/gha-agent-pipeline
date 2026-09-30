@@ -183,19 +183,21 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
       expect(calls).toContain("::group::Tool: read_files");
-      expect(calls.some((c) => c.includes("[tool input] read_files"))).toBe(
-        true,
-      );
-      expect(calls.some((c) => c.includes("[tool output] read_files"))).toBe(
-        true,
-      );
+      expect(
+        calls.some((c: string) => c.includes("[tool input] read_files")),
+      ).toBe(true);
+      expect(
+        calls.some((c: string) => c.includes("[tool output] read_files")),
+      ).toBe(true);
       // Non-verbose mode shows semantic summaries, not raw JSON
-      expect(calls.some((c) => c.includes("read_files [README.md]"))).toBe(
+      expect(
+        calls.some((c: string) => c.includes("read_files [README.md]")),
+      ).toBe(true);
+      expect(calls.some((c: string) => c.includes("1 file(s), 5 chars"))).toBe(
         true,
       );
-      expect(calls.some((c) => c.includes("1 file(s), 5 chars"))).toBe(true);
       expect(calls).toContain("::endgroup::");
     });
 
@@ -255,8 +257,8 @@ describe("gha-log", () => {
       });
 
       const outputCalls = consoleSpy.mock.calls
-        .map((call) => String(call[0]))
-        .filter((line) => line.startsWith("[tool output]"));
+        .map((call: any[]) => String(call[0]))
+        .filter((line: string) => line.startsWith("[tool output]"));
       expect(outputCalls).toHaveLength(1);
     });
 
@@ -302,11 +304,11 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
-      expect(calls.some((c) => c.includes("[tool output] run_commands"))).toBe(
-        true,
-      );
-      expect(calls.some((c) => c.includes("exit=0"))).toBe(true);
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
+      expect(
+        calls.some((c: string) => c.includes("[tool output] run_commands")),
+      ).toBe(true);
+      expect(calls.some((c: string) => c.includes("exit=0"))).toBe(true);
     });
 
     it("logs tool errors", () => {
@@ -348,9 +350,13 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
-      expect(calls.some((line) => line.includes("[tool error]"))).toBe(true);
-      expect(calls.some((line) => line.includes("command failed"))).toBe(true);
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
+      expect(calls.some((line: string) => line.includes("[tool error]"))).toBe(
+        true,
+      );
+      expect(
+        calls.some((line: string) => line.includes("command failed")),
+      ).toBe(true);
     });
 
     it("appends a tool summary at session end in GHA mode", () => {
@@ -555,16 +561,16 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
       expect(
-        calls.some((c) =>
+        calls.some((c: string) =>
           c.includes(
             JSON.stringify({ files: [{ path: "README.md" }] }, null, 2),
           ),
         ),
       ).toBe(true);
       expect(
-        calls.some((c) =>
+        calls.some((c: string) =>
           c.includes(
             JSON.stringify(
               [{ query: "README.md", result: "hello", success: true }],
@@ -633,15 +639,17 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
-      expect(calls.some((c) => c.includes("editor edit src/foo.ts"))).toBe(
-        true,
-      );
-      expect(calls.some((c) => c.includes("run_commands: npm test"))).toBe(
-        true,
-      );
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
       expect(
-        calls.some((c) => c.includes("list_files src (recursive=true)")),
+        calls.some((c: string) => c.includes("editor edit src/foo.ts")),
+      ).toBe(true);
+      expect(
+        calls.some((c: string) => c.includes("run_commands: npm test")),
+      ).toBe(true);
+      expect(
+        calls.some((c: string) =>
+          c.includes("list_files src (recursive=true)"),
+        ),
       ).toBe(true);
     });
 
