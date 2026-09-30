@@ -228,6 +228,38 @@ function summarizeToolInput(toolName: string, input: unknown): string {
   }
 }
 
+const LIST_FILES_OUTPUT_PATH_PREVIEW = 5;
+
+function summarizeListFilesEntries(output: unknown): string {
+  const obj = output as Record<string, unknown> | null | undefined;
+  let entries: unknown[] | undefined;
+  if (Array.isArray(output)) {
+    entries = output;
+  } else if (obj && Array.isArray(obj.entries)) {
+    entries = obj.entries;
+  }
+
+  if (!entries) {
+    const count = obj && typeof obj.count === "number" ? obj.count : "?";
+    return `${count} entries`;
+  }
+
+  const paths = entries.map((entry) => {
+    if (typeof entry === "string") return entry;
+    if (entry && typeof entry === "object" && "path" in entry) {
+      const path = (entry as { path?: unknown }).path;
+      return typeof path === "string" ? path : "?";
+    }
+    return "?";
+  });
+
+  const count = paths.length;
+  const preview = paths.slice(0, LIST_FILES_OUTPUT_PATH_PREVIEW);
+  const rest = count - preview.length;
+  const pathPart = preview.join(", ") + (rest > 0 ? ` +${rest} more` : "");
+  return `${count} entries: ${pathPart}`;
+}
+
 /** One-line summary of a tool output for GHA operator readability. */
 function summarizeToolOutput(
   toolName: string,
@@ -302,10 +334,7 @@ function summarizeToolOutput(
       return `${count} comment(s)`;
     }
     case "list_files": {
-      const count = Array.isArray(obj)
-        ? obj.length
-        : (obj?.entries ?? obj?.count ?? "?");
-      return `${count} entries`;
+      return summarizeListFilesEntries(output);
     }
     case "readCheckRuns":
     case "readCheckLogs": {
