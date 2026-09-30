@@ -7,8 +7,16 @@ description: |
   (package manager, Node version, checkout ref, token generation).
 inputs:
   phase:
-    description: Agent phase to run (plan, implement, yolo, review-fix, ask, code-review).
+    description: Command id for the agent CLI (built-in or custom from agent.config.yml).
     required: true
+  runtime_phase:
+    description: Runtime handler when phase is a custom command (defaults to phase).
+    required: false
+    default: ""
+  command_args:
+    description: Extra text from the slash command after the command token.
+    required: false
+    default: ""
   app_token:
     description: >
       GitHub App token produced by the consumer's setup step
@@ -86,15 +94,16 @@ runs:
         GITHUB_TOKEN: ${{ inputs.app_token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         ISSUE_NUMBER: ${{ inputs.issue_number }}
-        PR_NUMBER: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'ask' || inputs.phase == 'code-review') && inputs.pr_number || '' }}
-        AGENT_BRANCH: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'yolo' || inputs.phase == 'code-review') && inputs.head_ref || '' }}
+        PR_NUMBER: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'ask' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'ask' || inputs.phase == 'code-review'))) && inputs.pr_number || '' }}
+        AGENT_BRANCH: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'yolo' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'yolo' || inputs.phase == 'code-review'))) && inputs.head_ref || '' }}
         AGENT_BASE_BRANCH: ${{ inputs.base_branch }}
-        REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
-        QUESTION: ${{ inputs.phase == 'ask' && inputs.question || '' }}
-        REVIEW_INSTRUCTIONS: ${{ inputs.phase == 'code-review' && inputs.review_instructions || '' }}
+        REVIEW_FEEDBACK: ${{ (inputs.runtime_phase == 'review-fix' || (inputs.runtime_phase == '' && inputs.phase == 'review-fix')) && inputs.review_feedback || '' }}
+        QUESTION: ${{ (inputs.runtime_phase == 'ask' || (inputs.runtime_phase == '' && inputs.phase == 'ask')) && inputs.question || '' }}
+        REVIEW_INSTRUCTIONS: ${{ (inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && inputs.phase == 'code-review')) && inputs.review_instructions || '' }}
+        AGENT_COMMAND_ARGS: ${{ inputs.command_args }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
-        SUCCESS_REACTION: ${{ inputs.phase == 'plan' && '+1' || inputs.phase == 'ask' && 'rocket' || 'rocket' }}
+        SUCCESS_REACTION: ${{ (inputs.runtime_phase == 'plan' || (inputs.runtime_phase == '' && inputs.phase == 'plan')) && '+1' || (inputs.runtime_phase == 'ask' || (inputs.runtime_phase == '' && inputs.phase == 'ask')) && 'rocket' || 'rocket' }}
       run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
 
     - name: Fallback failure comment
@@ -102,13 +111,13 @@ runs:
       uses: $/.github/actions/report-failure-fallback
       with:
         token: ${{ inputs.app_token || github.token }}
-        phase: ${{ inputs.phase }}
-        target_type: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'code-review') && 'pr' || 'issue' }}
-        target_number: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'code-review') && inputs.pr_number || inputs.issue_number }}
-        source_issue_number: ${{ (inputs.phase == 'review-fix' || inputs.phase == 'code-review') && inputs.issue_number || '' }}
+        phase: ${{ inputs.runtime_phase != '' && inputs.runtime_phase || inputs.phase }}
+        target_type: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review'))) && 'pr' || 'issue' }}
+        target_number: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review'))) && inputs.pr_number || inputs.issue_number }}
+        source_issue_number: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review'))) && inputs.issue_number || '' }}
 
     - name: Remove agent-working label on PR
-      if: always() && (inputs.phase == 'review-fix' || inputs.phase == 'code-review')
+      if: always() && (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review')))
       uses: $/.github/actions/manage-agent-working-label
       with:
         action: remove

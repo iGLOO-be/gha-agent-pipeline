@@ -1,10 +1,13 @@
 import {
   CI_FIX_MODEL,
-  buildPhaseSystemPrompt,
   loadAgentConfig,
   loadCiFixEnv,
   parseRepository,
 } from "./config.js";
+import {
+  applyCommandGithubTools,
+  prepareCommandRuntime,
+} from "./command-runtime.js";
 import { commitAndPushBranch } from "./git/pr.js";
 import {
   assertLocalMergeResolved,
@@ -43,6 +46,7 @@ import {
 async function main() {
   const env = loadCiFixEnv();
   const config = loadAgentConfig();
+  const cmd = prepareCommandRuntime("ci-fix", CI_FIX_MODEL, config);
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -84,7 +88,7 @@ async function main() {
 
     const runFriction = createRunFrictionCollector();
     const phaseReportTracker = createPhaseReportTracker();
-    const tools = await withReportRunFrictionTool(
+    let tools = await withReportRunFrictionTool(
       await createCiFixTools(
         octokit,
         owner,
@@ -96,15 +100,17 @@ async function main() {
       ),
       runFriction,
     );
+    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
 
     const session = await runAgentSession({
-      phase: "ci-fix",
-      modelId: CI_FIX_MODEL,
-      systemPrompt: buildPhaseSystemPrompt("ci-fix", config),
+      phase: cmd.runtimePhase,
+      modelId: cmd.modelId,
+      systemPrompt: cmd.systemPrompt,
       tools,
       runFriction,
       sessionMetadata: {
-        phase: "ci-fix",
+        phase: cmd.runtimePhase,
+        commandId: cmd.commandId,
         issueNumber: env.ISSUE_NUMBER,
         prNumber: env.PR_NUMBER,
         headSha: env.HEAD_SHA,
@@ -219,10 +225,16 @@ Repository: ${env.GITHUB_REPOSITORY}`,
 const env = loadCiFixEnv();
 const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
 const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootCmd = prepareCommandRuntime(
+  "ci-fix",
+  CI_FIX_MODEL,
+  loadAgentConfig(),
+);
 
 runAgentMain(() =>
   runAgentPhase({
-    phase: "ci-fix",
+    phase: bootCmd.runtimePhase,
+    displayLabel: bootCmd.displayLabel,
     octokit,
     owner,
     repo,

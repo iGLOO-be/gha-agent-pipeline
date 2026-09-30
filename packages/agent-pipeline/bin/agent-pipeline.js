@@ -4,32 +4,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-const phases = new Set([
-  "plan",
-  "implement",
-  "yolo",
-  "ci-fix",
-  "review-fix",
-  "ask",
-  "code-review",
-]);
-
-const phase = process.argv[2];
-if (!phase || !phases.has(phase)) {
-  console.error(
-    "Usage: agent-pipeline <plan|implement|yolo|ci-fix|review-fix|ask|code-review>",
-  );
-  process.exit(1);
-}
-
 const binDir = dirname(fileURLToPath(import.meta.url));
-const entry = resolve(binDir, "..", "src", `${phase}.ts`);
+const entry = resolve(binDir, "..", "src", "cli.ts");
 const require = createRequire(import.meta.url);
 const tsxCli = require.resolve("tsx/cli");
 
 const result = spawnSync(
   process.execPath,
-  [tsxCli, entry, ...process.argv.slice(3)],
+  [tsxCli, entry, ...process.argv.slice(2)],
   {
     stdio: "inherit",
     env: process.env,

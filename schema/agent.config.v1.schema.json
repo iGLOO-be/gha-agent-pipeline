@@ -251,6 +251,109 @@
         }
       },
       "default": {}
+    },
+    "commands": {
+      "type": "object",
+      "description": "Optional custom slash commands and partial overrides of built-in commands. Each key is a command id; custom ids must declare extends.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "extends": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "implement",
+              "yolo",
+              "ci-fix",
+              "review-fix",
+              "ask",
+              "code-review"
+            ]
+          },
+          "slash": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Token after /agent (defaults to the command id)."
+          },
+          "description": { "type": "string", "minLength": 1 },
+          "models": {
+            "type": "object",
+            "properties": {
+              "model": { "type": "string", "minLength": 1 }
+            }
+          },
+          "prompts": {
+            "type": "object",
+            "properties": {
+              "role_description": { "type": "string", "minLength": 1 },
+              "instructions": { "type": "string", "minLength": 1 },
+              "append_instructions": { "type": "string", "minLength": 1 }
+            }
+          },
+          "tools": {
+            "type": "object",
+            "properties": {
+              "write": { "type": "boolean" },
+              "github": {
+                "oneOf": [
+                  { "type": "string", "const": "inherit" },
+                  {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                ]
+              },
+              "builtin": {
+                "type": "object",
+                "properties": {
+                  "include": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "targets": {
+                "type": "array",
+                "items": { "type": "string", "enum": ["issue", "pr"] },
+                "minItems": 1
+              },
+              "require_plan": { "type": "boolean" }
+            }
+          },
+          "access": {
+            "type": "object",
+            "properties": {
+              "author_associations": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "marker": { "type": "string", "minLength": 1 }
+            }
+          },
+          "git": {
+            "type": "object",
+            "properties": {
+              "commit_subject": { "type": "string", "minLength": 1 },
+              "skip_pr": { "type": "boolean" }
+            }
+          }
+        }
+      }
     }
   },
   "default": {}

@@ -1,10 +1,13 @@
 import {
   YOLO_MODEL,
-  buildPhaseSystemPrompt,
   loadAgentConfig,
   loadAgentEnv,
   parseRepository,
 } from "./config.js";
+import {
+  applyCommandGithubTools,
+  prepareCommandRuntime,
+} from "./command-runtime.js";
 import {
   checkoutExistingBranch,
   createAndCheckoutBranch,
@@ -122,6 +125,7 @@ async function postYoloIssueComment(
 async function main() {
   const env = loadAgentEnv();
   const config = loadAgentConfig();
+  const cmd = prepareCommandRuntime("yolo", YOLO_MODEL, config);
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -142,7 +146,7 @@ async function main() {
 
     const runFriction = createRunFrictionCollector();
     const phaseReportTracker = createPhaseReportTracker();
-    const tools = await withReportRunFrictionTool(
+    let tools = await withReportRunFrictionTool(
       await appendSubmitPhaseReportTool(
         await createAgentTools(octokit, owner, repo, env.ISSUE_NUMBER),
         phaseReportTracker,
@@ -150,15 +154,22 @@ async function main() {
       ),
       runFriction,
     );
+    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
+
+    const userArgs = process.env.AGENT_COMMAND_ARGS?.trim();
+    const extraArgsBlock = userArgs
+      ? `\n\nAdditional instructions:\n${userArgs}`
+      : "";
 
     const session = await runAgentSession({
-      phase: "yolo",
-      modelId: YOLO_MODEL,
-      systemPrompt: buildPhaseSystemPrompt("yolo", config),
+      phase: cmd.runtimePhase,
+      modelId: cmd.modelId,
+      systemPrompt: cmd.systemPrompt,
       tools,
       runFriction,
       sessionMetadata: {
-        phase: "yolo",
+        phase: cmd.runtimePhase,
+        commandId: cmd.commandId,
         issueNumber: env.ISSUE_NUMBER,
         repository: env.GITHUB_REPOSITORY,
         branch,
@@ -169,7 +180,7 @@ Issue body (implementation instructions):
 ${issue.body ?? "(empty)"}
 
 Repository: ${env.GITHUB_REPOSITORY}
-Branch: ${branch}`,
+Branch: ${branch}${extraArgsBlock}`,
     });
 
     appendRunFrictionStepSummary(runFriction, "yolo");
@@ -318,10 +329,12 @@ Branch: ${branch}`,
 const env = loadAgentEnv();
 const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
 const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootCmd = prepareCommandRuntime("yolo", YOLO_MODEL, loadAgentConfig());
 
 runAgentMain(() =>
   runAgentPhase({
-    phase: "yolo",
+    phase: bootCmd.runtimePhase,
+    displayLabel: bootCmd.displayLabel,
     octokit,
     owner,
     repo,
