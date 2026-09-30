@@ -306,6 +306,8 @@ export interface FormatPhaseCompletionOptions {
    * <details><summary>Run metrics</summary>…</details> block
    * for collapsibility in GitHub comments. Defaults to false. */
   collapsibleMetrics?: boolean;
+  /** When true and no phaseReport, omit the neutral business-summary fallback. */
+  skipEmptyPhaseReportPlaceholder?: boolean;
 }
 
 /**
@@ -338,7 +340,7 @@ export function formatPhaseCompletionMarkdown(
     if (opts.phaseReport.testPlan) {
       sections.push("", "### Test plan", "", opts.phaseReport.testPlan);
     }
-  } else {
+  } else if (!opts.skipEmptyPhaseReportPlaceholder) {
     sections.push("", "_No business summary was submitted._");
   }
 
