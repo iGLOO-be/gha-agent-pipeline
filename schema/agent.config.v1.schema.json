@@ -208,6 +208,36 @@
         }
       },
       "default": {}
+    },
+    "code_review": {
+      "type": "object",
+      "description": "Optional scope and instructions for the /agent code-review phase. When omitted, reviews.path_filters and reviews.path_instructions from .coderabbit.yaml are used as fallback.",
+      "properties": {
+        "path_filters": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns; leading ! excludes paths (CodeRabbit-compatible semantics).",
+          "default": []
+        },
+        "path_instructions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "instructions": { "type": "string", "minLength": 1 }
+            },
+            "required": ["path", "instructions"]
+          },
+          "default": []
+        },
+        "apply_default_ignores": {
+          "type": "boolean",
+          "description": "When true, append default ignores (lockfiles, node_modules, dist).",
+          "default": false
+        }
+      },
+      "default": {}
     }
   },
   "default": {}

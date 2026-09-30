@@ -7,6 +7,18 @@ import {
   CODE_REVIEW_MODEL,
 } from "./config.js";
 import { collectReviewDiff } from "./git/review-diff.js";
+import {
+  formatPathInstructionsForPrompt,
+  resolveReviewConfig,
+} from "./review-config.js";
+import {
+  effectivePathFilters,
+  partitionChangedFiles,
+} from "./review-path-filters.js";
+import {
+  formatReviewFileScopeMarkdown,
+  parseReviewBodyFromAgentOutput,
+} from "./review-prompt.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
@@ -54,13 +66,13 @@ function parseReviewFromOutput(outputText: string): {
   event: PullRequestReviewEvent;
   body: string;
 } | null {
-  const match = outputText.match(/(## Standards[\s\S]*?)(?=\n---|\n<!--|$)/);
-  if (!match) {
+  const body = parseReviewBodyFromAgentOutput(outputText);
+  if (!body) {
     return null;
   }
   return {
     event: "COMMENT",
-    body: match[1].trim(),
+    body,
   };
 }
 
@@ -83,6 +95,20 @@ async function main() {
     const pr = prResponse.data;
     const conversation = formatCommentsForPrompt(comments);
     const reviewDiff = await collectReviewDiff(config.git.base_branch);
+    const reviewConfig = resolveReviewConfig(config);
+    const pathFilters = effectivePathFilters(
+      reviewConfig.path_filters,
+      reviewConfig.apply_default_ignores,
+    );
+    const fileScope = partitionChangedFiles(reviewDiff.files, pathFilters);
+    const pathInstructionsBlock = formatPathInstructionsForPrompt(
+      reviewConfig.path_instructions,
+      fileScope.reviewed,
+    );
+    const fileScopeMarkdown = formatReviewFileScopeMarkdown(
+      fileScope.reviewed,
+      fileScope.ignored,
+    );
     const standardsSources = loadStandardsSources();
     const runFriction = createRunFrictionCollector();
     const review: ReviewTracker = { posted: false };
@@ -134,9 +160,9 @@ ${standardsSources}
 Commits (origin/${reviewDiff.baseBranch}..HEAD):
 ${reviewDiff.log}
 
-Changed files:
-${reviewDiff.files.length > 0 ? reviewDiff.files.map((file) => `- ${file}`).join("\n") : "(none)"}
-${reviewDiff.truncated ? "\nThe unified diff below was truncated; use read_files / search_codebase for the rest.\n" : ""}
+${fileScopeMarkdown}
+${pathInstructionsBlock ? `\n${pathInstructionsBlock}\n` : ""}
+${reviewDiff.truncated ? "\nThe unified diff below was truncated; use read_files / search_codebase for reviewed files not shown.\n" : ""}
 Unified diff (origin/${reviewDiff.baseBranch}...HEAD):
 \`\`\`diff
 ${reviewDiff.diff || "(empty diff)"}

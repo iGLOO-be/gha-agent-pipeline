@@ -192,6 +192,21 @@ jobs:
 
 When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
 
+### Code review scope (`code_review` in agent.config)
+
+Optional `code_review` block in `.github/agent.config.yml` controls which changed files the review agent focuses on and path-specific instructions (CodeRabbit-style `path_filters` / `path_instructions`). Values in **agent.config take priority**; missing keys fall back to `.coderabbit.yaml` at the repo root (`reviews.path_filters`, `reviews.path_instructions`) when present.
+
+```yaml
+code_review:
+  path_filters:
+    - "!libs/translations/data/**"
+  path_instructions:
+    - path: "docs/internal/**"
+      instructions: |
+        Check frontmatter and cross-links.
+  apply_default_ignores: false # when true, also skip lockfiles, node_modules, dist
+```
+
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
 **Pin these library refs at `@v0.2.4`** (or latest release)
@@ -215,7 +230,7 @@ After the consumer workflows are on **`main`**, comment on an issue or PR:
 - `/agent implement` — implement from the plan and open a PR
 - `/agent yolo` — implement directly from the issue
 - `/agent fix` — on an agent PR (comment or submitted review)
-- `/agent code-review` — two-axis review (Standards + Spec) posted as a GitHub review on a PR
+- `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
 - `/agent ask` — read-only Q&A on an issue or PR
 
 Dispatch runs phase workflows from the default branch (`main`), not from open PR branches.

@@ -517,7 +517,7 @@ export async function createCodeReviewTools(
   const submitReview = createTool({
     name: "submitReview",
     description:
-      "Submit the final two-axis code review as a GitHub pull request review. Required on every code-review run — the run is incomplete until you call this.",
+      "Submit the final code review as a GitHub pull request review (walkthrough, merge risk, pre-merge checks, Standards, Spec, plus inline comments). Required on every code-review run — the run is incomplete until you call this.",
     inputSchema: {
       type: "object",
       properties: {
@@ -530,11 +530,12 @@ export async function createCodeReviewTools(
         body: {
           type: "string",
           description:
-            "Markdown review starting with ## Standards then ## Spec",
+            "Markdown review: ## Walkthrough, ## Merge risk, ## Pre-merge checks, ## Standards, ## Spec (in that order)",
         },
         comments: {
           type: "array",
-          description: "Optional inline comments on the PR diff",
+          description:
+            "Inline comments on the PR diff; required for every hard Standards or Spec finding",
           items: {
             type: "object",
             properties: {
@@ -553,7 +554,8 @@ export async function createCodeReviewTools(
               },
               body: {
                 type: "string",
-                description: "Inline comment markdown",
+                description:
+                  "First line: _Category_ | _Severity_ | _Effort_; then explanation, optional Suggested fix (diff) and Evidence details blocks",
               },
             },
             required: ["path", "line", "body"],
