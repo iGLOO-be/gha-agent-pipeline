@@ -184,7 +184,20 @@ describe("gha-log", () => {
       });
 
       const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
+      const groupIdx = calls.indexOf("::group::Tool: read_files");
+      const inputIdx = calls.findIndex((c: string) =>
+        c.includes("[tool input] read_files"),
+      );
+      const outputIdx = calls.findIndex((c: string) =>
+        c.includes("[tool output] read_files"),
+      );
+      const endGroupIdx = calls.indexOf("::endgroup::");
+
       expect(calls).toContain("::group::Tool: read_files");
+      expect(groupIdx).toBeGreaterThanOrEqual(0);
+      expect(inputIdx).toBeGreaterThan(groupIdx);
+      expect(outputIdx).toBeGreaterThan(inputIdx);
+      expect(endGroupIdx).toBeGreaterThan(outputIdx);
       expect(
         calls.some((c: string) => c.includes("[tool input] read_files")),
       ).toBe(true);
@@ -199,6 +212,60 @@ describe("gha-log", () => {
         true,
       );
       expect(calls).toContain("::endgroup::");
+    });
+
+    it("logs tool input after assistant output group when text precedes a tool", () => {
+      process.env.GITHUB_ACTIONS = "true";
+      const stdoutSpy = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation(() => true);
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      createSessionLogger(cline, "test", "test-model");
+      const listener = listeners[0]!;
+
+      listener({
+        type: "chunk",
+        payload: {
+          stream: "agent",
+          chunk: `${JSON.stringify({ type: "text", text: "Let me read the file:\n" })}\n`,
+        },
+      });
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "content_start",
+            contentType: "tool",
+            toolName: "read_files",
+            toolCallId: "call-after-text",
+            input: { files: [{ path: "src/foo.ts" }] },
+          },
+        },
+      });
+
+      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      const assistantGroupIdx = calls.indexOf("::group::Assistant output");
+      const assistantEndIdx = calls.indexOf("::endgroup::");
+      const toolGroupIdx = calls.indexOf("::group::Tool: read_files");
+      const inputIdx = calls.findIndex((c) =>
+        c.includes("[tool input] read_files"),
+      );
+
+      expect(assistantGroupIdx).toBeGreaterThanOrEqual(0);
+      expect(assistantEndIdx).toBeGreaterThan(assistantGroupIdx);
+      expect(toolGroupIdx).toBeGreaterThan(assistantEndIdx);
+      expect(inputIdx).toBeGreaterThan(toolGroupIdx);
+      expect(stdoutSpy).toHaveBeenCalled();
+
+      stdoutSpy.mockRestore();
     });
 
     it("summarizes list_files output with entry paths, not [object Object]", () => {

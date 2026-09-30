@@ -553,6 +553,14 @@ export function createSessionLogger(
     }
   };
 
+  /** Close a tool group left open when the next tool starts before tool_result hook. */
+  const closeDanglingToolGroup = () => {
+    const top = openGroups[openGroups.length - 1];
+    if (top?.startsWith("Tool: ")) {
+      closeGroup();
+    }
+  };
+
   const closeAllGroups = () => {
     appendToolSummary();
     while (openGroups.length > 0) {
@@ -695,21 +703,19 @@ export function createSessionLogger(
         agentEvent.toolName
       ) {
         trackToolCall(agentEvent.toolName);
-        const inputSummary = logToolInput(
-          agentEvent.toolName,
-          agentEvent.input,
-        );
 
+        let inputSummary: string;
         if (isGitHubActions()) {
-          // Close assistant group if open when starting a tool
           if (assistantGroupOpen) {
             closeGroup();
             assistantGroupOpen = false;
           }
-          // Flush reasoning before tool group
           flushReasoning();
+          closeDanglingToolGroup();
           openGroup(`Tool: ${agentEvent.toolName}`);
+          inputSummary = logToolInput(agentEvent.toolName, agentEvent.input);
         } else {
+          inputSummary = logToolInput(agentEvent.toolName, agentEvent.input);
           console.log(`\n[tool] ${agentEvent.toolName}`);
         }
 
