@@ -249,15 +249,17 @@ describe("gha-log", () => {
         },
       });
 
-      const calls = consoleSpy.mock.calls.map((call) => String(call[0]));
+      const calls = consoleSpy.mock.calls.map((call: any[]) => String(call[0]));
       expect(
-        calls.some((c) =>
+        calls.some((c: string) =>
           c.includes(
             "[tool output] list_files: 6 entries: src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts +1 more",
           ),
         ),
       ).toBe(true);
-      expect(calls.some((c) => c.includes("[object Object]"))).toBe(false);
+      expect(calls.some((c: string) => c.includes("[object Object]"))).toBe(
+        false,
+      );
     });
 
     it("does not double-log output when hook.tool_result arrives after content_end", () => {
