@@ -89,5 +89,6 @@ Comment again on the PR:
 - **Delta diff** — the agent prompt includes only the **diff since the last
   agent review**, not the full PR diff. This keeps the second review focused
   on new or changed code.
-- **Config:** when in doubt, check the `resolve_threads` value in the
-  agent.log or repo config. `agent_only` is the safe default.
+- **Config:** when in doubt, check the `resolve_threads` value in
+  `.github/agent.config.yml` or the GitHub Actions step summary. `agent_only`
+  is the safe default.
