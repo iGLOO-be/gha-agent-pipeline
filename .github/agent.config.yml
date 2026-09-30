@@ -35,3 +35,8 @@ prompts:
 
 ci:
   max_rounds: 3
+
+code_review:
+  path_filters:
+    - "!graphify-out/**"
+    - "!pnpm-lock.yaml"

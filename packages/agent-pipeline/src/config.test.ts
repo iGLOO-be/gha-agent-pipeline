@@ -497,12 +497,16 @@ describe("config", () => {
       expect(prompt).toContain("## Agent answer");
     });
 
-    it("includes submitReview and two axes in code-review prompt", () => {
+    it("includes submitReview and hybrid review sections in code-review prompt", () => {
       const config = loadAgentConfig(join(tempDir, "missing.yml"));
       const prompt = buildPhaseSystemPrompt("code-review", config);
       expect(prompt).toContain("submitReview");
+      expect(prompt).toContain("## Walkthrough");
+      expect(prompt).toContain("## Merge risk");
+      expect(prompt).toContain("## Pre-merge checks");
       expect(prompt).toContain("## Standards");
       expect(prompt).toContain("## Spec");
+      expect(prompt).toContain("_Category_ | _Severity_ | _Effort_");
       expect(prompt).toContain("REQUEST_CHANGES");
       expect(prompt).toContain("Never `APPROVE`");
     });

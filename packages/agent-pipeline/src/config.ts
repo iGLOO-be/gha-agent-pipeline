@@ -152,6 +152,20 @@ export const agentConfigSchema = z
         name: z.string().min(1).optional(),
       })
       .default(() => ({})),
+    code_review: z
+      .object({
+        path_filters: z.array(z.string()).default([]),
+        path_instructions: z
+          .array(
+            z.object({
+              path: z.string().min(1),
+              instructions: z.string().min(1),
+            }),
+          )
+          .default([]),
+        apply_default_ignores: z.boolean().default(false),
+      })
+      .optional(),
   })
   .transform((data) => ({
     version: data.version,
@@ -164,6 +178,7 @@ export const agentConfigSchema = z
     prompts: data.prompts,
     tools: data.tools,
     app: data.app,
+    code_review: data.code_review,
   }));
 
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
@@ -346,25 +361,30 @@ Do not commit, push, or open a PR yourself. The runner will handle git operation
 When you call \`submitPhaseReport\`, you **must** include \`riskLevel\` (\`low\` | \`medium\` | \`high\`) and \`riskJustification\` (one paragraph). The runner applies agent-risk-* labels from these fields — do not add a separate risk block in chat output.`;
 
 function codeReviewPromptBody(): string {
-  return `You are an agent in the **code-review** phase — a read-only two-axis review of the pull request diff. Your job is to review whether the change follows this repo's documented coding standards and whether it faithfully implements the originating issue / spec.
+  return `You are an agent in the **code-review** phase — a read-only review of the pull request diff. Produce a human-friendly walkthrough (CodeRabbit-style) and a separate two-axis analysis (Standards + Spec).
 
 CRITICAL — completion rule:
 - You MUST end every run by calling submitReview.
 - Do not finish by replying in chat or summarizing in text.
 - A run that does not call submitReview is a failure.
 
-The two axes are deliberately separate. Do not merge, rerank, or pick a single winner across them:
+The Standards and Spec axes are deliberately separate. Do not merge, rerank, or pick a single winner across them:
 
 - **Standards**: does the diff conform to documented repo standards, plus the smell baseline below?
 - **Spec**: does the diff faithfully implement the originating issue / spec?
 
 Workflow:
-1. Read the injected diff, commit list, source issue, and PR body. Use readIssue / readComments / readPrComments if you need more thread context.
-2. Use list_files, read_files, and search_codebase to inspect files named in the diff. Do not modify any files (no editor, no apply_patch).
+1. Read the injected diff, file scope (reviewed vs ignored), path-specific instructions, commit list, source issue, and PR body. Use readIssue / readComments / readPrComments if you need more thread context.
+2. Use list_files, read_files, search_codebase, and **run_commands** (read-only: \`rg\`, \`git show\`, \`git log\`) to inspect and validate findings. Do not modify any files (no editor, no apply_patch).
 3. Call submitReview with:
    - \`event\`: \`REQUEST_CHANGES\` only when there is a **hard** finding (documented-standard breach, or a spec requirement missing / wrong). Otherwise \`COMMENT\`. Never \`APPROVE\`.
-   - \`body\`: markdown that starts with \`## Standards\` then \`## Spec\`. Report each axis independently. Under each heading, list findings per file/hunk, or say there are none.
-   - \`comments\` (optional): inline comments on the PR diff (\`path\`, \`line\`, optional \`side\` defaulting to RIGHT, \`body\`). Only comment on lines that appear in the injected diff.
+   - \`body\`: markdown in this **exact section order**:
+     1. \`## Walkthrough\` — summary for humans: group changes by layer/feature in a table (layer | files | what changed). Add a mermaid diagram only when a multi-step flow is clearer visually.
+     2. \`## Merge risk\` — one line with level **Minimal**, **Moderate**, or **High**, then a short justification sentence.
+     3. \`## Pre-merge checks\` — lightweight table (check | status | notes): PR title vs diff, description vs diff, linked issue/spec coverage, obvious out-of-scope files. Do not duplicate CI or lint results.
+     4. \`## Standards\` — findings per file/hunk, or say there are none.
+     5. \`## Spec\` — findings per requirement, or say there are none / no spec.
+   - \`comments\`: inline comments on the PR diff (\`path\`, \`line\`, optional \`side\` defaulting to RIGHT, \`body\`). **Every hard finding must have an inline comment** on the relevant diff line. Use this first-line tag format: \`_Category_ | _Severity_ | _Effort_\` where Category is one of Functional Correctness, Security & Privacy, Performance, Maintainability, Docs; Severity is Minor, Major, or Critical; Effort is Quick win or Needs discussion. Body: short explanation, then optional \`<details><summary>Suggested fix</summary>\` with a \`\`\`diff\`\`\` block, then optional \`<details><summary>Evidence</summary>\` with read-only command output. Do not paste the full walkthrough into inline comments.
 
 Standards rules:
 - A documented repo standard always wins over the smell baseline.

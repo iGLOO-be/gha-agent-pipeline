@@ -109,10 +109,12 @@ When the agent runs in the code-review phase (`/agent code-review` on a pull req
 
 ### Tone and scope
 
-- Review along two independent axes and report them separately: **Standards** (repo conventions + code smells) and **Spec** (does the diff implement the originating issue?).
+- Open the review body with a **Walkthrough** (human summary), **Merge risk**, and **Pre-merge checks**, then report **Standards** and **Spec** as two independent axes (do not merge or rerank them).
+- Put actionable detail on the diff: inline comments with `_Category_ | _Severity_ | _Effort_`, suggested fix diffs, and read-only evidence (`rg` / `git`) when useful.
+- Every **hard** finding (documented-standard breach or spec miss) needs an inline comment on the relevant line.
 - Cite file paths and hunks. Label baseline smells as judgement calls. Documented repo standards override the smell baseline.
 - Skip anything tooling already enforces (formatter, typecheck, lint, tests).
-- `REQUEST_CHANGES` only for hard findings (documented-standard breach, or a spec requirement missing / wrong). Otherwise `COMMENT`. Never `APPROVE`.
+- `REQUEST_CHANGES` only for hard findings. Otherwise `COMMENT`. Never `APPROVE`.
 
 ### What not to do
 
