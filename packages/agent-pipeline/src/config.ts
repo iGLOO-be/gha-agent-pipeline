@@ -164,6 +164,13 @@ export const agentConfigSchema = z
           )
           .default([]),
         apply_default_ignores: z.boolean().default(false),
+        follow_up: z
+          .object({
+            resolve_threads: z
+              .enum(["agent_only", "all_authors", "off"])
+              .default("agent_only"),
+          })
+          .default(() => ({ resolve_threads: "agent_only" as const })),
       })
       .optional(),
   })
@@ -374,16 +381,18 @@ The Standards and Spec axes are deliberately separate. Do not merge, rerank, or 
 - **Spec**: does the diff faithfully implement the originating issue / spec?
 
 Workflow:
-1. Read the injected diff, file scope (reviewed vs ignored), path-specific instructions, commit list, source issue, and PR body. Use readIssue / readComments / readPrComments if you need more thread context.
+0. **Follow-up (when prior review context is injected):** For each open review thread listed, read the current code and verify whether the feedback is addressed. When clearly fixed, call \`resolveReviewThreads\` with that thread's GraphQL \`id\`. Do not resolve threads when the fix is missing, partial, or ambiguous. Summarize outcomes under \`## Follow-up\` in the review body (resolved / still open / not applicable). When a delta diff since the last agent code review is provided, prioritize new findings there; do not re-report issues already resolved in this step.
+1. Read the injected diff, file scope (reviewed vs ignored), path-specific instructions, commit list, source issue, and PR body. Use readIssue / readComments / readPrComments / readPullRequestReviewComments if you need more thread context.
 2. Use list_files, read_files, search_codebase, and **run_commands** (read-only: \`rg\`, \`git show\`, \`git log\`) to inspect and validate findings. Do not modify any files (no editor, no apply_patch).
 3. Call submitReview with:
    - \`event\`: \`REQUEST_CHANGES\` only when there is a **hard** finding (documented-standard breach, or a spec requirement missing / wrong). Otherwise \`COMMENT\`. Never \`APPROVE\`.
    - \`body\`: markdown in this **exact section order**:
-     1. \`## Walkthrough\` — summary for humans: group changes by layer/feature in a table (layer | files | what changed). Add a mermaid diagram only when a multi-step flow is clearer visually.
-     2. \`## Merge risk\` — one line with level **Minimal**, **Moderate**, or **High**, then a short justification sentence.
-     3. \`## Pre-merge checks\` — lightweight table (check | status | notes): PR title vs diff, description vs diff, linked issue/spec coverage, obvious out-of-scope files. Do not duplicate CI or lint results.
-     4. \`## Standards\` — findings per file/hunk, or say there are none.
-     5. \`## Spec\` — findings per requirement, or say there are none / no spec.
+     1. \`## Follow-up\` — only when follow-up context was provided; otherwise omit this section entirely.
+     2. \`## Walkthrough\` — summary for humans: group changes by layer/feature in a table (layer | files | what changed). Add a mermaid diagram only when a multi-step flow is clearer visually.
+     3. \`## Merge risk\` — one line with level **Minimal**, **Moderate**, or **High**, then a short justification sentence.
+     4. \`## Pre-merge checks\` — lightweight table (check | status | notes): PR title vs diff, description vs diff, linked issue/spec coverage, obvious out-of-scope files. Do not duplicate CI or lint results.
+     5. \`## Standards\` — findings per file/hunk, or say there are none.
+     6. \`## Spec\` — findings per requirement, or say there are none / no spec.
    - \`comments\`: inline comments on the PR diff (\`path\`, \`line\`, optional \`side\` defaulting to RIGHT, \`body\`). **Every hard finding must have an inline comment** on the relevant diff line. Use this first-line tag format: \`_Category_ | _Severity_ | _Effort_\` where Category is one of Functional Correctness, Security & Privacy, Performance, Maintainability, Docs; Severity is Minor, Major, or Critical; Effort is Quick win or Needs discussion. Body: short explanation, then optional \`<details><summary>Suggested fix</summary>\` with a \`\`\`diff\`\`\` block, then optional \`<details><summary>Evidence</summary>\` with read-only command output. Do not paste the full walkthrough into inline comments.
 
 Standards rules:

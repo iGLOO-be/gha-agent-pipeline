@@ -40,6 +40,7 @@ describe("resolveReviewConfig", () => {
           path_filters: ["!from-agent/**"],
           path_instructions: [{ path: "src/**", instructions: "from agent" }],
           apply_default_ignores: false,
+          follow_up: { resolve_threads: "agent_only" },
         },
       },
       tempDir,

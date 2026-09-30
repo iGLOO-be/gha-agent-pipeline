@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isSafeGitRef,
+  isSafeGitRev,
   MAX_REVIEW_DIFF_CHARS,
   truncateReviewDiff,
 } from "./review-diff.js";
@@ -15,6 +16,17 @@ describe("review-diff", () => {
     it("rejects shell metacharacters", () => {
       expect(isSafeGitRef("main; rm -rf /")).toBe(false);
       expect(isSafeGitRef("origin/main && echo")).toBe(false);
+    });
+  });
+
+  describe("isSafeGitRev", () => {
+    it("accepts commit SHAs", () => {
+      expect(isSafeGitRev("abc1234def")).toBe(true);
+      expect(isSafeGitRev("a".repeat(40))).toBe(true);
+    });
+
+    it("rejects unsafe revs", () => {
+      expect(isSafeGitRev("abc; rm -rf")).toBe(false);
     });
   });
 

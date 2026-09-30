@@ -1126,3 +1126,207 @@ export async function updatePullRequestReview(
   });
   return data;
 }
+
+export type PullRequestReviewThreadComment = {
+  id: number;
+  body: string;
+  path: string | null;
+  line: number | null;
+  authorLogin: string | null;
+};
+
+export type PullRequestReviewThread = {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  comments: PullRequestReviewThreadComment[];
+};
+
+async function runGitHubGraphql<TData>(
+  octokit: Octokit,
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<TData> {
+  const auth = await octokit.auth();
+  const token =
+    typeof auth === "string"
+      ? auth
+      : auth && typeof auth === "object" && "token" in auth
+        ? String((auth as { token: string }).token)
+        : "";
+  if (!token) {
+    throw new Error("GitHub GraphQL requires an authenticated Octokit client");
+  }
+
+  const request = octokit.request as {
+    endpoint?: (options: { baseUrl?: string }) => {
+      DEFAULTS?: { baseUrl?: string };
+    };
+  };
+  const baseUrl =
+    request.endpoint?.({})?.DEFAULTS?.baseUrl ?? "https://api.github.com";
+  const graphqlUrl = `${baseUrl.replace(/\/$/, "")}/graphql`;
+
+  const response = await fetch(graphqlUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  const json = (await response.json()) as {
+    data?: TData;
+    errors?: { message: string }[];
+  };
+  if (!response.ok) {
+    throw new Error(
+      `GitHub GraphQL HTTP ${response.status}: ${JSON.stringify(json)}`,
+    );
+  }
+  if (json.errors?.length) {
+    throw new Error(json.errors.map((error) => error.message).join("; "));
+  }
+  if (!json.data) {
+    throw new Error("GitHub GraphQL returned no data");
+  }
+  return json.data;
+}
+
+const REVIEW_THREADS_QUERY = `
+query($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          isResolved
+          isOutdated
+          comments(first: 50) {
+            nodes {
+              databaseId
+              body
+              path
+              line
+              author { login }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+type ReviewThreadsQueryResult = {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: {
+          id: string;
+          isResolved: boolean;
+          isOutdated: boolean;
+          comments: {
+            nodes: {
+              databaseId: number | null;
+              body: string;
+              path: string | null;
+              line: number | null;
+              author: { login: string } | null;
+            }[];
+          };
+        }[];
+      };
+    } | null;
+  } | null;
+};
+
+export async function listPullRequestReviewThreads(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<PullRequestReviewThread[]> {
+  const threads: PullRequestReviewThread[] = [];
+  let after: string | null = null;
+
+  for (;;) {
+    const data: ReviewThreadsQueryResult = await runGitHubGraphql(
+      octokit,
+      REVIEW_THREADS_QUERY,
+      {
+        owner,
+        name: repo,
+        number: prNumber,
+        after,
+      },
+    );
+    const page = data.repository?.pullRequest?.reviewThreads;
+    if (!page) {
+      break;
+    }
+
+    for (const node of page.nodes) {
+      threads.push({
+        id: node.id,
+        isResolved: node.isResolved,
+        isOutdated: node.isOutdated,
+        comments: node.comments.nodes.map((comment) => ({
+          id: comment.databaseId ?? 0,
+          body: comment.body,
+          path: comment.path,
+          line: comment.line,
+          authorLogin: comment.author?.login ?? null,
+        })),
+      });
+    }
+
+    if (!page.pageInfo.hasNextPage) {
+      break;
+    }
+    after = page.pageInfo.endCursor;
+  }
+
+  return threads;
+}
+
+const RESOLVE_THREAD_MUTATION = `
+mutation($threadId: ID!) {
+  resolveReviewThread(input: { threadId: $threadId }) {
+    thread { id isResolved }
+  }
+}`;
+
+export async function resolvePullRequestReviewThread(
+  octokit: Octokit,
+  threadId: string,
+): Promise<{ id: string; isResolved: boolean }> {
+  const data = await runGitHubGraphql<{
+    resolveReviewThread: {
+      thread: { id: string; isResolved: boolean };
+    };
+  }>(octokit, RESOLVE_THREAD_MUTATION, { threadId });
+  return data.resolveReviewThread.thread;
+}
+
+export function formatReviewThreadsForPrompt(
+  threads: PullRequestReviewThread[],
+): string {
+  if (threads.length === 0) {
+    return "(no open review threads in scope)";
+  }
+  return threads
+    .map((thread) => {
+      const root = thread.comments[0];
+      const path = root?.path ?? "(no path)";
+      const line = root?.line != null ? ` line ${root.line}` : "";
+      const author = root?.authorLogin ?? "unknown";
+      const body = (root?.body ?? "").trim();
+      const outdated = thread.isOutdated ? " outdated" : "";
+      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated}) ---\n${body}`;
+    })
+    .join("\n\n");
+}

@@ -6,7 +6,15 @@ import {
   parseRepository,
   CODE_REVIEW_MODEL,
 } from "./config.js";
-import { collectReviewDiff } from "./git/review-diff.js";
+import {
+  collectReviewDiff,
+  collectReviewDiffSince,
+} from "./git/review-diff.js";
+import {
+  buildCodeReviewFollowUpContext,
+  formatFollowUpPromptSection,
+  getCodeReviewFollowUpMode,
+} from "./review-follow-up.js";
 import {
   formatPathInstructionsForPrompt,
   resolveReviewConfig,
@@ -112,6 +120,43 @@ async function main() {
     const standardsSources = loadStandardsSources();
     const runFriction = createRunFrictionCollector();
     const review: ReviewTracker = { posted: false };
+    const followUpMode = getCodeReviewFollowUpMode(config);
+    const followUpEnabled = followUpMode !== "off";
+    let followUpSection = "";
+    let deltaSection = "";
+
+    if (followUpEnabled) {
+      const followUpContext = await buildCodeReviewFollowUpContext(
+        octokit,
+        owner,
+        repo,
+        env.PR_NUMBER,
+        followUpMode,
+      );
+      followUpSection = `\n${formatFollowUpPromptSection(followUpContext)}\n`;
+
+      if (followUpContext.lastAgentReview?.commitSha) {
+        try {
+          const sinceDiff = await collectReviewDiffSince(
+            followUpContext.lastAgentReview.commitSha,
+          );
+          deltaSection = `
+Changes since last agent code review (${followUpContext.lastAgentReview.commitSha}..HEAD):
+Commits:
+${sinceDiff.log}
+
+Files:
+${sinceDiff.files.length > 0 ? sinceDiff.files.map((file) => `- ${file}`).join("\n") : "(no files changed)"}
+${sinceDiff.truncated ? "\nThe delta diff below was truncated; use read_files for full context.\n" : ""}
+\`\`\`diff
+${sinceDiff.diff || "(empty diff)"}
+\`\`\`
+`;
+        } catch (error) {
+          followUpSection += `\n(Could not compute delta diff since last agent review: ${error instanceof Error ? error.message : String(error)})\n`;
+        }
+      }
+    }
 
     const tools = await withReportRunFrictionTool(
       await createCodeReviewTools(
@@ -121,6 +166,7 @@ async function main() {
         env.ISSUE_NUMBER,
         env.PR_NUMBER,
         review,
+        { followUpEnabled },
       ),
       runFriction,
     );
@@ -153,7 +199,7 @@ ${conversation}
 Pull request title: ${pr.title}
 Pull request body:
 ${pr.body ?? "(empty)"}
-${extraInstructions}
+${followUpSection}${deltaSection}${extraInstructions}
 Documented standards sources:
 ${standardsSources}
 

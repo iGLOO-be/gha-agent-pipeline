@@ -9,10 +9,18 @@ export type ReviewDiffContext = {
   files: string[];
   diff: string;
   truncated: boolean;
+  sinceRef?: string;
 };
 
 export function isSafeGitRef(value: string): boolean {
   return /^[A-Za-z0-9._/-]+$/.test(value);
+}
+
+export function isSafeGitRev(value: string): boolean {
+  if (/^[a-f0-9]{7,40}$/i.test(value)) {
+    return true;
+  }
+  return isSafeGitRef(value);
 }
 
 export function truncateReviewDiff(
@@ -59,6 +67,36 @@ export async function collectReviewDiff(
 
   return {
     baseBranch,
+    log: logResult.stdout.trim() || "(no commits)",
+    files,
+    diff: truncated.diff,
+    truncated: truncated.truncated,
+  };
+}
+
+export async function collectReviewDiffSince(
+  sinceRef: string,
+): Promise<Pick<ReviewDiffContext, "log" | "files" | "diff" | "truncated">> {
+  if (!isSafeGitRev(sinceRef)) {
+    throw new Error(`Unsafe git revision for review diff: ${sinceRef}`);
+  }
+
+  const logResult = await runShell(`git log --oneline ${sinceRef}..HEAD`);
+  const filesResult = await runShell(`git diff --name-only ${sinceRef}..HEAD`);
+  const diffResult = await runShell(`git diff ${sinceRef}..HEAD`);
+  if (diffResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to compute review diff since ${sinceRef}: ${diffResult.stderr || diffResult.stdout}`,
+    );
+  }
+
+  const files = filesResult.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const truncated = truncateReviewDiff(diffResult.stdout);
+
+  return {
     log: logResult.stdout.trim() || "(no commits)",
     files,
     diff: truncated.diff,
