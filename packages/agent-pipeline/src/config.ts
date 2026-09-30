@@ -270,6 +270,8 @@ ${RUN_FRICTION_SYSTEM_HINT}
 
 ${SUBMIT_PHASE_REPORT_PROMPT}
 
+Optionally pass \`commitMessage\` in \`submitPhaseReport\` (single-line conventional commit subject). If omitted, the runner uses \`fix(ci): address failures for PR #<number>\`.
+
 Do not commit or push. The runner will handle git operations after you finish.`;
 
 const yoloPromptBody = `Implement the GitHub issue using the instructions in the issue description.
@@ -386,6 +388,8 @@ ${FILE_EDIT_SYSTEM_HINT}
 ${RUN_FRICTION_SYSTEM_HINT}
 
 ${SUBMIT_PHASE_REPORT_PROMPT}
+
+Optionally pass \`commitMessage\` in \`submitPhaseReport\` (single-line conventional commit subject). If omitted, the runner uses \`fix(review): address feedback on PR #<number>\`.
 
 Do not commit or push. The runner will handle git operations after you finish.`;
 }

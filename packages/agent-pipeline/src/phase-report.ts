@@ -19,17 +19,49 @@ export interface PhaseReport {
   /** Yolo (and future phases): structured risk for labels — not parsed from markdown. */
   riskLevel?: RiskLevel;
   riskJustification?: string;
+  /** ci-fix / review-fix: optional single-line git commit subject for the runner. */
+  commitMessage?: string;
 }
 
 export type SubmitPhaseReportOptions = {
   /** When true, riskLevel and riskJustification are required tool args (yolo). */
   requireRiskAssessment?: boolean;
+  /** When true, expose optional commitMessage (ci-fix, review-fix). */
+  allowCommitMessage?: boolean;
 };
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const SUMMARY_MAX_CHARS = 8_000;
 const TEST_PLAN_MAX_CHARS = 4_000;
+export const COMMIT_MESSAGE_MAX_CHARS = 240;
+
+/** Normalize agent-provided git commit subject; returns undefined when empty/invalid. */
+export function normalizeAgentCommitMessage(
+  raw: string | undefined,
+): string | undefined {
+  if (raw == null) {
+    return undefined;
+  }
+  const singleLine = raw.replace(/\s+/g, " ").trim();
+  if (!singleLine) {
+    return undefined;
+  }
+  const redacted = redactSensitiveStrings(singleLine);
+  const trimmed = redacted.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return truncate(trimmed, COMMIT_MESSAGE_MAX_CHARS);
+}
+
+/** Use agent commit subject when valid; otherwise the runner fallback. */
+export function resolveAgentCommitMessage(
+  phaseReport: PhaseReport | undefined,
+  fallback: string,
+): string {
+  return normalizeAgentCommitMessage(phaseReport?.commitMessage) ?? fallback;
+}
 
 /** HTML comment injected before the phase report markdown. */
 const PHASE_REPORT_MARKER = "<!-- agent-phase-report -->";
@@ -80,6 +112,7 @@ export async function createSubmitPhaseReportTool(
 ) {
   const { createTool } = await loadClineSdk();
   const requireRisk = options.requireRiskAssessment === true;
+  const allowCommitMessage = options.allowCommitMessage === true;
 
   const riskProperties = {
     riskLevel: {
@@ -107,6 +140,9 @@ export async function createSubmitPhaseReportTool(
       (requireRisk
         ? "You must include riskLevel and riskJustification for labeling. "
         : "") +
+      (allowCommitMessage
+        ? "You may include commitMessage (single-line conventional commit subject) for the runner's git commit. "
+        : "") +
       "Last submission wins if called multiple times.",
     lifecycle: { completesRun: true },
     inputSchema: {
@@ -123,6 +159,15 @@ export async function createSubmitPhaseReportTool(
             "Optional markdown section describing how to test the changes.",
         },
         ...(requireRisk ? riskProperties : {}),
+        ...(allowCommitMessage
+          ? {
+              commitMessage: {
+                type: "string",
+                description:
+                  "Optional single-line git commit subject (conventional commits encouraged). Omit to use the runner default.",
+              },
+            }
+          : {}),
       },
       required,
     },
@@ -131,6 +176,7 @@ export async function createSubmitPhaseReportTool(
       testPlan?: string;
       riskLevel?: string;
       riskJustification?: string;
+      commitMessage?: string;
     }) {
       let riskLevel: RiskLevel | undefined;
       let riskJustification: string | undefined;
@@ -161,6 +207,16 @@ export async function createSubmitPhaseReportTool(
         }
       }
 
+      const previous = tracker.report;
+      let commitMessage: string | undefined;
+      if (allowCommitMessage) {
+        if (input.commitMessage !== undefined) {
+          commitMessage = normalizeAgentCommitMessage(input.commitMessage);
+        } else {
+          commitMessage = previous?.commitMessage;
+        }
+      }
+
       const report: PhaseReport = {
         summary: truncate(
           redactSensitiveStrings(input.summary),
@@ -174,6 +230,7 @@ export async function createSubmitPhaseReportTool(
           : undefined,
         riskLevel,
         riskJustification,
+        commitMessage,
       };
       tracker.submit(report);
       return {
@@ -181,6 +238,7 @@ export async function createSubmitPhaseReportTool(
         summaryLength: report.summary.length,
         testPlanLength: report.testPlan?.length,
         riskLevel: report.riskLevel,
+        commitMessage: report.commitMessage,
       };
     },
   });

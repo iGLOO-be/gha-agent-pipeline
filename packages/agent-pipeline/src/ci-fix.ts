@@ -37,6 +37,7 @@ import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
+  resolveAgentCommitMessage,
 } from "./phase-report.js";
 
 async function main() {
@@ -139,7 +140,10 @@ Repository: ${env.GITHUB_REPOSITORY}`,
 
     const pushResult = await commitAndPushBranch(
       branch,
-      `fix(ci): address failures for PR #${env.PR_NUMBER}`,
+      resolveAgentCommitMessage(
+        phaseReport,
+        `fix(ci): address failures for PR #${env.PR_NUMBER}`,
+      ),
     );
 
     const buildCiFixComment = (body: string): string => {
