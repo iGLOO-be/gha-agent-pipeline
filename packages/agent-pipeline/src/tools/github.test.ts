@@ -13,6 +13,7 @@ import {
   formatReviewCommentsForPrompt,
   formatReviewThreadsForPrompt,
   hasAgentMarkerInComments,
+  isAgentInlineReviewCommentBody,
   isAutomatedReviewAuthor,
   markerFor,
   normalizeAgentPlanBody,
@@ -523,6 +524,18 @@ describe("tools/github", () => {
         true,
       );
       expect(isAutomatedReviewAuthor("human")).toBe(false);
+      expect(isAutomatedReviewAuthor("gha-agent-demo-bot")).toBe(false);
+    });
+  });
+
+  describe("isAgentInlineReviewCommentBody", () => {
+    it("detects agent code-review inline tag line", () => {
+      expect(
+        isAgentInlineReviewCommentBody(
+          "_Docs_ | _Minor_ | _Quick win_\n\nPlease fix.",
+        ),
+      ).toBe(true);
+      expect(isAgentInlineReviewCommentBody("Please fix.")).toBe(false);
     });
   });
 

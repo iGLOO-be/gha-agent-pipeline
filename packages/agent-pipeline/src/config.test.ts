@@ -502,6 +502,7 @@ describe("config", () => {
       const prompt = buildPhaseSystemPrompt("code-review", config);
       expect(prompt).toContain("submitReview");
       expect(prompt).toContain("resolveReviewThreads");
+      expect(prompt).toContain("outdated");
       expect(prompt).toContain("## Follow-up");
       expect(prompt).toContain("## Walkthrough");
       expect(prompt).toContain("## Merge risk");

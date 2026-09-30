@@ -3,6 +3,7 @@ import { loadAgentConfig } from "./config.js";
 import {
   formatFollowUpPromptSection,
   getCodeReviewFollowUpMode,
+  threadMatchesCodeReviewFollowUpMode,
   type CodeReviewFollowUpContext,
 } from "./review-follow-up.js";
 
@@ -11,6 +12,51 @@ describe("review-follow-up", () => {
     it("defaults to agent_only when code_review is absent", () => {
       const config = loadAgentConfig();
       expect(getCodeReviewFollowUpMode(config)).toBe("agent_only");
+    });
+  });
+
+  describe("threadMatchesCodeReviewFollowUpMode", () => {
+    it("includes agent inline threads for agent_only even without [bot] login", () => {
+      const thread = {
+        id: "PRRT_x",
+        isResolved: false,
+        isOutdated: true,
+        comments: [
+          {
+            id: 1,
+            body: "_Docs_ | _Minor_ | _Quick win_\n\nFix the wording.",
+            path: "docs/a.md",
+            line: 10,
+            authorLogin: "gha-agent-demo-bot",
+          },
+        ],
+      };
+      expect(threadMatchesCodeReviewFollowUpMode(thread, "agent_only")).toBe(
+        true,
+      );
+      expect(threadMatchesCodeReviewFollowUpMode(thread, "all_authors")).toBe(
+        true,
+      );
+    });
+
+    it("excludes human threads in agent_only mode", () => {
+      const thread = {
+        id: "PRRT_y",
+        isResolved: false,
+        isOutdated: false,
+        comments: [
+          {
+            id: 2,
+            body: "Please rename this.",
+            path: "src/a.ts",
+            line: 1,
+            authorLogin: "human-reviewer",
+          },
+        ],
+      };
+      expect(threadMatchesCodeReviewFollowUpMode(thread, "agent_only")).toBe(
+        false,
+      );
     });
   });
 

@@ -415,6 +415,13 @@ export function isAutomatedReviewAuthor(
   return lower.endsWith("[bot]");
 }
 
+const AGENT_INLINE_REVIEW_COMMENT_TAG = /^_[^|\n]+_\s*\|\s*_[^|\n]+_\s*\|\s*_/m;
+
+/** Matches agent code-review inline comments (_Category_ | _Severity_ | _Effort_). */
+export function isAgentInlineReviewCommentBody(body: string): boolean {
+  return AGENT_INLINE_REVIEW_COMMENT_TAG.test(body.trim());
+}
+
 export function formatReviewCommentsForPrompt(
   comments: PullRequestReviewCommentForPrompt[],
   options?: { maxDiffHunkChars?: number },
