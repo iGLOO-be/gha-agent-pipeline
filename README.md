@@ -232,6 +232,7 @@ After the consumer workflows are on **`main`**, comment on an issue or PR:
 - `/agent fix` — on an agent PR (comment or submitted review)
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
 - `/agent ask` — read-only Q&A on an issue or PR
+- See [Dogfood: code-review follow-up demo](./docs/dogfood-code-review-follow-up.md) for the repeat `/agent code-review` flow (resolve threads, delta diff)
 
 Dispatch runs phase workflows from the default branch (`main`), not from open PR branches.
 
