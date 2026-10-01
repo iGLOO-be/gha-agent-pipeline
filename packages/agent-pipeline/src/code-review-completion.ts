@@ -7,6 +7,7 @@ export type BuildCodeReviewPhaseCommentParams = {
   sessionUsage: SessionAccumulatedUsage;
   sessionId: string;
   modelId: string;
+  servedModelIds?: string[];
   iterations?: number;
   toolCallsCount?: number;
   runFriction: RunFrictionCollector;
@@ -26,6 +27,7 @@ export function buildCodeReviewPhaseComment(
     sessionUsage: params.sessionUsage,
     sessionId: params.sessionId,
     modelId: params.modelId,
+    servedModelIds: params.servedModelIds,
     iterations: params.iterations,
     toolCallsCount: params.toolCallsCount,
     runFriction: params.runFriction,

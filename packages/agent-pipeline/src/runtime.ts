@@ -93,6 +93,8 @@ export type AgentSessionResult = {
   finishReason: string;
   usage?: SessionAccumulatedUsage;
   modelId: string;
+  /** Upstream model slug(s) reported by OpenRouter when Jev Router is active. */
+  servedModelIds?: string[];
   attempts: number;
   /** Number of agent iterations (model → tools → repeat cycles), from session.result */
   iterations?: number;
@@ -215,12 +217,22 @@ async function runAgentSessionAttempt(
         const usageSummary = await cline.getAccumulatedUsage(sessionId);
         usage = usageSummary?.aggregateUsage || usageSummary?.usage;
 
+        const servedModelIds =
+          input.jevRouterContext?.servedModels.list() ?? [];
+        if (servedModelIds.length > 0) {
+          console.log(`[session] served models: ${servedModelIds.join(", ")}`);
+        }
+
         if (usage) {
           const { stdout, stepSummary } = formatUsageBlock(
             usage,
             sessionId,
             session.result?.iterations,
             session.result?.toolCalls?.length,
+            {
+              modelId: requestModelId,
+              servedModelIds,
+            },
           );
           console.log(stdout);
           appendStepSummary(stepSummary);
@@ -246,12 +258,19 @@ async function runAgentSessionAttempt(
       );
     }
 
+    const servedModelIds =
+      input.jevRouterContext?.servedModels.list() ?? undefined;
+
     return {
       sessionId: sessionId!,
       outputText: session.result.text,
       finishReason,
       usage,
       modelId: requestModelId,
+      servedModelIds:
+        servedModelIds && servedModelIds.length > 0
+          ? servedModelIds
+          : undefined,
       attempts: input.attempt,
       iterations: session.result?.iterations,
       toolCallsCount: session.result?.toolCalls?.length,

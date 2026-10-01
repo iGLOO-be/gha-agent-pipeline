@@ -340,7 +340,7 @@ openrouter:
         enabled: true
 ```
 
-When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
+When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. End-of-phase usage tables list **Model (requested)** and **Served model(s)** (upstream slugs parsed from OpenRouter responses, including `openrouter_metadata` when enabled). See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
 
 | Phase         | Required                                                       | Optional / routing                                                                             |
 | ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |

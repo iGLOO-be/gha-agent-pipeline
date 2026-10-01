@@ -7,6 +7,7 @@ import {
   getOpenRouterApiKey,
   getOpenRouterRequestTimeoutMs,
 } from "./gateway.js";
+import { createServedModelTracker } from "./jev-router.js";
 
 const ENV_KEYS = [
   "OPENROUTER_API_KEY",
@@ -129,6 +130,7 @@ describe("openrouter gateway", () => {
       const config = buildOpenRouterProviderConfig({
         pool: { models: ["anthropic/*"], excluded_models: [] },
         metadata: true,
+        servedModels: createServedModelTracker(),
       });
       expect(config.timeout).toBe(OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS);
       expect(typeof config.fetch).toBe("function");

@@ -237,6 +237,7 @@ ${reviewDiff.diff || "(empty diff)"}
           sessionUsage: session.usage,
           sessionId: session.sessionId,
           modelId: session.modelId,
+          servedModelIds: session.servedModelIds,
           iterations: session.iterations,
           toolCallsCount: session.toolCallsCount,
           runFriction,

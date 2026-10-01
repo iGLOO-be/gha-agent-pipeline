@@ -19,9 +19,33 @@ export type JevRouterPool = {
   excluded_models: string[];
 };
 
+export type ServedModelTracker = {
+  record: (model: string) => void;
+  list: () => string[];
+};
+
+export function createServedModelTracker(): ServedModelTracker {
+  const seen = new Set<string>();
+  const order: string[] = [];
+  return {
+    record(model: string) {
+      const trimmed = model.trim();
+      if (!trimmed || trimmed === JEV_ROUTER_MODEL_ID || seen.has(trimmed)) {
+        return;
+      }
+      seen.add(trimmed);
+      order.push(trimmed);
+    },
+    list() {
+      return [...order];
+    },
+  };
+}
+
 export type JevRouterRequestContext = {
   pool: JevRouterPool;
   metadata: boolean;
+  servedModels: ServedModelTracker;
 };
 
 export type JevRouterPluginPayload = {
@@ -223,8 +247,139 @@ export function resolveOpenRouterModelForPhase(
   return {
     requestModelId: JEV_ROUTER_MODEL_ID,
     logLabel: formatJevRouterLogLabel(pool),
-    jevContext: { pool, metadata },
+    jevContext: { pool, metadata, servedModels: createServedModelTracker() },
   };
+}
+
+export function extractServedModelsFromOpenRouterPayload(
+  payload: unknown,
+): string[] {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+  const models: string[] = [];
+  const record = (value: unknown) => {
+    if (typeof value === "string" && value.trim()) {
+      models.push(value.trim());
+    }
+  };
+
+  record((payload as { model?: string }).model);
+
+  const pipeline = (
+    payload as {
+      openrouter_metadata?: {
+        pipeline?: Array<{ name?: string; data?: unknown }>;
+      };
+    }
+  ).openrouter_metadata?.pipeline;
+  if (Array.isArray(pipeline)) {
+    for (const stage of pipeline) {
+      if (
+        stage?.name !== "jev-router" ||
+        !stage.data ||
+        typeof stage.data !== "object"
+      ) {
+        continue;
+      }
+      const resolved = (stage.data as { resolved_models?: unknown })
+        .resolved_models;
+      if (Array.isArray(resolved)) {
+        for (const entry of resolved) {
+          record(entry);
+        }
+      }
+    }
+  }
+
+  return models.filter((model) => model !== JEV_ROUTER_MODEL_ID);
+}
+
+export function extractServedModelsFromOpenRouterSse(buffer: string): string[] {
+  const models: string[] = [];
+  for (const line of buffer.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) {
+      continue;
+    }
+    const data = trimmed.slice("data:".length).trim();
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+    try {
+      models.push(
+        ...extractServedModelsFromOpenRouterPayload(JSON.parse(data)),
+      );
+    } catch {
+      // ignore partial or non-JSON SSE lines
+    }
+  }
+  return models;
+}
+
+async function captureServedModelsFromResponse(
+  response: Response,
+  servedModels: ServedModelTracker,
+): Promise<Response> {
+  if (!response.body) {
+    return response;
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const isEventStream =
+    contentType.includes("text/event-stream") ||
+    contentType.includes("application/x-ndjson");
+
+  if (isEventStream) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = "";
+
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        if (done) {
+          for (const model of extractServedModelsFromOpenRouterSse(sseBuffer)) {
+            servedModels.record(model);
+          }
+          controller.close();
+          return;
+        }
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+        for (const line of lines) {
+          for (const model of extractServedModelsFromOpenRouterSse(
+            `${line}\n`,
+          )) {
+            servedModels.record(model);
+          }
+        }
+        controller.enqueue(value);
+      },
+    });
+
+    return new Response(stream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  }
+
+  const text = await response.text();
+  try {
+    const payload = JSON.parse(text) as unknown;
+    for (const model of extractServedModelsFromOpenRouterPayload(payload)) {
+      servedModels.record(model);
+    }
+  } catch {
+    // non-JSON error bodies
+  }
+  return new Response(text, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function isOpenRouterChatCompletionUrl(url: string): boolean {
@@ -262,6 +417,7 @@ function mergeJevRouterPlugins(
 
 export function createJevRouterFetch(
   plugin: JevRouterPluginPayload,
+  servedModels?: ServedModelTracker,
   baseFetch: typeof fetch = globalThis.fetch,
 ): typeof fetch {
   return async (input, init) => {
@@ -272,33 +428,36 @@ export function createJevRouterFetch(
           ? input.href
           : input.url;
 
-    if (
-      !isOpenRouterChatCompletionUrl(url) ||
-      !init?.body ||
-      typeof init.body !== "string"
-    ) {
+    if (!isOpenRouterChatCompletionUrl(url)) {
       return baseFetch(input, init);
     }
 
-    let body: Record<string, unknown>;
+    let nextInit = init;
+    if (init?.body && typeof init.body === "string") {
+      try {
+        const body = JSON.parse(init.body) as Record<string, unknown>;
+        if (body.model === JEV_ROUTER_MODEL_ID) {
+          nextInit = {
+            ...init,
+            body: JSON.stringify({
+              ...body,
+              plugins: mergeJevRouterPlugins(body.plugins, plugin),
+            }),
+          };
+        }
+      } catch {
+        // pass through unchanged
+      }
+    }
+
+    const response = await baseFetch(input, nextInit);
+    if (!servedModels) {
+      return response;
+    }
     try {
-      body = JSON.parse(init.body) as Record<string, unknown>;
+      return await captureServedModelsFromResponse(response, servedModels);
     } catch {
-      return baseFetch(input, init);
+      return response;
     }
-
-    if (body.model !== JEV_ROUTER_MODEL_ID) {
-      return baseFetch(input, init);
-    }
-
-    const nextBody = {
-      ...body,
-      plugins: mergeJevRouterPlugins(body.plugins, plugin),
-    };
-
-    return baseFetch(input, {
-      ...init,
-      body: JSON.stringify(nextBody),
-    });
   };
 }

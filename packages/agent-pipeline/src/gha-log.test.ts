@@ -874,7 +874,7 @@ describe("gha-log", () => {
         });
 
         expect(result).toContain("| Session ID | `abc123` |");
-        expect(result).toContain("| Model | `test-model` |");
+        expect(result).toContain("| Model (requested) | `test-model` |");
       });
 
       it("renders iterations and tool calls when provided", () => {
@@ -928,6 +928,23 @@ describe("gha-log", () => {
         expect(result).not.toBeNull();
         expect(result!).toContain("| Iterations | 3 |");
         expect(result!).toContain("| Tool calls | 7 |");
+      });
+
+      it("includes served models when provided", () => {
+        const result = safeFormatUsageMarkdown(sampleUsage, {
+          modelId: "typesafe/jev-router",
+          servedModelIds: [
+            "deepseek/deepseek-v4-pro",
+            "google/gemini-2.5-flash",
+          ],
+        });
+
+        expect(result).toContain(
+          "| Model (requested) | `typesafe/jev-router` |",
+        );
+        expect(result).toContain(
+          "| Served model(s) | `deepseek/deepseek-v4-pro`, `google/gemini-2.5-flash` |",
+        );
       });
     });
 
