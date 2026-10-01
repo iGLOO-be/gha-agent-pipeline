@@ -296,6 +296,10 @@ export interface FormatPhaseCompletionOptions {
   sessionId?: string;
   /** Model ID for the metrics table (omitted when sessionUsage is absent). */
   modelId?: string;
+  /** Upstream OpenRouter model slug(s) when Jev Router served a concrete model. */
+  servedModelIds?: string[];
+  /** OpenRouter usage.cost sum when Cline totalCost is unavailable. */
+  openRouterCostUsd?: number;
   /** Iterations count for the metrics table. */
   iterations?: number;
   /** Tool calls count for the metrics table. */
@@ -350,6 +354,8 @@ export function formatPhaseCompletionMarkdown(
       heading: "### Run metrics",
       sessionId: opts.sessionId,
       modelId: opts.modelId,
+      servedModelIds: opts.servedModelIds,
+      openRouterCostUsd: opts.openRouterCostUsd,
       iterations: opts.iterations,
       toolCallsCount: opts.toolCallsCount,
     });

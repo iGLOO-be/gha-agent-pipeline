@@ -270,6 +270,33 @@ describe("config", () => {
       expect(config.git.base_branch).toBe("next");
     });
 
+    it("loads openrouter.jev_router from YAML", () => {
+      const configPath = join(tempDir, "agent.config.yml");
+      writeFileSync(
+        configPath,
+        [
+          "version: 1",
+          "openrouter:",
+          "  jev_router:",
+          "    enabled: true",
+          "    models:",
+          "      - anthropic/*",
+          "    phases:",
+          "      implement:",
+          "        excluded_models:",
+          "          - anthropic/claude-opus*",
+        ].join("\n"),
+      );
+
+      const config = loadAgentConfig(configPath);
+
+      expect(config.openrouter?.jev_router?.enabled).toBe(true);
+      expect(config.openrouter?.jev_router?.models).toEqual(["anthropic/*"]);
+      expect(
+        config.openrouter?.jev_router?.phases?.implement?.excluded_models,
+      ).toEqual(["anthropic/claude-opus*"]);
+    });
+
     it("loads values from a valid YAML config", () => {
       const configPath = join(tempDir, "agent.config.yml");
       writeFileSync(

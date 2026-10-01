@@ -297,6 +297,8 @@ ${conversation}${extraArgsBlock}`,
       heading: "### Usage (plan run)",
       sessionId: session.sessionId,
       modelId: session.modelId,
+      servedModelIds: session.servedModelIds,
+      openRouterCostUsd: session.openRouterCostUsd,
       iterations: session.iterations,
       toolCallsCount: session.toolCallsCount,
     });

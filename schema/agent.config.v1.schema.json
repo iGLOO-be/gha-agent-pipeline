@@ -209,6 +209,72 @@
       },
       "default": {}
     },
+    "openrouter": {
+      "type": "object",
+      "description": "Optional OpenRouter-specific settings for the agent runtime.",
+      "properties": {
+        "jev_router": {
+          "type": "object",
+          "description": "Optional Jev Router mode (OpenRouter model typesafe/jev-router). When enabled for a phase, the configured phase model slug is used as the default candidate pool unless models/allowed_models are set.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Enable Jev Router globally. Per-phase overrides live under phases.",
+              "default": false
+            },
+            "metadata": {
+              "type": "boolean",
+              "description": "Send X-OpenRouter-Metadata: enabled on requests when Jev Router is active.",
+              "default": true
+            },
+            "models": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Include list (wildcard patterns allowed). Merged with allowed_models.",
+              "default": []
+            },
+            "allowed_models": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Alias of models; entries are combined with models.",
+              "default": []
+            },
+            "excluded_models": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Exclude list (never ignored by OpenRouter).",
+              "default": []
+            },
+            "phases": {
+              "type": "object",
+              "description": "Per-phase Jev Router overrides (enabled flag and optional pool lists).",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean" },
+                  "models": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "allowed_models": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "excluded_models": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                },
+                "default": {}
+              },
+              "default": {}
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
     "code_review": {
       "type": "object",
       "description": "Optional scope and instructions for the /agent code-review phase. When omitted, reviews.path_filters and reviews.path_instructions from .coderabbit.yaml are used as fallback.",

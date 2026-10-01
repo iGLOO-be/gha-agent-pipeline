@@ -369,11 +369,40 @@ function formatToolOutputVerbose(
 function formatToolInputVerbose(toolName: string, input: unknown): string {
   return `[tool input] ${toolName}\n${formatToolValue(input)}`;
 }
+export function resolveEstimatedCostUsd(
+  usage: SessionAccumulatedUsage,
+  openRouterCostUsd?: number,
+): number {
+  if (usage.totalCost > 0) {
+    return usage.totalCost;
+  }
+  if (openRouterCostUsd !== undefined && openRouterCostUsd > 0) {
+    return openRouterCostUsd;
+  }
+  return usage.totalCost;
+}
+
+function formatEstimatedCostCell(
+  usage: SessionAccumulatedUsage,
+  openRouterCostUsd?: number,
+): string {
+  const value = resolveEstimatedCostUsd(usage, openRouterCostUsd);
+  const fromOpenRouter =
+    usage.totalCost <= 0 &&
+    openRouterCostUsd !== undefined &&
+    openRouterCostUsd > 0;
+  const amount = `$${value.toFixed(4)} USD`;
+  return fromOpenRouter
+    ? `**${amount}** (OpenRouter usage.cost)`
+    : `**${amount}**`;
+}
+
 function buildUsageRows(
   usage: SessionAccumulatedUsage,
   formatter: (label: string, value: string) => string,
   iterations?: number,
   toolCallsCount?: number,
+  openRouterCostUsd?: number,
 ): string[] {
   const totalTokens =
     usage.inputTokens +
@@ -398,27 +427,40 @@ function buildUsageRows(
 
   rows.push(
     formatter("**Total tokens**", `**${totalTokens.toLocaleString()}**`),
-    formatter("**Estimated cost**", `**$${usage.totalCost.toFixed(4)} USD**`),
+    formatter(
+      "**Estimated cost**",
+      formatEstimatedCostCell(usage, openRouterCostUsd),
+    ),
   );
 
   return rows;
 }
 
+export type UsageDisplayOptions = {
+  heading?: string;
+  sessionId?: string;
+  modelId?: string;
+  servedModelIds?: string[];
+  /** Sum of OpenRouter `usage.cost` from Jev fetch capture when Cline totalCost is zero. */
+  openRouterCostUsd?: number;
+  iterations?: number;
+  toolCallsCount?: number;
+};
+
+function formatServedModelsLabel(servedModelIds: string[]): string {
+  return servedModelIds.map((id) => `\`${id}\``).join(", ");
+}
+
 export function formatUsageMarkdown(
   usage: SessionAccumulatedUsage,
-  opts: {
-    heading?: string;
-    sessionId?: string;
-    modelId?: string;
-    iterations?: number;
-    toolCallsCount?: number;
-  } = {},
+  opts: UsageDisplayOptions = {},
 ): string {
   const rows = buildUsageRows(
     usage,
     (label, value) => `| ${label} | ${value} |`,
     opts.iterations,
     opts.toolCallsCount,
+    opts.openRouterCostUsd,
   );
   const headerRows = ["| Metric | Value |", "| --- | --- |"];
 
@@ -427,7 +469,13 @@ export function formatUsageMarkdown(
   }
 
   if (opts.modelId) {
-    headerRows.push(`| Model | \`${opts.modelId}\` |`);
+    headerRows.push(`| Model (requested) | \`${opts.modelId}\` |`);
+  }
+
+  if (opts.servedModelIds && opts.servedModelIds.length > 0) {
+    headerRows.push(
+      `| Served model(s) | ${formatServedModelsLabel(opts.servedModelIds)} |`,
+    );
   }
 
   const sections = [
@@ -441,13 +489,7 @@ export function formatUsageMarkdown(
 
 export function safeFormatUsageMarkdown(
   usage: SessionAccumulatedUsage | undefined,
-  opts: {
-    heading?: string;
-    sessionId?: string;
-    modelId?: string;
-    iterations?: number;
-    toolCallsCount?: number;
-  } = {},
+  opts: UsageDisplayOptions = {},
 ): string | null {
   if (!usage) {
     return null;
@@ -466,6 +508,10 @@ export function formatUsageBlock(
   sessionId: string,
   iterations?: number,
   toolCallsCount?: number,
+  display?: Pick<
+    UsageDisplayOptions,
+    "modelId" | "servedModelIds" | "openRouterCostUsd"
+  >,
 ): {
   stdout: string;
   stepSummary: string;
@@ -479,6 +525,10 @@ export function formatUsageBlock(
   // Format for stdout (simple text block)
   const stdout = [
     `\n[usage] Session ${sessionId}:`,
+    ...(display?.modelId ? [`  Model (requested): ${display.modelId}`] : []),
+    ...(display?.servedModelIds && display.servedModelIds.length > 0
+      ? [`  Served model(s): ${display.servedModelIds.join(", ")}`]
+      : []),
     `  Input tokens: ${usage.inputTokens.toLocaleString()}`,
     `  Output tokens: ${usage.outputTokens.toLocaleString()}`,
     `  Cache read tokens: ${usage.cacheReadTokens.toLocaleString()}`,
@@ -490,7 +540,13 @@ export function formatUsageBlock(
       ? [`  Tool calls: ${toolCallsCount.toLocaleString()}`]
       : []),
     `  Total tokens: ${totalTokens.toLocaleString()}`,
-    `  Estimated cost: $${usage.totalCost.toFixed(4)} USD`,
+    `  Estimated cost: $${resolveEstimatedCostUsd(usage, display?.openRouterCostUsd).toFixed(4)} USD${
+      usage.totalCost <= 0 &&
+      display?.openRouterCostUsd !== undefined &&
+      display.openRouterCostUsd > 0
+        ? " (OpenRouter usage.cost)"
+        : ""
+    }`,
   ].join("\n");
 
   // Format for step summary (Markdown table)
@@ -499,11 +555,20 @@ export function formatUsageBlock(
     `| Metric | Value |`,
     `| --- | --- |`,
     `| Session ID | \`${sessionId}\` |`,
+    ...(display?.modelId
+      ? [`| Model (requested) | \`${display.modelId}\` |`]
+      : []),
+    ...(display?.servedModelIds && display.servedModelIds.length > 0
+      ? [
+          `| Served model(s) | ${formatServedModelsLabel(display.servedModelIds)} |`,
+        ]
+      : []),
     ...buildUsageRows(
       usage,
       (label, value) => `| ${label} | ${value} |`,
       iterations,
       toolCallsCount,
+      display?.openRouterCostUsd,
     ),
     `\n\n`,
   ].join("\n");

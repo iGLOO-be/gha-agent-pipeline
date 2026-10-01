@@ -247,6 +247,8 @@ ${reviewDiff.diff || "(empty diff)"}
           sessionUsage: session.usage,
           sessionId: session.sessionId,
           modelId: session.modelId,
+          servedModelIds: session.servedModelIds,
+          openRouterCostUsd: session.openRouterCostUsd,
           iterations: session.iterations,
           toolCallsCount: session.toolCallsCount,
           runFriction,

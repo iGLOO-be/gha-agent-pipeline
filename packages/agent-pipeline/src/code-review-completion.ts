@@ -7,6 +7,8 @@ export type BuildCodeReviewPhaseCommentParams = {
   sessionUsage: SessionAccumulatedUsage;
   sessionId: string;
   modelId: string;
+  servedModelIds?: string[];
+  openRouterCostUsd?: number;
   iterations?: number;
   toolCallsCount?: number;
   runFriction: RunFrictionCollector;
@@ -26,6 +28,8 @@ export function buildCodeReviewPhaseComment(
     sessionUsage: params.sessionUsage,
     sessionId: params.sessionId,
     modelId: params.modelId,
+    servedModelIds: params.servedModelIds,
+    openRouterCostUsd: params.openRouterCostUsd,
     iterations: params.iterations,
     toolCallsCount: params.toolCallsCount,
     runFriction: params.runFriction,

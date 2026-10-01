@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS,
+  OPENROUTER_METADATA_HEADER,
+  OPENROUTER_PROVIDER_ID,
   buildOpenRouterHttpHeaders,
   buildOpenRouterProviderConfig,
   getOpenRouterApiKey,
   getOpenRouterRequestTimeoutMs,
 } from "./gateway.js";
+import {
+  createOpenRouterUsageCostTracker,
+  createServedModelTracker,
+} from "./jev-router.js";
 
 const ENV_KEYS = [
   "OPENROUTER_API_KEY",
@@ -86,6 +92,16 @@ describe("openrouter gateway", () => {
         "X-Title": "my-consumer-app",
       });
     });
+
+    it("adds OpenRouter metadata header when jev metadata is enabled", () => {
+      expect(
+        buildOpenRouterHttpHeaders("my-consumer-app", { jevMetadata: true }),
+      ).toEqual({
+        "HTTP-Referer": "",
+        "X-Title": "my-consumer-app",
+        [OPENROUTER_METADATA_HEADER]: "enabled",
+      });
+    });
   });
 
   describe("getOpenRouterRequestTimeoutMs", () => {
@@ -111,7 +127,22 @@ describe("openrouter gateway", () => {
   describe("buildOpenRouterProviderConfig", () => {
     it("wraps timeout for Cline providerConfig", () => {
       process.env.OPENROUTER_REQUEST_TIMEOUT_MS = "90000";
-      expect(buildOpenRouterProviderConfig()).toEqual({ timeout: 90_000 });
+      expect(buildOpenRouterProviderConfig()).toEqual({
+        providerId: OPENROUTER_PROVIDER_ID,
+        timeoutMs: 90_000,
+      });
+    });
+
+    it("attaches a fetch wrapper when jev router context is provided", () => {
+      const config = buildOpenRouterProviderConfig({
+        pool: { models: ["anthropic/*"], excluded_models: [] },
+        metadata: true,
+        servedModels: createServedModelTracker(),
+        usageCost: createOpenRouterUsageCostTracker(),
+      });
+      expect(config.providerId).toBe(OPENROUTER_PROVIDER_ID);
+      expect(config.timeoutMs).toBe(OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS);
+      expect(typeof config.fetch).toBe("function");
     });
   });
 });

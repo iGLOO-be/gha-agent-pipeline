@@ -48,7 +48,7 @@ on:
     types: [submitted]
 jobs:
   dispatch:
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.2.5
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.2.6
     secrets: inherit
     # Optional (v0.2.2+): run dispatch on another runner pool, e.g. Blacksmith
     # with:
@@ -70,7 +70,7 @@ jobs:
           ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.5
+      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.6
         with:
           phase: ${{ inputs.phase }}
           app_token: ${{ steps.setup.outputs.app_token }}
@@ -124,7 +124,7 @@ concurrency:
 jobs:
   ci-fix:
     if: github.event.workflow_run.conclusion == 'failure'
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.2.5
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.2.6
     secrets: inherit
 ```
 
@@ -148,7 +148,7 @@ jobs:
 
       - name: Resolve agent PR
         id: pr
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/get-pr-from-workflow-run@v0.2.5
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/get-pr-from-workflow-run@v0.2.6
 
       - if: steps.pr.outputs.skip == 'true'
         run: echo "Skipping agent CI fix"
@@ -162,7 +162,7 @@ jobs:
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Run agent CI fix
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-ci-fix-run@v0.2.5
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-ci-fix-run@v0.2.6
         with:
           app_token: ${{ steps.setup.outputs.app_token }}
           issue_number: ${{ steps.pr.outputs.issue_number }}
@@ -173,9 +173,9 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.2.5` when `conclusion == 'success'`.)
+(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.2.6` when `conclusion == 'success'`.)
 
-**Runs and `github.repository` are always the consumer.** Pin `@v0.2.5` (or another release tag) on pipeline actions/workflows — do not rely on `@main` for consumers.
+**Runs and `github.repository` are always the consumer.** Pin `@v0.2.6` (or another release tag) on pipeline actions/workflows — do not rely on `@main` for consumers.
 
 ## Consumer contract (v0.1)
 
@@ -184,7 +184,7 @@ jobs:
 | Path                                        | Role                                            |
 | ------------------------------------------- | ----------------------------------------------- |
 | `.github/agent.config.yml`                  | Agent config (schema v1)                        |
-| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.2.5`          |
+| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.2.6`          |
 | `.github/workflows/agent-phase.yml`         | **Fixed filename** — target of library dispatch |
 | `.github/workflows/agent-on-ci-failure.yml` | `workflow_run` on failed **`CI`** workflow      |
 | `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
@@ -231,7 +231,7 @@ code_review:
 
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
-**Pin these library refs at `@v0.2.5`** (or latest release)
+**Pin these library refs at `@v0.2.6`** (or latest release)
 
 - `dispatch.yml` (optional `runner` input since v0.2.2)
 - `agent-phase-run`
@@ -312,7 +312,7 @@ Example consumer `agent-phase.yml` for Model B:
     app_id: ${{ secrets.APP_ID }}
     app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
     pipeline_repo: gha-agent-pipeline # include if pipeline is private
-- uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.5
+- uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.6
   with:
     phase: ${{ inputs.phase }}
     app_token: ${{ steps.setup.outputs.app_token }}
@@ -327,10 +327,32 @@ The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gi
 
 The CLI phases read the following environment variables. Common variables (`OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`) are required by all phases.
 
-| Variable                        | Phases                   | Description                                                                                                                                                   |
-| ------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_BASE_BRANCH`             | git sync / branch create | Overrides `git.base_branch` when set (via workflow `base_branch` input on `agent-phase-run`). Use when the checked-out ref has no `.github/agent.config.yml`. |
-| `AGENT_RUN_COMMANDS_TIMEOUT_MS` | all tool phases          | Overrides `tools.run_commands_timeout_ms` for the Cline `run_commands` tool (default 600000 ms).                                                              |
+| Variable                                                                | Phases                   | Description                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_BASE_BRANCH`                                                     | git sync / branch create | Overrides `git.base_branch` when set (via workflow `base_branch` input on `agent-phase-run`). Use when the checked-out ref has no `.github/agent.config.yml`.                                                                 |
+| `AGENT_RUN_COMMANDS_TIMEOUT_MS`                                         | all tool phases          | Overrides `tools.run_commands_timeout_ms` for the Cline `run_commands` tool (default 600000 ms).                                                                                                                              |
+| `OPENROUTER_JEV_ROUTER_ENABLED`                                         | all LLM phases           | When `true`/`false`, enables or disables [OpenRouter Jev Router](https://openrouter.ai/docs/guides/routing/routers/jev-router) globally (overrides `openrouter.jev_router.enabled` unless a phase sets `enabled` explicitly). |
+| `OPENROUTER_JEV_ROUTER_MODELS` / `OPENROUTER_JEV_ROUTER_ALLOWED_MODELS` | Jev Router active        | Comma-separated include patterns when YAML pool lists are empty for the phase.                                                                                                                                                |
+| `OPENROUTER_JEV_ROUTER_EXCLUDED_MODELS`                                 | Jev Router active        | Comma-separated exclude patterns when YAML `excluded_models` are empty for the phase.                                                                                                                                         |
+
+### OpenRouter Jev Router (optional)
+
+In `.github/agent.config.yml`, enable dynamic model selection via `typesafe/jev-router`:
+
+```yaml
+openrouter:
+  jev_router:
+    enabled: true
+    models: ["anthropic/*", "google/*"]
+    excluded_models: ["anthropic/claude-opus*"]
+    phases:
+      plan:
+        enabled: false # keep a fixed model for plan
+      implement:
+        enabled: true
+```
+
+When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. End-of-phase usage tables list **Model (requested)** and **Served model(s)** (upstream slugs parsed from OpenRouter responses, including `openrouter_metadata` when enabled). When Cline’s aggregated `totalCost` is zero, **Estimated cost** falls back to the sum of OpenRouter `usage.cost` captured on the same HTTP responses. See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
 
 | Phase         | Required                                                       | Optional / routing                                                                             |
 | ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |

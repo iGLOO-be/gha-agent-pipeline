@@ -867,6 +867,17 @@ describe("gha-log", () => {
         expect(result).toContain("_Estimated cost is a provider-side estimate");
       });
 
+      it("uses OpenRouter captured cost when Cline totalCost is zero", () => {
+        const result = formatUsageMarkdown(
+          { ...sampleUsage, totalCost: 0 },
+          { openRouterCostUsd: 0.0345 },
+        );
+
+        expect(result).toContain(
+          "| **Estimated cost** | **$0.0345 USD** (OpenRouter usage.cost) |",
+        );
+      });
+
       it("renders session ID and model when provided", () => {
         const result = formatUsageMarkdown(sampleUsage, {
           sessionId: "abc123",
@@ -874,7 +885,7 @@ describe("gha-log", () => {
         });
 
         expect(result).toContain("| Session ID | `abc123` |");
-        expect(result).toContain("| Model | `test-model` |");
+        expect(result).toContain("| Model (requested) | `test-model` |");
       });
 
       it("renders iterations and tool calls when provided", () => {
@@ -928,6 +939,23 @@ describe("gha-log", () => {
         expect(result).not.toBeNull();
         expect(result!).toContain("| Iterations | 3 |");
         expect(result!).toContain("| Tool calls | 7 |");
+      });
+
+      it("includes served models when provided", () => {
+        const result = safeFormatUsageMarkdown(sampleUsage, {
+          modelId: "typesafe/jev-router",
+          servedModelIds: [
+            "deepseek/deepseek-v4-pro",
+            "google/gemini-2.5-flash",
+          ],
+        });
+
+        expect(result).toContain(
+          "| Model (requested) | `typesafe/jev-router` |",
+        );
+        expect(result).toContain(
+          "| Served model(s) | `deepseek/deepseek-v4-pro`, `google/gemini-2.5-flash` |",
+        );
       });
     });
 
