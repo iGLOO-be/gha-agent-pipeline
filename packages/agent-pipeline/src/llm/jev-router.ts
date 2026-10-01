@@ -24,6 +24,31 @@ export type ServedModelTracker = {
   list: () => string[];
 };
 
+export type OpenRouterUsageCostTracker = {
+  record: (costUsd: number) => void;
+  totalUsd: () => number;
+};
+
+export function createOpenRouterUsageCostTracker(): OpenRouterUsageCostTracker {
+  let totalUsd = 0;
+  return {
+    record(costUsd: number) {
+      if (!Number.isFinite(costUsd) || costUsd < 0) {
+        return;
+      }
+      totalUsd += costUsd;
+    },
+    totalUsd() {
+      return totalUsd;
+    },
+  };
+}
+
+export type OpenRouterResponseCapture = {
+  servedModels?: ServedModelTracker;
+  usageCost?: OpenRouterUsageCostTracker;
+};
+
 export function createServedModelTracker(): ServedModelTracker {
   const seen = new Set<string>();
   const order: string[] = [];
@@ -46,6 +71,7 @@ export type JevRouterRequestContext = {
   pool: JevRouterPool;
   metadata: boolean;
   servedModels: ServedModelTracker;
+  usageCost: OpenRouterUsageCostTracker;
 };
 
 export type JevRouterPluginPayload = {
@@ -247,8 +273,45 @@ export function resolveOpenRouterModelForPhase(
   return {
     requestModelId: JEV_ROUTER_MODEL_ID,
     logLabel: formatJevRouterLogLabel(pool),
-    jevContext: { pool, metadata, servedModels: createServedModelTracker() },
+    jevContext: {
+      pool,
+      metadata,
+      servedModels: createServedModelTracker(),
+      usageCost: createOpenRouterUsageCostTracker(),
+    },
   };
+}
+
+export function extractUsageCostFromOpenRouterPayload(
+  payload: unknown,
+): number | undefined {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+  const usage = (payload as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+  const cost = (usage as { cost?: unknown }).cost;
+  if (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0) {
+    return undefined;
+  }
+  return cost;
+}
+
+function recordOpenRouterPayloadCapture(
+  payload: unknown,
+  capture: OpenRouterResponseCapture,
+): void {
+  if (capture.servedModels) {
+    for (const model of extractServedModelsFromOpenRouterPayload(payload)) {
+      capture.servedModels.record(model);
+    }
+  }
+  const cost = extractUsageCostFromOpenRouterPayload(payload);
+  if (cost !== undefined && capture.usageCost) {
+    capture.usageCost.record(cost);
+  }
 }
 
 export function extractServedModelsFromOpenRouterPayload(
@@ -317,9 +380,30 @@ export function extractServedModelsFromOpenRouterSse(buffer: string): string[] {
   return models;
 }
 
-async function captureServedModelsFromResponse(
+function extractServedModelsAndCostFromOpenRouterSse(
+  buffer: string,
+  capture: OpenRouterResponseCapture,
+): void {
+  for (const line of buffer.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) {
+      continue;
+    }
+    const data = trimmed.slice("data:".length).trim();
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+    try {
+      recordOpenRouterPayloadCapture(JSON.parse(data), capture);
+    } catch {
+      // ignore partial or non-JSON SSE lines
+    }
+  }
+}
+
+async function captureOpenRouterFromResponse(
   response: Response,
-  servedModels: ServedModelTracker,
+  capture: OpenRouterResponseCapture,
 ): Promise<Response> {
   if (!response.body) {
     return response;
@@ -339,9 +423,7 @@ async function captureServedModelsFromResponse(
       async pull(controller) {
         const { done, value } = await reader.read();
         if (done) {
-          for (const model of extractServedModelsFromOpenRouterSse(sseBuffer)) {
-            servedModels.record(model);
-          }
+          extractServedModelsAndCostFromOpenRouterSse(sseBuffer, capture);
           controller.close();
           return;
         }
@@ -349,11 +431,7 @@ async function captureServedModelsFromResponse(
         const lines = sseBuffer.split("\n");
         sseBuffer = lines.pop() ?? "";
         for (const line of lines) {
-          for (const model of extractServedModelsFromOpenRouterSse(
-            `${line}\n`,
-          )) {
-            servedModels.record(model);
-          }
+          extractServedModelsAndCostFromOpenRouterSse(`${line}\n`, capture);
         }
         controller.enqueue(value);
       },
@@ -368,14 +446,9 @@ async function captureServedModelsFromResponse(
 
   const text = await response.text();
   try {
-    const payload = JSON.parse(text) as unknown;
-    for (const model of extractServedModelsFromOpenRouterPayload(payload)) {
-      servedModels.record(model);
-    }
+    recordOpenRouterPayloadCapture(JSON.parse(text) as unknown, capture);
   } catch {
-    for (const model of extractServedModelsFromOpenRouterSse(text)) {
-      servedModels.record(model);
-    }
+    extractServedModelsAndCostFromOpenRouterSse(text, capture);
   }
   return new Response(text, {
     status: response.status,
@@ -417,9 +490,15 @@ function mergeJevRouterPlugins(
   return [...withoutJev, plugin];
 }
 
+function hasOpenRouterResponseCapture(
+  capture?: OpenRouterResponseCapture,
+): boolean {
+  return Boolean(capture?.servedModels || capture?.usageCost);
+}
+
 export function createJevRouterFetch(
   plugin: JevRouterPluginPayload,
-  servedModels?: ServedModelTracker,
+  capture?: OpenRouterResponseCapture,
   baseFetch: typeof fetch = globalThis.fetch,
 ): typeof fetch {
   return async (input, init) => {
@@ -453,11 +532,11 @@ export function createJevRouterFetch(
     }
 
     const response = await baseFetch(input, nextInit);
-    if (!servedModels) {
+    if (!hasOpenRouterResponseCapture(capture)) {
       return response;
     }
     try {
-      return await captureServedModelsFromResponse(response, servedModels);
+      return await captureOpenRouterFromResponse(response, capture!);
     } catch {
       return response;
     }

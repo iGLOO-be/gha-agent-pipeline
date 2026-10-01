@@ -95,6 +95,8 @@ export type AgentSessionResult = {
   modelId: string;
   /** Upstream model slug(s) reported by OpenRouter when Jev Router is active. */
   servedModelIds?: string[];
+  /** Sum of OpenRouter `usage.cost` captured on Jev Router HTTP responses. */
+  openRouterCostUsd?: number;
   attempts: number;
   /** Number of agent iterations (model → tools → repeat cycles), from session.result */
   iterations?: number;
@@ -223,6 +225,14 @@ async function runAgentSessionAttempt(
           console.log(`[session] served models: ${servedModelIds.join(", ")}`);
         }
 
+        const openRouterCostUsd =
+          input.jevRouterContext?.usageCost.totalUsd() ?? 0;
+        if (openRouterCostUsd > 0) {
+          console.log(
+            `[session] OpenRouter usage cost: $${openRouterCostUsd.toFixed(4)} USD`,
+          );
+        }
+
         if (usage) {
           const { stdout, stepSummary } = formatUsageBlock(
             usage,
@@ -232,6 +242,8 @@ async function runAgentSessionAttempt(
             {
               modelId: requestModelId,
               servedModelIds,
+              openRouterCostUsd:
+                openRouterCostUsd > 0 ? openRouterCostUsd : undefined,
             },
           );
           console.log(stdout);
@@ -260,6 +272,8 @@ async function runAgentSessionAttempt(
 
     const servedModelIds =
       input.jevRouterContext?.servedModels.list() ?? undefined;
+    const openRouterCostUsd =
+      input.jevRouterContext?.usageCost.totalUsd() ?? undefined;
 
     return {
       sessionId: sessionId!,
@@ -270,6 +284,10 @@ async function runAgentSessionAttempt(
       servedModelIds:
         servedModelIds && servedModelIds.length > 0
           ? servedModelIds
+          : undefined,
+      openRouterCostUsd:
+        openRouterCostUsd !== undefined && openRouterCostUsd > 0
+          ? openRouterCostUsd
           : undefined,
       attempts: input.attempt,
       iterations: session.result?.iterations,
