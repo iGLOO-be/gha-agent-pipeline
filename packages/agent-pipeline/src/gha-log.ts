@@ -404,15 +404,22 @@ function buildUsageRows(
   return rows;
 }
 
+export type UsageDisplayOptions = {
+  heading?: string;
+  sessionId?: string;
+  modelId?: string;
+  servedModelIds?: string[];
+  iterations?: number;
+  toolCallsCount?: number;
+};
+
+function formatServedModelsLabel(servedModelIds: string[]): string {
+  return servedModelIds.map((id) => `\`${id}\``).join(", ");
+}
+
 export function formatUsageMarkdown(
   usage: SessionAccumulatedUsage,
-  opts: {
-    heading?: string;
-    sessionId?: string;
-    modelId?: string;
-    iterations?: number;
-    toolCallsCount?: number;
-  } = {},
+  opts: UsageDisplayOptions = {},
 ): string {
   const rows = buildUsageRows(
     usage,
@@ -427,7 +434,13 @@ export function formatUsageMarkdown(
   }
 
   if (opts.modelId) {
-    headerRows.push(`| Model | \`${opts.modelId}\` |`);
+    headerRows.push(`| Model (requested) | \`${opts.modelId}\` |`);
+  }
+
+  if (opts.servedModelIds && opts.servedModelIds.length > 0) {
+    headerRows.push(
+      `| Served model(s) | ${formatServedModelsLabel(opts.servedModelIds)} |`,
+    );
   }
 
   const sections = [
@@ -441,13 +454,7 @@ export function formatUsageMarkdown(
 
 export function safeFormatUsageMarkdown(
   usage: SessionAccumulatedUsage | undefined,
-  opts: {
-    heading?: string;
-    sessionId?: string;
-    modelId?: string;
-    iterations?: number;
-    toolCallsCount?: number;
-  } = {},
+  opts: UsageDisplayOptions = {},
 ): string | null {
   if (!usage) {
     return null;
@@ -466,6 +473,7 @@ export function formatUsageBlock(
   sessionId: string,
   iterations?: number,
   toolCallsCount?: number,
+  display?: Pick<UsageDisplayOptions, "modelId" | "servedModelIds">,
 ): {
   stdout: string;
   stepSummary: string;
@@ -479,6 +487,10 @@ export function formatUsageBlock(
   // Format for stdout (simple text block)
   const stdout = [
     `\n[usage] Session ${sessionId}:`,
+    ...(display?.modelId ? [`  Model (requested): ${display.modelId}`] : []),
+    ...(display?.servedModelIds && display.servedModelIds.length > 0
+      ? [`  Served model(s): ${display.servedModelIds.join(", ")}`]
+      : []),
     `  Input tokens: ${usage.inputTokens.toLocaleString()}`,
     `  Output tokens: ${usage.outputTokens.toLocaleString()}`,
     `  Cache read tokens: ${usage.cacheReadTokens.toLocaleString()}`,
@@ -499,6 +511,14 @@ export function formatUsageBlock(
     `| Metric | Value |`,
     `| --- | --- |`,
     `| Session ID | \`${sessionId}\` |`,
+    ...(display?.modelId
+      ? [`| Model (requested) | \`${display.modelId}\` |`]
+      : []),
+    ...(display?.servedModelIds && display.servedModelIds.length > 0
+      ? [
+          `| Served model(s) | ${formatServedModelsLabel(display.servedModelIds)} |`,
+        ]
+      : []),
     ...buildUsageRows(
       usage,
       (label, value) => `| ${label} | ${value} |`,

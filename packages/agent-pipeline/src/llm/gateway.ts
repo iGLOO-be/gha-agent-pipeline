@@ -71,7 +71,10 @@ export function buildOpenRouterProviderConfig(
     timeout: getOpenRouterRequestTimeoutMs(),
   };
   if (jevContext) {
-    config.fetch = createJevRouterFetch(buildJevRouterPlugin(jevContext.pool));
+    config.fetch = createJevRouterFetch(
+      buildJevRouterPlugin(jevContext.pool),
+      jevContext.servedModels,
+    );
   }
   return config;
 }

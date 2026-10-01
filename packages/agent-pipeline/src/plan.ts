@@ -286,6 +286,7 @@ ${conversation}`,
       heading: "### Usage (plan run)",
       sessionId: session.sessionId,
       modelId: session.modelId,
+      servedModelIds: session.servedModelIds,
       iterations: session.iterations,
       toolCallsCount: session.toolCallsCount,
     });
