@@ -10,12 +10,29 @@ git:
   merge_strategy: merge
 
 models:
+  # Fallback slug per phase when Jev Router pool lists are empty; also the default
+  # single candidate if jev_router is turned off.
   plan: deepseek/deepseek-v4-pro
   implement: deepseek/deepseek-v4-pro
   ci-fix: deepseek/deepseek-v4-pro
   review-fix: deepseek/deepseek-v4-pro
   ask: deepseek/deepseek-v4-pro
   code-review: deepseek/deepseek-v4-pro
+
+openrouter:
+  jev_router:
+    enabled: true
+    metadata: true
+    # Budget pool: Jev picks model + reasoning effort inside these patterns.
+    models:
+      - deepseek/*
+      - google/*flash*
+      - qwen/*coder*
+      - moonshotai/kimi-k2*
+    excluded_models:
+      - anthropic/claude-opus*
+      - openai/o*
+      - "*opus*"
 
 prompts:
   plan:
