@@ -78,6 +78,7 @@ Skip `/agent yolo` if the user only wanted notification issues.
 
 | Pattern            | What to mention in the issue                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |
+| Greenfield install | `.gitignore`: `.agent-state/` + `gha-agent-pipeline/`; `packageManager` for pnpm (see README contract) |
 | Standard consumer  | `dispatch.yml`, `agent-phase-run`, `agent-ci-fix.yml`, `agent-ci-success.yml`                          |
 | Custom CI wrappers | Also bump `get-pr-from-workflow-run` and forked `run-agent-ci-fix` internal composites                 |
 | Skipped versions   | If consumer is on `v0.1.1` and release is `v0.1.3`, summarize intermediate release notes (e.g. v0.1.2) |

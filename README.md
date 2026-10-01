@@ -190,6 +190,16 @@ jobs:
 | `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
 | `.github/actions/setup-pr-environment/`     | Checkout, App token, pnpm (consumer-owned)      |
 
+**Consumer `.gitignore` (required on greenfield install)** — the runner writes local state under `.agent-state/` (CI fix round counter, cache files) and checks out the library under `gha-agent-pipeline/`. Add both to `.gitignore` so agent commits never include them:
+
+```gitignore
+# gha-agent-pipeline runtime (not application source)
+.agent-state/
+gha-agent-pipeline/
+```
+
+Consumers should also keep `packageManager` in `package.json` when using `pnpm/action-setup` (see `install-agent-pipeline` in the library).
+
 When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
 
 ### Code review scope (`code_review` in agent.config)
