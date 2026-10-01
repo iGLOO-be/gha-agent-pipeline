@@ -78,10 +78,10 @@ export function buildOpenRouterProviderConfig(
     timeoutMs,
   };
   if (jevContext) {
-    config.fetch = createJevRouterFetch(
-      buildJevRouterPlugin(jevContext.pool),
-      jevContext.servedModels,
-    );
+    config.fetch = createJevRouterFetch(buildJevRouterPlugin(jevContext.pool), {
+      servedModels: jevContext.servedModels,
+      usageCost: jevContext.usageCost,
+    });
   }
   return config;
 }

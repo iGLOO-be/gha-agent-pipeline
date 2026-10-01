@@ -867,6 +867,17 @@ describe("gha-log", () => {
         expect(result).toContain("_Estimated cost is a provider-side estimate");
       });
 
+      it("uses OpenRouter captured cost when Cline totalCost is zero", () => {
+        const result = formatUsageMarkdown(
+          { ...sampleUsage, totalCost: 0 },
+          { openRouterCostUsd: 0.0345 },
+        );
+
+        expect(result).toContain(
+          "| **Estimated cost** | **$0.0345 USD** (OpenRouter usage.cost) |",
+        );
+      });
+
       it("renders session ID and model when provided", () => {
         const result = formatUsageMarkdown(sampleUsage, {
           sessionId: "abc123",

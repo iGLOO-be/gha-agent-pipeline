@@ -4,9 +4,11 @@ import {
   JEV_ROUTER_MODEL_ID,
   buildJevRouterPlugin,
   createJevRouterFetch,
+  createOpenRouterUsageCostTracker,
   createServedModelTracker,
   extractServedModelsFromOpenRouterPayload,
   extractServedModelsFromOpenRouterSse,
+  extractUsageCostFromOpenRouterPayload,
   getJevRouterPoolForPhase,
   isJevRouterEnabledForPhase,
   resolveOpenRouterModelForPhase,
@@ -202,6 +204,16 @@ describe("jev-router", () => {
     });
   });
 
+  describe("extractUsageCostFromOpenRouterPayload", () => {
+    it("reads usage.cost from completion payloads", () => {
+      expect(
+        extractUsageCostFromOpenRouterPayload({
+          usage: { cost: 0.0042, prompt_tokens: 10, completion_tokens: 5 },
+        }),
+      ).toBe(0.0042);
+    });
+  });
+
   describe("extractServedModelsFromOpenRouterSse", () => {
     it("parses model from SSE data lines", () => {
       const models = extractServedModelsFromOpenRouterSse(
@@ -252,7 +264,7 @@ describe("jev-router", () => {
       );
       const fetch = createJevRouterFetch(
         buildJevRouterPlugin({ models: ["deepseek/*"], excluded_models: [] }),
-        tracker,
+        { servedModels: tracker },
         baseFetch,
       );
 
@@ -277,7 +289,7 @@ describe("jev-router", () => {
       );
       const fetch = createJevRouterFetch(
         buildJevRouterPlugin({ models: ["google/*"], excluded_models: [] }),
-        tracker,
+        { servedModels: tracker },
         baseFetch,
       );
 
@@ -287,6 +299,37 @@ describe("jev-router", () => {
       });
 
       expect(tracker.list()).toEqual(["google/gemini-2.5-flash"]);
+    });
+
+    it("records usage.cost from JSON responses", async () => {
+      const usageCost = createOpenRouterUsageCostTracker();
+      const baseFetch = vi.fn<typeof fetch>(
+        async () =>
+          new Response(
+            JSON.stringify({
+              model: "deepseek/deepseek-v4-pro",
+              usage: {
+                cost: 0.0012,
+                prompt_tokens: 100,
+                completion_tokens: 20,
+              },
+              choices: [],
+            }),
+            { headers: { "content-type": "application/json" } },
+          ),
+      );
+      const fetch = createJevRouterFetch(
+        buildJevRouterPlugin({ models: ["deepseek/*"], excluded_models: [] }),
+        { usageCost },
+        baseFetch,
+      );
+
+      await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: JEV_ROUTER_MODEL_ID, messages: [] }),
+      });
+
+      expect(usageCost.totalUsd()).toBe(0.0012);
     });
 
     it("does not modify non-jev models", async () => {
