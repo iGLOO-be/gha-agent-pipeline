@@ -124,9 +124,9 @@ describe("BUILTIN_PHASES parity", () => {
   it("CJS BUILTIN_PHASES matches TS BUILTIN_AGENT_PHASES", async () => {
     const { createRequire } = await import("node:module");
     const require = createRequire(import.meta.url);
-    const { BUILTIN_PHASES } = require(
-      "../../../../.github/scripts/command-constants.cjs",
-    );
+    const {
+      BUILTIN_PHASES,
+    } = require("../../../../.github/scripts/command-constants.cjs");
     const { BUILTIN_AGENT_PHASES } = await import("./types.js");
     expect([...BUILTIN_PHASES].sort()).toEqual(
       [...BUILTIN_AGENT_PHASES].sort(),

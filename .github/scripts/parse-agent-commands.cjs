@@ -2,7 +2,11 @@
 
 /** @typedef {{ id: string, slash: string, extends: string, enabled: boolean, targets: CommandTarget[], access?: string[] }} DispatchCommand */
 
-const { BUILTIN_PHASES, SLASH_TOKEN, RESERVED } = require("./command-constants.cjs");
+const {
+  BUILTIN_PHASES,
+  SLASH_TOKEN,
+  RESERVED,
+} = require("./command-constants.cjs");
 
 /** @param {string} phase */
 function defaultTargets(phase) {

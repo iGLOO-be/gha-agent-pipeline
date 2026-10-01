@@ -9,12 +9,11 @@ import {
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { SLASH_TOKEN, RESERVED: RESERVED_SLASHES } = require(
-  "../../../../.github/scripts/command-constants.cjs",
-) as {
-  SLASH_TOKEN: RegExp;
-  RESERVED: Set<string>;
-};
+const { SLASH_TOKEN, RESERVED: RESERVED_SLASHES } =
+  require("../../../../.github/scripts/command-constants.cjs") as {
+    SLASH_TOKEN: RegExp;
+    RESERVED: Set<string>;
+  };
 
 function isAgentPhase(value: string): value is AgentPhase {
   return (BUILTIN_AGENT_PHASES as readonly string[]).includes(value);
