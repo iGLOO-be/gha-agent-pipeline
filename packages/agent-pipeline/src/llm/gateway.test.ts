@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS,
+  OPENROUTER_METADATA_HEADER,
   buildOpenRouterHttpHeaders,
   buildOpenRouterProviderConfig,
   getOpenRouterApiKey,
@@ -86,6 +87,16 @@ describe("openrouter gateway", () => {
         "X-Title": "my-consumer-app",
       });
     });
+
+    it("adds OpenRouter metadata header when jev metadata is enabled", () => {
+      expect(
+        buildOpenRouterHttpHeaders("my-consumer-app", { jevMetadata: true }),
+      ).toEqual({
+        "HTTP-Referer": "",
+        "X-Title": "my-consumer-app",
+        [OPENROUTER_METADATA_HEADER]: "enabled",
+      });
+    });
   });
 
   describe("getOpenRouterRequestTimeoutMs", () => {
@@ -112,6 +123,15 @@ describe("openrouter gateway", () => {
     it("wraps timeout for Cline providerConfig", () => {
       process.env.OPENROUTER_REQUEST_TIMEOUT_MS = "90000";
       expect(buildOpenRouterProviderConfig()).toEqual({ timeout: 90_000 });
+    });
+
+    it("attaches a fetch wrapper when jev router context is provided", () => {
+      const config = buildOpenRouterProviderConfig({
+        pool: { models: ["anthropic/*"], excluded_models: [] },
+        metadata: true,
+      });
+      expect(config.timeout).toBe(OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS);
+      expect(typeof config.fetch).toBe("function");
     });
   });
 });

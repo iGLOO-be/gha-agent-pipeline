@@ -18,6 +18,10 @@ import {
   getOpenRouterApiKey,
 } from "./llm/gateway.js";
 import {
+  type JevRouterRequestContext,
+  resolveOpenRouterModelForPhase,
+} from "./llm/jev-router.js";
+import {
   createSessionLogger,
   formatUsageBlock,
   ghaGroup,
@@ -76,6 +80,11 @@ export type RunSessionInput = {
   sessionMetadata?: Record<string, unknown>;
   /** When set, editor failures are recorded and exposed for end-of-phase summaries. */
   runFriction?: RunFrictionCollector;
+  /** Resolved OpenRouter request model (after optional Jev Router). */
+  requestModelId?: string;
+  /** Display label for logs (may differ from requestModelId when Jev is active). */
+  modelLogLabel?: string;
+  jevRouterContext?: JevRouterRequestContext;
 };
 
 export type AgentSessionResult = {
@@ -138,11 +147,14 @@ async function runAgentSessionAttempt(
       : "";
 
   try {
+    const requestModelId = input.requestModelId ?? input.modelId;
+    const modelLogLabel = input.modelLogLabel ?? requestModelId;
+
     if (isGitHubActions()) {
-      ghaGroup(`Agent ${input.phase} (${input.modelId})${attemptLabel}`);
+      ghaGroup(`Agent ${input.phase} (${modelLogLabel})${attemptLabel}`);
     }
 
-    sessionLogger = createSessionLogger(cline, input.phase, input.modelId);
+    sessionLogger = createSessionLogger(cline, input.phase, requestModelId);
 
     const readFile = await createWorkspaceScopedFileReadExecutor(cwd);
     const editor = await createWorkspaceScopedEditorExecutor(cwd);
@@ -155,10 +167,12 @@ async function runAgentSessionAttempt(
       prompt: input.prompt,
       config: {
         providerId: OPENROUTER_PROVIDER_ID,
-        modelId: input.modelId,
+        modelId: requestModelId,
         apiKey,
-        headers: buildOpenRouterHttpHeaders(getAppName(config)),
-        providerConfig: buildOpenRouterProviderConfig(),
+        headers: buildOpenRouterHttpHeaders(getAppName(config), {
+          jevMetadata: input.jevRouterContext?.metadata,
+        }),
+        providerConfig: buildOpenRouterProviderConfig(input.jevRouterContext),
         systemPrompt: `${input.systemPrompt}\n\n${workspacePathSystemHint(cwd)}`,
         mode: sessionMode(input.phase),
         cwd,
@@ -237,7 +251,7 @@ async function runAgentSessionAttempt(
       outputText: session.result.text,
       finishReason,
       usage,
-      modelId: input.modelId,
+      modelId: requestModelId,
       attempts: input.attempt,
       iterations: session.result?.iterations,
       toolCallsCount: session.result?.toolCalls?.length,
@@ -269,7 +283,13 @@ async function runAgentSessionAttempt(
 export async function runAgentSession(
   input: RunSessionInput,
 ): Promise<AgentSessionResult> {
-  const modelId = resolvePhaseModel(input.phase, input.modelId);
+  const resolvedSlug = resolvePhaseModel(input.phase, input.modelId);
+  const config = loadAgentConfig();
+  const openRouterModel = resolveOpenRouterModelForPhase(
+    input.phase,
+    resolvedSlug,
+    config,
+  );
   const maxAttempts = getSessionMaxAttempts();
   const baseDelayMs = getSessionRetryBaseDelayMs();
   let lastError: AgentSessionError | undefined;
@@ -291,7 +311,10 @@ export async function runAgentSession(
       try {
         const result = await runAgentSessionAttempt({
           ...input,
-          modelId,
+          modelId: resolvedSlug,
+          requestModelId: openRouterModel.requestModelId,
+          modelLogLabel: openRouterModel.logLabel,
+          jevRouterContext: openRouterModel.jevContext,
           attempt,
           maxAttempts,
         });
