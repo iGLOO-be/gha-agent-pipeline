@@ -267,6 +267,28 @@ describe("jev-router", () => {
       expect(tracker.list()).toEqual(["deepseek/deepseek-v4-pro"]);
     });
 
+    it("records served models from SSE bodies without event-stream content-type", async () => {
+      const tracker = createServedModelTracker();
+      const sse =
+        'data: {"model":"typesafe/jev-router","choices":[]}\n\n' +
+        'data: {"model":"google/gemini-2.5-flash","choices":[]}\n\n';
+      const baseFetch = vi.fn<typeof fetch>(
+        async () => new Response(sse, { headers: { "content-type": "" } }),
+      );
+      const fetch = createJevRouterFetch(
+        buildJevRouterPlugin({ models: ["google/*"], excluded_models: [] }),
+        tracker,
+        baseFetch,
+      );
+
+      await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        body: JSON.stringify({ model: JEV_ROUTER_MODEL_ID, messages: [] }),
+      });
+
+      expect(tracker.list()).toEqual(["google/gemini-2.5-flash"]);
+    });
+
     it("does not modify non-jev models", async () => {
       const baseFetch = vi.fn<typeof fetch>(async () => new Response("{}"));
       const fetch = createJevRouterFetch(
