@@ -373,7 +373,9 @@ async function captureServedModelsFromResponse(
       servedModels.record(model);
     }
   } catch {
-    // non-JSON error bodies
+    for (const model of extractServedModelsFromOpenRouterSse(text)) {
+      servedModels.record(model);
+    }
   }
   return new Response(text, {
     status: response.status,

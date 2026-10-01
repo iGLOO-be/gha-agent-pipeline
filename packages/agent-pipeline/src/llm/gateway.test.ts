@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS,
   OPENROUTER_METADATA_HEADER,
+  OPENROUTER_PROVIDER_ID,
   buildOpenRouterHttpHeaders,
   buildOpenRouterProviderConfig,
   getOpenRouterApiKey,
@@ -123,7 +124,10 @@ describe("openrouter gateway", () => {
   describe("buildOpenRouterProviderConfig", () => {
     it("wraps timeout for Cline providerConfig", () => {
       process.env.OPENROUTER_REQUEST_TIMEOUT_MS = "90000";
-      expect(buildOpenRouterProviderConfig()).toEqual({ timeout: 90_000 });
+      expect(buildOpenRouterProviderConfig()).toEqual({
+        providerId: OPENROUTER_PROVIDER_ID,
+        timeoutMs: 90_000,
+      });
     });
 
     it("attaches a fetch wrapper when jev router context is provided", () => {
@@ -132,7 +136,8 @@ describe("openrouter gateway", () => {
         metadata: true,
         servedModels: createServedModelTracker(),
       });
-      expect(config.timeout).toBe(OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS);
+      expect(config.providerId).toBe(OPENROUTER_PROVIDER_ID);
+      expect(config.timeoutMs).toBe(OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS);
       expect(typeof config.fetch).toBe("function");
     });
   });

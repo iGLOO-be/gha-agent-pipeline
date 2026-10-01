@@ -59,16 +59,23 @@ export function getOpenRouterRequestTimeoutMs(): number {
   return parsed;
 }
 
+/**
+ * Cline merges `providerConfig` into the active provider only when
+ * `providerConfig.providerId` matches `config.providerId` (see `mf()` in @cline/core).
+ */
 export type OpenRouterProviderConfig = {
-  timeout: number;
+  providerId: typeof OPENROUTER_PROVIDER_ID;
+  timeoutMs: number;
   fetch?: typeof fetch;
 };
 
 export function buildOpenRouterProviderConfig(
   jevContext?: JevRouterRequestContext,
 ): OpenRouterProviderConfig {
+  const timeoutMs = getOpenRouterRequestTimeoutMs();
   const config: OpenRouterProviderConfig = {
-    timeout: getOpenRouterRequestTimeoutMs(),
+    providerId: OPENROUTER_PROVIDER_ID,
+    timeoutMs,
   };
   if (jevContext) {
     config.fetch = createJevRouterFetch(
