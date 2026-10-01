@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import {
   addReactionToIssueComment,
   addReactionToPullRequestReview,
@@ -10,12 +10,16 @@ import {
   findPlanComment,
   findPlanCommentUrl,
   formatCommentsForPrompt,
+  buildReviewFixReviewCommentContext,
+  formatBareReviewFixReviewBodiesSection,
   formatReviewCommentsForPrompt,
   formatReviewThreadsForPrompt,
   hasAgentMarkerInComments,
   isAgentInlineReviewCommentBody,
   isAutomatedReviewAuthor,
+  isBareReviewFixFeedback,
   markerFor,
+  pickLatestAgentCodeReview,
   normalizeAgentPlanBody,
   parseReviewCommentIdsFromText,
   appendRiskScoreSection,
@@ -536,6 +540,99 @@ describe("tools/github", () => {
         ),
       ).toBe(true);
       expect(isAgentInlineReviewCommentBody("Please fix.")).toBe(false);
+    });
+  });
+
+  describe("isBareReviewFixFeedback", () => {
+    it("detects bare /agent fix triggers", () => {
+      expect(isBareReviewFixFeedback("/agent fix")).toBe(true);
+      expect(isBareReviewFixFeedback("  /agent fix  ")).toBe(true);
+    });
+
+    it("is false when feedback or discussion links are present", () => {
+      expect(isBareReviewFixFeedback("/agent fix please update")).toBe(false);
+      expect(
+        isBareReviewFixFeedback("/agent fix see #discussion_r4146347607"),
+      ).toBe(false);
+    });
+  });
+
+  describe("pickLatestAgentCodeReview", () => {
+    it("prefers the newest agent code-review with a commit", () => {
+      const marker = markerFor(AGENT_COMMENT_MARKERS.codeReview);
+      const older = {
+        id: 1,
+        body: `${marker}\nolder`,
+        commit_id: "aaa",
+        submitted_at: "2026-01-01T00:00:00Z",
+        html_url: "https://example/1",
+      };
+      const newer = {
+        id: 2,
+        body: `${marker}\nnewer`,
+        commit_id: "bbb",
+        submitted_at: "2026-02-01T00:00:00Z",
+        html_url: "https://example/2",
+      };
+      expect(pickLatestAgentCodeReview([older, newer])).toEqual(newer);
+    });
+  });
+
+  describe("formatBareReviewFixReviewBodiesSection", () => {
+    it("includes the latest agent code-review body", () => {
+      const marker = markerFor(AGENT_COMMENT_MARKERS.codeReview);
+      const section = formatBareReviewFixReviewBodiesSection([
+        {
+          id: 9,
+          body: `${marker}\n## Walkthrough\nDetails`,
+          commit_id: "sha",
+          submitted_at: "2026-03-01T00:00:00Z",
+          html_url: "https://example/review/9",
+          user: { login: "gha-agent-demo-bot[bot]" },
+        },
+      ]);
+      expect(section).toContain("id=9");
+      expect(section).toContain("Walkthrough");
+    });
+  });
+
+  describe("buildReviewFixReviewCommentContext", () => {
+    it("loads all line comments on a bare /agent fix trigger", async () => {
+      const botComment = {
+        id: 414,
+        path: "src/a.ts",
+        line: 1,
+        body: "_Docs_ | _Minor_ | _Quick win_\nFix me",
+        user: { login: "gha-agent-demo-bot[bot]" },
+        diff_hunk: "@@",
+      };
+      const paginate = vi
+        .fn()
+        .mockResolvedValueOnce([botComment])
+        .mockResolvedValueOnce([]);
+      const octokit = {
+        paginate,
+        pulls: {
+          listReviews: vi.fn(),
+        },
+        rest: {
+          pulls: {
+            listReviewComments: vi.fn(),
+          },
+        },
+      } as never;
+
+      const context = await buildReviewFixReviewCommentContext(
+        octokit,
+        "owner",
+        "repo",
+        42,
+        { reviewFeedback: "/agent fix" },
+      );
+
+      expect(context.bareFixTrigger).toBe(true);
+      expect(context.lineCommentsSection).toContain("Fix me");
+      expect(context.lineCommentsSection).not.toBe("(no review line comments)");
     });
   });
 
