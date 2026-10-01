@@ -11,6 +11,7 @@ import {
   vi,
   type MockInstance,
 } from "vitest";
+import { AGENT_STATE_DIR } from "../state/cache.js";
 import { PIPELINE_GHA_CHECKOUT_DIR } from "./worktree-excludes.js";
 
 const { mockSleep } = vi.hoisted(() => ({
@@ -76,6 +77,22 @@ describe("commitAll", () => {
     expect(committedFiles.trim()).toBe("app.txt");
     const status = runGit(worktree, "git status --porcelain");
     expect(status).toContain(`?? ${PIPELINE_GHA_CHECKOUT_DIR}/`);
+  });
+
+  it("does not stage the agent local state directory", async () => {
+    writeFileSync(join(worktree, "app.txt"), "v2\n");
+    mkdirSync(join(worktree, AGENT_STATE_DIR), { recursive: true });
+    writeFileSync(join(worktree, AGENT_STATE_DIR, "ci-round"), "1\n");
+
+    const committed = await commitAll("feat: app only");
+    expect(committed).toBe(true);
+
+    const committedFiles = runGit(
+      worktree,
+      "git show --name-only --pretty=format: HEAD",
+    );
+    expect(committedFiles.trim()).toBe("app.txt");
+    expect(committedFiles).not.toContain(AGENT_STATE_DIR);
   });
 });
 
