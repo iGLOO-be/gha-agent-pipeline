@@ -1,11 +1,10 @@
 import type { AgentConfig } from "./config.js";
 import {
-  AGENT_COMMENT_MARKERS,
   formatReviewThreadsForPrompt,
   isAgentInlineReviewCommentBody,
   isAutomatedReviewAuthor,
   listPullRequestReviewThreads,
-  markerFor,
+  pickLatestAgentCodeReview,
   type PullRequestReviewThread,
 } from "./tools/github.js";
 import type { Octokit } from "@octokit/rest";
@@ -83,16 +82,7 @@ export async function buildCodeReviewFollowUpContext(
       pull_number: prNumber,
       per_page: 100,
     });
-    const marker = markerFor(AGENT_COMMENT_MARKERS.codeReview);
-    const agentReviews = reviews
-      .filter((review) => (review.body ?? "").includes(marker))
-      .filter((review) => review.commit_id != null)
-      .sort(
-        (a, b) =>
-          new Date(b.submitted_at ?? 0).getTime() -
-          new Date(a.submitted_at ?? 0).getTime(),
-      );
-    const latest = agentReviews[0];
+    const latest = pickLatestAgentCodeReview(reviews);
     if (latest?.commit_id) {
       lastAgentReview = {
         id: latest.id,

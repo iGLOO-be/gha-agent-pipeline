@@ -402,6 +402,62 @@ export function parseReviewCommentIdsFromText(text: string): number[] {
   return [...ids];
 }
 
+/** True when `/agent fix` was sent without extra text or explicit #discussion_r links. */
+export function isBareReviewFixFeedback(text: string): boolean {
+  if (/#discussion_r\d/i.test(text)) {
+    return false;
+  }
+  const stripped = text.replace(/\/agent\s+fix/gi, "").trim();
+  return stripped.length === 0;
+}
+
+export type PullRequestReviewForPrompt = {
+  id: number;
+  body?: string | null;
+  commit_id?: string | null;
+  submitted_at?: string | null;
+  html_url: string;
+  user?: { login?: string | null } | null;
+};
+
+export function pickLatestAgentCodeReview<T extends PullRequestReviewForPrompt>(
+  reviews: T[],
+): T | undefined {
+  const marker = markerFor(AGENT_COMMENT_MARKERS.codeReview);
+  return reviews
+    .filter((review) => (review.body ?? "").includes(marker))
+    .filter((review) => review.commit_id != null)
+    .sort(
+      (a, b) =>
+        new Date(b.submitted_at ?? 0).getTime() -
+        new Date(a.submitted_at ?? 0).getTime(),
+    )[0];
+}
+
+export function formatBareReviewFixReviewBodiesSection(
+  reviews: PullRequestReviewForPrompt[],
+): string {
+  if (reviews.length === 0) {
+    return "(no pull request reviews)";
+  }
+  const sorted = [...reviews].sort(
+    (a, b) =>
+      new Date(b.submitted_at ?? 0).getTime() -
+      new Date(a.submitted_at ?? 0).getTime(),
+  );
+  const agentReview = pickLatestAgentCodeReview(sorted);
+  const fallback = sorted.find(
+    (review) => (review.body ?? "").trim().length > 0,
+  );
+  const pick = agentReview ?? fallback;
+  if (!pick) {
+    return "(no pull request review bodies)";
+  }
+  const author = pick.user?.login ?? "unknown";
+  const body = truncateCommentBodyForAgent((pick.body ?? "").trim());
+  return `--- PR review id=${pick.id} (${author}, ${pick.submitted_at ?? "unknown date"}) ---\n${body}\n\nReview URL: ${pick.html_url}`;
+}
+
 export function isAutomatedReviewAuthor(
   login: string | undefined | null,
 ): boolean {
@@ -501,10 +557,13 @@ export async function buildReviewFixReviewCommentContext(
   },
 ): Promise<{
   referencedSection: string;
+  reviewBodiesSection: string;
   lineCommentsSection: string;
+  bareFixTrigger: boolean;
   warnings: string[];
 }> {
   const warnings: string[] = [];
+  const bareFixTrigger = isBareReviewFixFeedback(options.reviewFeedback);
   const referencedIds = parseReviewCommentIdsFromText(options.reviewFeedback);
   const referencedComments: PullRequestReviewCommentForPrompt[] = [];
 
@@ -560,11 +619,32 @@ export async function buildReviewFixReviewCommentContext(
     (comment) => !isAutomatedReviewAuthor(comment.user?.login),
   );
 
+  const lineCommentsForSection = bareFixTrigger
+    ? allLineComments.slice(0, 100)
+    : humanLineComments.slice(0, 100);
+
+  let reviewBodiesSection =
+    "(not loaded — fix trigger included explicit feedback)";
+  if (bareFixTrigger) {
+    try {
+      const reviews = await octokit.paginate(octokit.pulls.listReviews, {
+        owner,
+        repo,
+        pull_number: prNumber,
+        per_page: 100,
+      });
+      reviewBodiesSection = formatBareReviewFixReviewBodiesSection(reviews);
+    } catch {
+      warnings.push("Could not list pull request reviews for this PR.");
+      reviewBodiesSection = "(could not load pull request reviews)";
+    }
+  }
+
   return {
     referencedSection: formatReviewCommentsForPrompt(referencedComments),
-    lineCommentsSection: formatReviewCommentsForPrompt(
-      humanLineComments.slice(0, 100),
-    ),
+    reviewBodiesSection,
+    lineCommentsSection: formatReviewCommentsForPrompt(lineCommentsForSection),
+    bareFixTrigger,
     warnings,
   };
 }

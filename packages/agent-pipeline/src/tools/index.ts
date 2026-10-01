@@ -17,6 +17,7 @@ import {
   getPullRequestReviewComment,
   formatReviewCommentsForPrompt,
   isAutomatedReviewAuthor,
+  isBareReviewFixFeedback,
   truncateCommentBodyForAgent,
   type PullRequestReviewCommentInput,
   type PullRequestReviewEvent,
@@ -340,7 +341,7 @@ export async function createReviewFixTools(
           type: "array",
           items: { type: "number" },
           description:
-            "Optional review comment IDs to fetch; when omitted, returns human line comments on the PR (up to 100).",
+            "Optional review comment IDs to fetch; when omitted, returns line comments on the PR (up to 100). After a bare /agent fix trigger, includes bot and human authors; otherwise human authors only.",
         },
       },
     },
@@ -368,10 +369,14 @@ export async function createReviewFixTools(
         repo,
         prNumber,
       );
-      const human = all.filter((c) => !isAutomatedReviewAuthor(c.user?.login));
+      const reviewFeedback = process.env.REVIEW_FEEDBACK ?? "";
+      const includeAllAuthors = isBareReviewFixFeedback(reviewFeedback);
+      const selected = includeAllAuthors
+        ? all
+        : all.filter((c) => !isAutomatedReviewAuthor(c.user?.login));
       return {
-        markdown: formatReviewCommentsForPrompt(human.slice(0, 100)),
-        comments: human.slice(0, 100).map((c) => ({
+        markdown: formatReviewCommentsForPrompt(selected.slice(0, 100)),
+        comments: selected.slice(0, 100).map((c) => ({
           id: c.id,
           path: c.path,
           line: c.line,
