@@ -1,10 +1,10 @@
 import type { AgentConfig } from "./config.js";
 import {
-  AGENT_COMMENT_MARKERS,
   formatReviewThreadsForPrompt,
+  isAgentInlineReviewCommentBody,
   isAutomatedReviewAuthor,
   listPullRequestReviewThreads,
-  markerFor,
+  pickLatestAgentCodeReview,
   type PullRequestReviewThread,
 } from "./tools/github.js";
 import type { Octokit } from "@octokit/rest";
@@ -30,7 +30,7 @@ export type CodeReviewFollowUpContext = {
   warnings: string[];
 };
 
-function threadMatchesFollowUpMode(
+export function threadMatchesCodeReviewFollowUpMode(
   thread: PullRequestReviewThread,
   mode: Exclude<CodeReviewFollowUpMode, "off">,
 ): boolean {
@@ -41,7 +41,10 @@ function threadMatchesFollowUpMode(
   if (mode === "all_authors") {
     return true;
   }
-  return isAutomatedReviewAuthor(root.authorLogin);
+  return (
+    isAutomatedReviewAuthor(root.authorLogin) ||
+    isAgentInlineReviewCommentBody(root.body)
+  );
 }
 
 export async function buildCodeReviewFollowUpContext(
@@ -62,7 +65,8 @@ export async function buildCodeReviewFollowUpContext(
       prNumber,
     );
     openThreads = allThreads.filter(
-      (thread) => !thread.isResolved && threadMatchesFollowUpMode(thread, mode),
+      (thread) =>
+        !thread.isResolved && threadMatchesCodeReviewFollowUpMode(thread, mode),
     );
   } catch (error) {
     warnings.push(
@@ -78,16 +82,7 @@ export async function buildCodeReviewFollowUpContext(
       pull_number: prNumber,
       per_page: 100,
     });
-    const marker = markerFor(AGENT_COMMENT_MARKERS.codeReview);
-    const agentReviews = reviews
-      .filter((review) => (review.body ?? "").includes(marker))
-      .filter((review) => review.commit_id != null)
-      .sort(
-        (a, b) =>
-          new Date(b.submitted_at ?? 0).getTime() -
-          new Date(a.submitted_at ?? 0).getTime(),
-      );
-    const latest = agentReviews[0];
+    const latest = pickLatestAgentCodeReview(reviews);
     if (latest?.commit_id) {
       lastAgentReview = {
         id: latest.id,
@@ -119,7 +114,7 @@ export function formatFollowUpPromptSection(
     "",
     `Follow-up mode: \`${context.mode}\`.`,
     "",
-    "Open review threads to triage (verify in the current code, then call resolveReviewThreads for addressed items):",
+    "Open review threads to triage (including **outdated** threads — if the feedback is fixed in the current code, call resolveReviewThreads even when GitHub marked the line outdated):",
     context.openThreadsMarkdown,
   ];
 

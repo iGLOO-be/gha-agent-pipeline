@@ -190,6 +190,16 @@ jobs:
 | `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
 | `.github/actions/setup-pr-environment/`     | Checkout, App token, pnpm (consumer-owned)      |
 
+**Consumer `.gitignore` (required on greenfield install)** — the runner writes local state under `.agent-state/` (CI fix round counter, cache files) and checks out the library under `gha-agent-pipeline/`. Add both to `.gitignore` so agent commits never include them:
+
+```gitignore
+# gha-agent-pipeline runtime (not application source)
+.agent-state/
+gha-agent-pipeline/
+```
+
+Consumers should also keep `packageManager` in `package.json` when using `pnpm/action-setup` (see `install-agent-pipeline` in the library).
+
 When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
 
 ### Code review scope (`code_review` in agent.config)
@@ -241,7 +251,7 @@ After the consumer workflows are on **`main`**, comment on an issue or PR:
 - `/agent plan` — explore and post a plan
 - `/agent implement` — implement from the plan and open a PR
 - `/agent yolo` — implement directly from the issue
-- `/agent fix` — on an agent PR (comment or submitted review)
+- `/agent fix` — on an agent PR (comment or submitted review). A bare `/agent fix` after `/agent code-review` loads the latest PR review body and all inline review comments (human and bot) into the review-fix session.
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
 - `/agent ask` — read-only Q&A on an issue or PR
 

@@ -87,6 +87,16 @@ runs:
         pipeline_repository: ${{ inputs.pipeline_repository }}
         node_version: ${{ inputs.node_version }}
 
+    - name: Resolve effective phase
+      id: effective
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.runtime_phase }}" ]; then
+          echo "phase=${{ inputs.runtime_phase }}" >> $GITHUB_OUTPUT
+        else
+          echo "phase=${{ inputs.phase }}" >> $GITHUB_OUTPUT
+        fi
+
     - name: Run agent
       id: run-agent
       shell: bash
@@ -94,16 +104,16 @@ runs:
         GITHUB_TOKEN: ${{ inputs.app_token }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         ISSUE_NUMBER: ${{ inputs.issue_number }}
-        PR_NUMBER: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'ask' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'ask' || inputs.phase == 'code-review'))) && inputs.pr_number || '' }}
-        AGENT_BRANCH: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'yolo' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'yolo' || inputs.phase == 'code-review'))) && inputs.head_ref || '' }}
+        PR_NUMBER: ${{ (steps.effective.outputs.phase == 'review-fix' || steps.effective.outputs.phase == 'ask' || steps.effective.outputs.phase == 'code-review') && inputs.pr_number || '' }}
+        AGENT_BRANCH: ${{ (steps.effective.outputs.phase == 'review-fix' || steps.effective.outputs.phase == 'yolo' || steps.effective.outputs.phase == 'code-review') && inputs.head_ref || '' }}
         AGENT_BASE_BRANCH: ${{ inputs.base_branch }}
-        REVIEW_FEEDBACK: ${{ (inputs.runtime_phase == 'review-fix' || (inputs.runtime_phase == '' && inputs.phase == 'review-fix')) && inputs.review_feedback || '' }}
-        QUESTION: ${{ (inputs.runtime_phase == 'ask' || (inputs.runtime_phase == '' && inputs.phase == 'ask')) && inputs.question || '' }}
-        REVIEW_INSTRUCTIONS: ${{ (inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && inputs.phase == 'code-review')) && inputs.review_instructions || '' }}
+        REVIEW_FEEDBACK: ${{ steps.effective.outputs.phase == 'review-fix' && inputs.review_feedback || '' }}
+        QUESTION: ${{ steps.effective.outputs.phase == 'ask' && inputs.question || '' }}
+        REVIEW_INSTRUCTIONS: ${{ steps.effective.outputs.phase == 'code-review' && inputs.review_instructions || '' }}
         AGENT_COMMAND_ARGS: ${{ inputs.command_args }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
-        SUCCESS_REACTION: ${{ (inputs.runtime_phase == 'plan' || (inputs.runtime_phase == '' && inputs.phase == 'plan')) && '+1' || (inputs.runtime_phase == 'ask' || (inputs.runtime_phase == '' && inputs.phase == 'ask')) && 'rocket' || 'rocket' }}
+        SUCCESS_REACTION: ${{ steps.effective.outputs.phase == 'plan' && '+1' || steps.effective.outputs.phase == 'ask' && 'rocket' || 'rocket' }}
       run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
 
     - name: Fallback failure comment
@@ -111,13 +121,13 @@ runs:
       uses: $/.github/actions/report-failure-fallback
       with:
         token: ${{ inputs.app_token || github.token }}
-        phase: ${{ inputs.runtime_phase != '' && inputs.runtime_phase || inputs.phase }}
-        target_type: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review'))) && 'pr' || 'issue' }}
-        target_number: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review'))) && inputs.pr_number || inputs.issue_number }}
-        source_issue_number: ${{ (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review'))) && inputs.issue_number || '' }}
+        phase: ${{ steps.effective.outputs.phase }}
+        target_type: ${{ (steps.effective.outputs.phase == 'review-fix' || steps.effective.outputs.phase == 'code-review') && 'pr' || 'issue' }}
+        target_number: ${{ (steps.effective.outputs.phase == 'review-fix' || steps.effective.outputs.phase == 'code-review') && inputs.pr_number || inputs.issue_number }}
+        source_issue_number: ${{ (steps.effective.outputs.phase == 'review-fix' || steps.effective.outputs.phase == 'code-review') && inputs.issue_number || '' }}
 
     - name: Remove agent-working label on PR
-      if: always() && (inputs.runtime_phase == 'review-fix' || inputs.runtime_phase == 'code-review' || (inputs.runtime_phase == '' && (inputs.phase == 'review-fix' || inputs.phase == 'code-review')))
+      if: always() && (steps.effective.outputs.phase == 'review-fix' || steps.effective.outputs.phase == 'code-review')
       uses: $/.github/actions/manage-agent-working-label
       with:
         action: remove

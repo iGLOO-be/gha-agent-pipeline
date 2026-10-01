@@ -204,11 +204,52 @@ jobs:
                 .join('\n')
             }
 
-            async function appendHumanPrReviewComments(prNumber, feedback) {
+            function isBareReviewFixFeedback(feedback) {
+              if (/#discussion_r\d/i.test(feedback)) return false
               const stripped = feedback.replace(/\/agent\s+fix/gi, '').trim()
-              const needsContext =
-                /#discussion_r\d/i.test(feedback) || stripped.length === 0
-              if (!needsContext) return feedback
+              return stripped.length === 0
+            }
+
+            async function appendLatestPrReviewBody(prNumber, feedback) {
+              if (!isBareReviewFixFeedback(feedback)) return feedback
+              try {
+                const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  per_page: 100
+                })
+                const agentMarker = '<!-- agent-code-review -->'
+                const sorted = [...reviews].sort(
+                  (a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0)
+                )
+                const agentReview = sorted.find(
+                  (r) => (r.body || '').includes(agentMarker) && r.commit_id
+                )
+                const pick =
+                  agentReview ||
+                  sorted.find((r) => (r.body || '').trim().length > 0)
+                if (!pick?.body?.trim()) return feedback
+                const maxChars = 4000
+                const body = pick.body.trim()
+                const truncated =
+                  body.length > maxChars
+                    ? body.slice(0, maxChars) + `\n…(truncated ${body.length - maxChars} characters)`
+                    : body
+                return (
+                  feedback +
+                  '\n\n--- PR review ---\n' +
+                  truncated
+                )
+              } catch (error) {
+                core.warning(`Could not load PR reviews for dispatch: ${error.message}`)
+                return feedback
+              }
+            }
+
+            async function appendPrReviewComments(prNumber, feedback) {
+              if (!isBareReviewFixFeedback(feedback)) return feedback
+              let result = await appendLatestPrReviewBody(prNumber, feedback)
               try {
                 const all = await github.paginate(github.rest.pulls.listReviewComments, {
                   owner,
@@ -216,16 +257,15 @@ jobs:
                   pull_number: prNumber,
                   per_page: 100
                 })
-                const human = all.filter((c) => !isAutomatedReviewAuthor(c.user?.login))
-                if (human.length === 0) return feedback
+                if (all.length === 0) return result
                 return (
-                  feedback +
+                  result +
                   '\n\n--- Review line comments ---\n' +
-                  formatReviewCommentsForDispatch(human)
+                  formatReviewCommentsForDispatch(all)
                 )
               } catch (error) {
                 core.warning(`Could not load PR review comments for dispatch: ${error.message}`)
-                return feedback
+                return result
               }
             }
 

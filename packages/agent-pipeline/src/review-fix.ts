@@ -172,6 +172,12 @@ async function main() {
       },
       prompt: `Address review feedback on PR #${env.PR_NUMBER} (issue #${env.ISSUE_NUMBER}).
 ${conflictPriority}
+${
+  reviewCommentContext.bareFixTrigger
+    ? `
+The fix trigger did not include explicit feedback. Treat the PR review bodies and line comments below (including prior /agent code-review output) as the work order. Apply suggested fixes where appropriate; skip judgement-call nits that are not required for merge.`
+    : ""
+}
 
 Merge context:
 ${mergeContext}
@@ -181,10 +187,17 @@ Issue: ${issue.title}
 Latest review / fix trigger:
 ${env.REVIEW_FEEDBACK}
 
+PR review bodies (submitted reviews on this pull request):
+${reviewCommentContext.reviewBodiesSection}
+
 Referenced review comments (from trigger / review submission):
 ${reviewCommentContext.referencedSection}${reviewContextWarnings}
 
-PR review comments (line comments on diff, human authors):
+PR review comments (line comments on diff${
+        reviewCommentContext.bareFixTrigger
+          ? ", all authors"
+          : ", human authors"
+      }):
 ${reviewCommentContext.lineCommentsSection}
 
 Approved plan (context):

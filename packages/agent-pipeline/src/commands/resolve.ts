@@ -6,9 +6,15 @@ import {
   type ListCommandsEntry,
   type ResolvedCommand,
 } from "./types.js";
+import { createRequire } from "node:module";
 
-const SLASH_TOKEN = /^[a-z0-9][a-z0-9-]*$/;
-const RESERVED_SLASHES = new Set(["fix"]);
+const require = createRequire(import.meta.url);
+const { SLASH_TOKEN, RESERVED: RESERVED_SLASHES } = require(
+  "../../../../.github/scripts/command-constants.cjs",
+) as {
+  SLASH_TOKEN: RegExp;
+  RESERVED: Set<string>;
+};
 
 function isAgentPhase(value: string): value is AgentPhase {
   return (BUILTIN_AGENT_PHASES as readonly string[]).includes(value);

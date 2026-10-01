@@ -442,7 +442,7 @@ The Standards and Spec axes are deliberately separate. Do not merge, rerank, or 
 - **Spec**: does the diff faithfully implement the originating issue / spec?
 
 Workflow:
-0. **Follow-up (when prior review context is injected):** For each open review thread listed, read the current code and verify whether the feedback is addressed. When clearly fixed, call \`resolveReviewThreads\` with that thread's GraphQL \`id\`. Do not resolve threads when the fix is missing, partial, or ambiguous. Summarize outcomes under \`## Follow-up\` in the review body (resolved / still open / not applicable). When a delta diff since the last agent code review is provided, prioritize new findings there; do not re-report issues already resolved in this step.
+0. **Follow-up (when prior review context is injected):** For each open review thread listed (including **outdated** threads), read the current code and verify whether the feedback is addressed. When clearly fixed, call \`resolveReviewThreads\` with that thread's GraphQL \`id\` — outdated threads still need an explicit resolve after the fix lands. Do not resolve threads when the fix is missing, partial, or ambiguous. Summarize outcomes under \`## Follow-up\` in the review body (resolved / still open / not applicable). When a delta diff since the last agent code review is provided, prioritize new findings there; do not re-report issues already resolved in this step.
 1. Read the injected diff, file scope (reviewed vs ignored), path-specific instructions, commit list, source issue, and PR body. Use readIssue / readComments / readPrComments / readPullRequestReviewComments if you need more thread context.
 2. Use list_files, read_files, search_codebase, and **run_commands** (read-only: \`rg\`, \`git show\`, \`git log\`) to inspect and validate findings. Do not modify any files (no editor, no apply_patch).
 3. Call submitReview with:
@@ -509,10 +509,10 @@ Guidelines:
 }
 
 function reviewFixPromptBody(config: AgentConfig): string {
-  return `A human left review feedback on an open agent pull request. Update the code on the existing branch to address the feedback.
+  return `Review feedback was left on an open agent pull request (from a human and/or a prior /agent code-review). Update the code on the existing branch to address it.
 
 Workflow:
-1. Read the review feedback, referenced review comments, and PR discussion injected below. Use readPullRequestReviewComments if you need to re-fetch line comments.
+1. Read the review feedback, PR review bodies, referenced review comments, and PR discussion injected below. Use readPullRequestReviewComments if you need to re-fetch line comments.
 2. Do not use fetch_web_content for github.com pull request or discussion URLs on this repository — they require authentication and are already loaded by the runner when possible.
 3. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
