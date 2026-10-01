@@ -208,6 +208,25 @@ export const agentConfigSchema = z
               .default("agent_only"),
           })
           .default(() => ({ resolve_threads: "agent_only" as const })),
+        labels: z
+          .object({
+            apply_to: z.enum(["pr", "issue", "both"]).default("pr"),
+            status: z
+              .object({
+                ok: z.string().min(1).optional(),
+                pending: z.string().min(1).optional(),
+              })
+              .default(() => ({})),
+            merge_risk: z
+              .object({
+                enabled: z.boolean().default(true),
+                low: z.string().min(1).default("agent-risk-low"),
+                medium: z.string().min(1).default("agent-risk-medium"),
+                high: z.string().min(1).default("agent-risk-high"),
+              })
+              .optional(),
+          })
+          .optional(),
       })
       .optional(),
   })

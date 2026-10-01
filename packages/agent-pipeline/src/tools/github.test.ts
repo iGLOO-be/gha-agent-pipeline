@@ -23,6 +23,7 @@ import {
   normalizeAgentPlanBody,
   parseReviewCommentIdsFromText,
   appendRiskScoreSection,
+  parseMergeRiskLevel,
   parseRiskLevel,
   stripRiskScoreSection,
   prependAgentMarker,
@@ -665,6 +666,26 @@ describe("tools/github", () => {
           "### Risk score\n\nLow — single-file, local refactor with zero behavioral change.",
         ),
       ).toBe("low");
+    });
+  });
+
+  describe("parseMergeRiskLevel", () => {
+    it("parses Minimal, Moderate, and High from ## Merge risk", () => {
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\n**Minimal** — safe tweak."),
+      ).toBe("low");
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\nModerate — auth path touched."),
+      ).toBe("medium");
+      expect(parseMergeRiskLevel("## Merge risk\n\nHigh — breaking API.")).toBe(
+        "high",
+      );
+    });
+
+    it("returns null when section is missing", () => {
+      expect(
+        parseMergeRiskLevel("## Walkthrough\n\nonly walkthrough"),
+      ).toBeNull();
     });
   });
 

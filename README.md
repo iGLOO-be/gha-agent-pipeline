@@ -217,6 +217,26 @@ code_review:
   apply_default_ignores: false # when true, also skip lockfiles, node_modules, dist
 ```
 
+Optional `code_review.labels` applies GitHub labels after a review is posted (no-op when omitted):
+
+- **Status** — `status.ok` when the review is `COMMENT` (no hard findings); `status.pending` when `REQUEST_CHANGES`. Sibling status labels are removed when both are configured.
+- **Merge risk** — when `merge_risk` is present and `enabled` (default `true`), the runner parses `## Merge risk` (**Minimal** / **Moderate** / **High**) and applies the configured label for that level (defaults: `agent-risk-low`, `agent-risk-medium`, `agent-risk-high`).
+- **apply_to** — `pr` (default), `issue`, or `both`.
+
+```yaml
+code_review:
+  labels:
+    apply_to: pr
+    status:
+      ok: "ai-review:ok"
+      pending: "ai-review:pending"
+    merge_risk:
+      enabled: true
+      low: agent-risk-low
+      medium: agent-risk-medium
+      high: agent-risk-high
+```
+
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
 **Pin these library refs at `@v0.2.6`** (or latest release)

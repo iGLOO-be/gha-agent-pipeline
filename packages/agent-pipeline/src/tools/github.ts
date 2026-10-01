@@ -1024,6 +1024,84 @@ export function parseRiskLevel(text: string): RiskLevel | null {
   return null;
 }
 
+const MERGE_RISK_LEVEL_WORDS: { word: RegExp; level: RiskLevel }[] = [
+  { word: /\bminimal\b/i, level: "low" },
+  { word: /\bmoderate\b/i, level: "medium" },
+  { word: /\bhigh\b/i, level: "high" },
+];
+
+/** Parses ## Merge risk (Minimal / Moderate / High) from a code-review body. */
+export function parseMergeRiskLevel(body: string): RiskLevel | null {
+  const sectionMatch = body.match(
+    /## Merge risk[:\s]*\n([\s\S]*?)(?=\n## |\n$|$)/i,
+  );
+  if (!sectionMatch) {
+    return null;
+  }
+  const firstLine = sectionMatch[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) {
+    return null;
+  }
+  const stripped = firstLine.replace(/\*\*/g, "");
+  for (const { word, level } of MERGE_RISK_LEVEL_WORDS) {
+    if (word.test(stripped)) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function riskLabelEnsureOptions(labelName: string): {
+  color?: string;
+  description?: string;
+} {
+  const match = /^agent-risk-(low|medium|high)$/.exec(labelName);
+  if (!match) {
+    return {};
+  }
+  const level = match[1] as RiskLevel;
+  return RISK_LABEL_CONFIG[level];
+}
+
+export async function manageExclusiveLabels(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labelNames: readonly string[],
+  activeLabel: string,
+  ensureOptions?: (labelName: string) => {
+    color?: string;
+    description?: string;
+  },
+) {
+  await Promise.all(
+    labelNames.map((name) =>
+      ensureLabel(octokit, owner, repo, name, ensureOptions?.(name) ?? {}),
+    ),
+  );
+
+  await Promise.all(
+    labelNames
+      .filter((name) => name !== activeLabel)
+      .map((name) =>
+        removeLabelFromIssue(octokit, owner, repo, issueNumber, name).catch(
+          (error) => {
+            const status = (error as { status?: number }).status;
+            if (status !== 404) {
+              console.warn(`Failed to remove label ${name}:`, error);
+            }
+          },
+        ),
+      ),
+  );
+
+  await addLabelToIssue(octokit, owner, repo, issueNumber, activeLabel);
+}
+
 export function extractRiskJustification(text: string): string | null {
   const sectionMatch = text.match(
     /### Risk [Ss]core[:\s]*\n?([\s\S]*?)(?:\n### |\n## |---|\n$)/,
@@ -1059,39 +1137,15 @@ export async function manageRiskLabels(
   issueNumber: number,
   level: RiskLevel,
 ) {
-  await Promise.all(
-    RISK_LEVELS.map((lvl) =>
-      ensureLabel(octokit, owner, repo, `agent-risk-${lvl}`, {
-        color: RISK_LABEL_CONFIG[lvl].color,
-        description: RISK_LABEL_CONFIG[lvl].description,
-      }),
-    ),
-  );
-
-  const others = RISK_LEVELS.filter((lvl) => lvl !== level);
-  await Promise.all(
-    others.map((lvl) =>
-      removeLabelFromIssue(
-        octokit,
-        owner,
-        repo,
-        issueNumber,
-        `agent-risk-${lvl}`,
-      ).catch((error) => {
-        const status = (error as { status?: number }).status;
-        if (status !== 404) {
-          console.warn(`Failed to remove agent-risk-${lvl} label:`, error);
-        }
-      }),
-    ),
-  );
-
-  await addLabelToIssue(
+  const labelNames = RISK_LEVELS.map((lvl) => `agent-risk-${lvl}`);
+  await manageExclusiveLabels(
     octokit,
     owner,
     repo,
     issueNumber,
+    labelNames,
     `agent-risk-${level}`,
+    riskLabelEnsureOptions,
   );
 }
 
