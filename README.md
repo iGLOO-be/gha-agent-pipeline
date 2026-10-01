@@ -315,10 +315,32 @@ The nested checkout at `gha-agent-pipeline/` from `install-agent-pipeline` is gi
 
 The CLI phases read the following environment variables. Common variables (`OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`) are required by all phases.
 
-| Variable                        | Phases                   | Description                                                                                                                                                   |
-| ------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_BASE_BRANCH`             | git sync / branch create | Overrides `git.base_branch` when set (via workflow `base_branch` input on `agent-phase-run`). Use when the checked-out ref has no `.github/agent.config.yml`. |
-| `AGENT_RUN_COMMANDS_TIMEOUT_MS` | all tool phases          | Overrides `tools.run_commands_timeout_ms` for the Cline `run_commands` tool (default 600000 ms).                                                              |
+| Variable                                                                | Phases                   | Description                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_BASE_BRANCH`                                                     | git sync / branch create | Overrides `git.base_branch` when set (via workflow `base_branch` input on `agent-phase-run`). Use when the checked-out ref has no `.github/agent.config.yml`.                                                                 |
+| `AGENT_RUN_COMMANDS_TIMEOUT_MS`                                         | all tool phases          | Overrides `tools.run_commands_timeout_ms` for the Cline `run_commands` tool (default 600000 ms).                                                                                                                              |
+| `OPENROUTER_JEV_ROUTER_ENABLED`                                         | all LLM phases           | When `true`/`false`, enables or disables [OpenRouter Jev Router](https://openrouter.ai/docs/guides/routing/routers/jev-router) globally (overrides `openrouter.jev_router.enabled` unless a phase sets `enabled` explicitly). |
+| `OPENROUTER_JEV_ROUTER_MODELS` / `OPENROUTER_JEV_ROUTER_ALLOWED_MODELS` | Jev Router active        | Comma-separated include patterns when YAML pool lists are empty for the phase.                                                                                                                                                |
+| `OPENROUTER_JEV_ROUTER_EXCLUDED_MODELS`                                 | Jev Router active        | Comma-separated exclude patterns when YAML `excluded_models` are empty for the phase.                                                                                                                                         |
+
+### OpenRouter Jev Router (optional)
+
+In `.github/agent.config.yml`, enable dynamic model selection via `typesafe/jev-router`:
+
+```yaml
+openrouter:
+  jev_router:
+    enabled: true
+    models: ["anthropic/*", "google/*"]
+    excluded_models: ["anthropic/claude-opus*"]
+    phases:
+      plan:
+        enabled: false # keep a fixed model for plan
+      implement:
+        enabled: true
+```
+
+When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
 
 | Phase         | Required                                                       | Optional / routing                                                                             |
 | ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |

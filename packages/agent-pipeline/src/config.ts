@@ -152,6 +152,43 @@ export const agentConfigSchema = z
         name: z.string().min(1).optional(),
       })
       .default(() => ({})),
+    openrouter: z
+      .object({
+        jev_router: z
+          .object({
+            enabled: z.boolean().default(false),
+            metadata: z.boolean().default(true),
+            models: z.array(z.string().min(1)).max(1024).default([]),
+            allowed_models: z.array(z.string().min(1)).max(1024).default([]),
+            excluded_models: z.array(z.string().min(1)).max(1024).default([]),
+            phases: z
+              .record(
+                z.string(),
+                z.object({
+                  enabled: z.boolean().optional(),
+                  models: z.array(z.string().min(1)).max(1024).optional(),
+                  allowed_models: z
+                    .array(z.string().min(1))
+                    .max(1024)
+                    .optional(),
+                  excluded_models: z
+                    .array(z.string().min(1))
+                    .max(1024)
+                    .optional(),
+                }),
+              )
+              .default({}),
+          })
+          .default(() => ({
+            enabled: false,
+            metadata: true,
+            models: [],
+            allowed_models: [],
+            excluded_models: [],
+            phases: {},
+          })),
+      })
+      .optional(),
     code_review: z
       .object({
         path_filters: z.array(z.string()).default([]),
@@ -185,6 +222,7 @@ export const agentConfigSchema = z
     prompts: data.prompts,
     tools: data.tools,
     app: data.app,
+    openrouter: data.openrouter,
     code_review: data.code_review,
   }));
 
