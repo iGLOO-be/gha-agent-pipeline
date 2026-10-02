@@ -206,6 +206,18 @@ When bumping `dispatch.yml` to a release that includes `/agent code-review`, add
 
 Optional `code_review` block in `.github/agent.config.yml` controls which changed files the review agent focuses on and path-specific instructions (CodeRabbit-style `path_filters` / `path_instructions`). Values in **agent.config take priority**; missing keys fall back to `.coderabbit.yaml` at the repo root (`reviews.path_filters`, `reviews.path_instructions`) when present.
 
+### Custom slash commands (`commands` in agent.config)
+
+Declare additional `/agent <slash>` commands (or override built-ins) under `commands`. Each custom command must set `extends` to a built-in runtime (`plan`, `implement`, `yolo`, `ci-fix`, `review-fix`, `ask`, `code-review`) so git/PR orchestration stays the same while you customize prompts, models, GitHub tool allowlists, and targets (`issue` / `pr`).
+
+List enabled commands as JSON for dispatch wiring:
+
+```bash
+pnpm exec agent-pipeline list-commands --format json
+```
+
+Dogfood example: `/agent config-audit` on an issue (extends `ask`).
+
 ```yaml
 code_review:
   path_filters:

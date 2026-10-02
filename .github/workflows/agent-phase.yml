@@ -4,16 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: Agent phase to run
+        description: Command id to run (built-in phase or custom command from agent.config.yml)
         required: true
-        type: choice
-        options:
-          - plan
-          - implement
-          - yolo
-          - review-fix
-          - ask
-          - code-review
+        type: string
+      runtime_phase:
+        description: Underlying runtime handler (plan, implement, yolo, review-fix, ask, code-review). Defaults to phase when omitted.
+        required: false
+        type: string
+        default: ""
+      command_args:
+        description: Text after the slash command token
+        required: false
+        type: string
+        default: ""
       comment_id:
         description: Comment or review ID that triggered the workflow
         required: true
@@ -86,6 +89,8 @@ jobs:
         uses: ./.github/actions/agent-phase-run
         with:
           phase: ${{ inputs.phase }}
+          runtime_phase: ${{ inputs.runtime_phase }}
+          command_args: ${{ inputs.command_args }}
           app_token: ${{ steps.setup.outputs.app_token }}
           comment_id: ${{ inputs.comment_id }}
           issue_number: ${{ inputs.issue_number }}

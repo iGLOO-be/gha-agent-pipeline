@@ -10,6 +10,7 @@ import {
   type AgentConfig,
   type AgentPhase,
 } from "./config.js";
+import { getActiveCommand } from "./commands/active.js";
 import { sanitizeAgentProcessEnv } from "./env.js";
 import {
   OPENROUTER_PROVIDER_ID,
@@ -138,7 +139,19 @@ async function runAgentSessionAttempt(
   const restoreEnv = sanitizeAgentProcessEnv();
   const cwd = process.cwd();
   const customToolNames = input.tools.map((tool) => tool.name);
-  const toolPolicies = buildToolPolicies(input.phase, customToolNames);
+  const active = getActiveCommand();
+  const policyOverrides =
+    active && active.extends === input.phase
+      ? {
+          write: active.tools.write,
+          disabledBuiltin: active.tools.builtin?.exclude,
+        }
+      : undefined;
+  const toolPolicies = buildToolPolicies(
+    input.phase,
+    customToolNames,
+    policyOverrides,
+  );
 
   const cline = await createClineCore(config);
   let sessionLogger: ReturnType<typeof createSessionLogger> | undefined;

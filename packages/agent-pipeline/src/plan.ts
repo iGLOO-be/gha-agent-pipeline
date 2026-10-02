@@ -1,11 +1,14 @@
 import { loadClineSdk } from "./cline.js";
 import {
   loadAgentConfig,
-  buildPhaseSystemPrompt,
   loadAgentEnv,
   parseRepository,
   PLAN_MODEL,
 } from "./config.js";
+import {
+  applyCommandGithubTools,
+  prepareCommandRuntime,
+} from "./command-runtime.js";
 import { safeFormatUsageMarkdown } from "./gha-log.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
@@ -229,6 +232,7 @@ async function ensurePlanCommentPosted(
 async function main() {
   const env = loadAgentEnv();
   const config = loadAgentConfig();
+  const cmd = prepareCommandRuntime("plan", PLAN_MODEL, config);
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -239,25 +243,32 @@ async function main() {
     const conversation = formatCommentsForPrompt(comments);
     const planComment: PlanCommentTracker = { posted: false };
 
-    const tools = await createPlanTools(
+    let tools = await createPlanTools(
       octokit,
       owner,
       repo,
       env.ISSUE_NUMBER,
       planComment,
     );
+    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
+
+    const userArgs = process.env.AGENT_COMMAND_ARGS?.trim();
+    const extraArgsBlock = userArgs
+      ? `\n\nAdditional instructions:\n${userArgs}`
+      : "";
 
     const revisionNote = priorPlan
       ? "A prior ## Agent Plan comment exists. Read all comments. If human feedback asks for changes, post a revised plan. If not, you must still call submitPlan — repost the existing plan (or a refreshed copy) rather than ending in chat."
       : "This is the initial plan for the issue. You must call submitPlan before finishing.";
 
     const session = await runAgentSession({
-      phase: "plan",
-      modelId: PLAN_MODEL,
-      systemPrompt: buildPhaseSystemPrompt("plan", config),
+      phase: cmd.runtimePhase,
+      modelId: cmd.modelId,
+      systemPrompt: cmd.systemPrompt,
       tools,
       sessionMetadata: {
-        phase: "plan",
+        phase: cmd.runtimePhase,
+        commandId: cmd.commandId,
         issueNumber: env.ISSUE_NUMBER,
         repository: env.GITHUB_REPOSITORY,
       },
@@ -270,7 +281,7 @@ Issue body:
 ${issue.body ?? "(empty)"}
 
 Issue conversation so far:
-${conversation}`,
+${conversation}${extraArgsBlock}`,
     });
 
     await ensurePlanCommentPosted(
@@ -322,10 +333,12 @@ ${conversation}`,
 const env = loadAgentEnv();
 const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
 const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootCmd = prepareCommandRuntime("plan", PLAN_MODEL, loadAgentConfig());
 
 runAgentMain(() =>
   runAgentPhase({
-    phase: "plan",
+    phase: bootCmd.runtimePhase,
+    displayLabel: bootCmd.displayLabel,
     octokit,
     owner,
     repo,

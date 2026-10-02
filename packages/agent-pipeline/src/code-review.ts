@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
   loadAgentConfig,
-  buildPhaseSystemPrompt,
   loadCodeReviewEnv,
   parseRepository,
   CODE_REVIEW_MODEL,
 } from "./config.js";
+import {
+  applyCommandGithubTools,
+  prepareCommandRuntime,
+} from "./command-runtime.js";
 import {
   collectReviewDiff,
   collectReviewDiffSince,
@@ -87,6 +90,7 @@ function parseReviewFromOutput(outputText: string): {
 async function main() {
   const env = loadCodeReviewEnv();
   const config = loadAgentConfig();
+  const cmd = prepareCommandRuntime("code-review", CODE_REVIEW_MODEL, config);
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -158,7 +162,7 @@ ${sinceDiff.diff || "(empty diff)"}
       }
     }
 
-    const tools = await withReportRunFrictionTool(
+    let tools = await withReportRunFrictionTool(
       await createCodeReviewTools(
         octokit,
         owner,
@@ -170,19 +174,25 @@ ${sinceDiff.diff || "(empty diff)"}
       ),
       runFriction,
     );
+    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
 
     const extraInstructions = env.REVIEW_INSTRUCTIONS
       ? `\nAdditional instructions from the human:\n${env.REVIEW_INSTRUCTIONS}\n`
       : "";
+    const userArgs = process.env.AGENT_COMMAND_ARGS?.trim();
+    const commandArgsBlock = userArgs
+      ? `\nAdditional instructions from slash command:\n${userArgs}\n`
+      : "";
 
     const session = await runAgentSession({
-      phase: "code-review",
-      modelId: CODE_REVIEW_MODEL,
-      systemPrompt: buildPhaseSystemPrompt("code-review", config),
+      phase: cmd.runtimePhase,
+      modelId: cmd.modelId,
+      systemPrompt: cmd.systemPrompt,
       tools,
       runFriction,
       sessionMetadata: {
-        phase: "code-review",
+        phase: cmd.runtimePhase,
+        commandId: cmd.commandId,
         issueNumber: env.ISSUE_NUMBER,
         repository: env.GITHUB_REPOSITORY,
         prNumber: env.PR_NUMBER,
@@ -199,7 +209,7 @@ ${conversation}
 Pull request title: ${pr.title}
 Pull request body:
 ${pr.body ?? "(empty)"}
-${followUpSection}${deltaSection}${extraInstructions}
+${followUpSection}${deltaSection}${extraInstructions}${commandArgsBlock}
 Documented standards sources:
 ${standardsSources}
 
@@ -302,10 +312,16 @@ async function ensureReviewPosted(
 const env = loadCodeReviewEnv();
 const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
 const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootCmd = prepareCommandRuntime(
+  "code-review",
+  CODE_REVIEW_MODEL,
+  loadAgentConfig(),
+);
 
 runAgentMain(() =>
   runAgentPhase({
-    phase: "code-review",
+    phase: bootCmd.runtimePhase,
+    displayLabel: bootCmd.displayLabel,
     octokit,
     owner,
     repo,
