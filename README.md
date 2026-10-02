@@ -80,6 +80,8 @@ jobs:
           head_ref: ${{ inputs.head_ref }}
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
+          chain_code_review: ${{ inputs.chain_code_review }}
+          implement_trigger_text: ${{ inputs.implement_trigger_text }}
           node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -202,6 +204,8 @@ Consumers should also keep `packageManager` in `package.json` when using `pnpm/a
 
 When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
 
+For **chained code-review** after implement or review-fix, add optional `workflow_dispatch` inputs `chain_code_review` and `implement_trigger_text` on the consumer `agent-phase.yml` and pass them through to `agent-phase-run` (see excerpt above). The phase job also needs `permissions.actions: write` if the runtime dispatches follow-up workflows with the App token.
+
 ### Code review scope (`code_review` in agent.config)
 
 Optional `code_review` block in `.github/agent.config.yml` controls which changed files the review agent focuses on and path-specific instructions (CodeRabbit-style `path_filters` / `path_instructions`). Values in **agent.config take priority**; missing keys fall back to `.coderabbit.yaml` at the repo root (`reviews.path_filters`, `reviews.path_instructions`) when present.
@@ -255,13 +259,13 @@ Dispatch runs phase workflows from the default branch (`main`), not from open PR
 
 Use the same GitHub App as the demo (or a dedicated app) with these **repository permissions** on the app (Organization → GitHub Apps → _your app_ → Permissions):
 
-| Permission    | Access        | Why                                                                                                                                                                          |
-| ------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Contents      | Read & write  | Checkout, commits, PR branches                                                                                                                                               |
-| Issues        | Read & write  | Plans, agent comments, labels                                                                                                                                                |
-| Pull requests | Read & write  | Agent PRs, reviews                                                                                                                                                           |
-| Actions       | Read & write  | Workflow tokens, nested pipeline checkout                                                                                                                                    |
-| **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`) |
+| Permission    | Access        | Why                                                                                                                                                                                                                                                    |
+| ------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Contents      | Read & write  | Checkout, commits, PR branches                                                                                                                                                                                                                         |
+| Issues        | Read & write  | Plans, agent comments, labels                                                                                                                                                                                                                          |
+| Pull requests | Read & write  | Agent PRs, reviews                                                                                                                                                                                                                                     |
+| Actions       | Read & write  | Workflow tokens, nested pipeline checkout, and **chained** `code-review` after implement/review-fix (`workflow_dispatch` via the App token — grant Actions write on the app and set `permission-actions: write` on `create-github-app-token` in setup) |
+| **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`)                                                                           |
 
 `agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI fix and Agent CI success only operate on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
 

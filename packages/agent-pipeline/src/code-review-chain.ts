@@ -83,6 +83,8 @@ async function dispatchFollowUpCodeReview(
     return;
   }
 
+  const reactionTarget = process.env.REACTION_TARGET;
+
   try {
     await dispatchAgentPhaseWorkflow(octokit, owner, repo, {
       phase: "code-review",
@@ -91,6 +93,7 @@ async function dispatchFollowUpCodeReview(
       prNumber: params.prNumber,
       headRef: params.headRef,
       reviewInstructions: params.reviewInstructions,
+      ...(reactionTarget ? { reactionTarget } : {}),
     });
     console.log("Dispatched follow-up code-review workflow");
   } catch (error) {

@@ -100,6 +100,7 @@ jobs:
               })
             }
 
+            // Keep flags in sync with packages/agent-pipeline/src/code-review-chain.ts
             function wantsChainCodeReviewFromSlash(body) {
               return (
                 /--recheck\b/i.test(body) ||

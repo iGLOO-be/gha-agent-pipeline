@@ -270,12 +270,6 @@ Branch: ${env.AGENT_BRANCH}`,
         issueNumber: env.ISSUE_NUMBER,
         prNumber: env.PR_NUMBER,
       });
-      await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
-        issueNumber: env.ISSUE_NUMBER,
-        prNumber: env.PR_NUMBER,
-        agentBranch: env.AGENT_BRANCH,
-        reviewFeedback: env.REVIEW_FEEDBACK,
-      });
       return;
     }
 
