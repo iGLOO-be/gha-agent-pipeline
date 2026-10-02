@@ -25,7 +25,10 @@ describe("review-fix-chain", () => {
   });
 
   it("chains when env, config, or slash flag is set", () => {
-    const config = loadAgentConfig();
+    const config = {
+      ...loadAgentConfig(),
+      review_fix: { follow_up: { code_review: false } },
+    };
     expect(
       shouldChainCodeReviewAfterReviewFix(config, {
         chainCodeReviewEnv: "true",
@@ -46,5 +49,10 @@ describe("review-fix-chain", () => {
       }),
     ).toBe(true);
     expect(shouldChainCodeReviewAfterReviewFix(config, {})).toBe(false);
+
+    const repoConfig = loadAgentConfig();
+    expect(shouldChainCodeReviewAfterReviewFix(repoConfig, {})).toBe(
+      repoConfig.review_fix?.follow_up?.code_review === true,
+    );
   });
 });
