@@ -46,19 +46,12 @@ export function shouldChainCodeReviewAfterImplement(
   config: AgentConfig,
   options: {
     chainCodeReviewEnv?: string;
-    triggerText?: string;
   },
 ): boolean {
   if (options.chainCodeReviewEnv === "true") {
     return true;
   }
   if (config.implement?.follow_up?.code_review === true) {
-    return true;
-  }
-  if (
-    options.triggerText &&
-    parseChainCodeReviewFromSlashText(options.triggerText)
-  ) {
     return true;
   }
   return false;
@@ -142,13 +135,11 @@ export async function chainCodeReviewAfterImplement(
     issueNumber: number;
     prNumber: number;
     agentBranch: string;
-    triggerText?: string;
   },
 ): Promise<void> {
   if (
     !shouldChainCodeReviewAfterImplement(config, {
       chainCodeReviewEnv: process.env.IMPLEMENT_CHAIN_CODE_REVIEW,
-      triggerText: params.triggerText,
     })
   ) {
     return;

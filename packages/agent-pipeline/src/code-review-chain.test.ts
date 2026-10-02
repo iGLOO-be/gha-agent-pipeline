@@ -71,7 +71,7 @@ describe("code-review-chain", () => {
     expect(shouldChainCodeReviewAfterReviewFix(config, {})).toBe(false);
   });
 
-  it("chains implement when env, config, or slash flag is set", () => {
+  it("chains implement when env or config is set", () => {
     const config = {
       ...loadAgentConfig(),
       implement: { follow_up: { code_review: false } },
@@ -89,11 +89,6 @@ describe("code-review-chain", () => {
         },
         {},
       ),
-    ).toBe(true);
-    expect(
-      shouldChainCodeReviewAfterImplement(config, {
-        triggerText: "/agent implement --code-review",
-      }),
     ).toBe(true);
     expect(shouldChainCodeReviewAfterImplement(config, {})).toBe(false);
   });

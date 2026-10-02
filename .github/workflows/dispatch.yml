@@ -494,10 +494,6 @@ jobs:
               const question = phase === 'ask' ? body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.' : undefined
               const chainCodeReview =
                 phase === 'implement' && wantsChainCodeReviewFromSlash(body)
-              const implementTriggerText =
-                phase === 'implement'
-                  ? stripChainCodeReviewSlashFlags(body.replace('/agent implement', '').trim() || body)
-                  : undefined
 
               const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
               const res = await fetch(dispatchUrl, {
@@ -515,10 +511,7 @@ jobs:
                     issue_number: issueNumber,
                     author_association: authorAssociation,
                     ...(question != null ? { question } : {}),
-                    ...(chainCodeReview ? { chain_code_review: 'true' } : {}),
-                    ...(implementTriggerText != null && implementTriggerText !== ''
-                      ? { implement_trigger_text: implementTriggerText }
-                      : {})
+                    ...(chainCodeReview ? { chain_code_review: 'true' } : {})
                   }
                 })
               })

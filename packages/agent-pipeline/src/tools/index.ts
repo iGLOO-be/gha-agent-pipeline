@@ -752,43 +752,7 @@ export async function createCodeReviewTools(
       },
     });
 
-    const resolveReviewThreads = createTool({
-      name: "resolveReviewThreads",
-      description:
-        "Resolve GitHub pull request review threads after verifying the feedback is addressed in the current code.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          threadIds: {
-            type: "array",
-            items: { type: "string" },
-            description:
-              "GraphQL thread ids from the follow-up context (e.g. PRRT_...).",
-          },
-        },
-        required: ["threadIds"],
-      },
-      async execute(input: { threadIds: string[] }) {
-        const results: {
-          threadId: string;
-          ok: boolean;
-          error?: string;
-        }[] = [];
-        for (const threadId of input.threadIds) {
-          try {
-            await resolvePullRequestReviewThread(octokit, threadId);
-            results.push({ threadId, ok: true });
-          } catch (error) {
-            results.push({
-              threadId,
-              ok: false,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-        return { results };
-      },
-    });
+    const resolveReviewThreads = await createResolveReviewThreadsTool(octokit);
 
     tools.push(readPullRequestReviewCommentsTool, resolveReviewThreads);
   }

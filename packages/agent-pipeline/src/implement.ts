@@ -200,7 +200,6 @@ Branch: ${branch}`,
       issueNumber: env.ISSUE_NUMBER,
       prNumber: pr.number,
       agentBranch: branch,
-      triggerText: process.env.IMPLEMENT_TRIGGER_TEXT,
     });
 
     console.log(`\nPR created: ${pr.url}`);

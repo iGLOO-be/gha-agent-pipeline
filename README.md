@@ -81,7 +81,6 @@ jobs:
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
           chain_code_review: ${{ inputs.chain_code_review }}
-          implement_trigger_text: ${{ inputs.implement_trigger_text }}
           node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -204,7 +203,7 @@ Consumers should also keep `packageManager` in `package.json` when using `pnpm/a
 
 When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
 
-For **chained code-review** after implement or review-fix, add optional `workflow_dispatch` inputs `chain_code_review` and `implement_trigger_text` on the consumer `agent-phase.yml` and pass them through to `agent-phase-run` (see excerpt above). The phase job also needs `permissions.actions: write` if the runtime dispatches follow-up workflows with the App token.
+For **chained code-review** after implement or review-fix, add optional `workflow_dispatch` input `chain_code_review` on the consumer `agent-phase.yml` and pass it through to `agent-phase-run` (see excerpt above). Slash flags (`+code-review`, `--code-review`, `--recheck` on fix) set that input from `dispatch.yml`; config flags (`implement.follow_up.code_review` / `review_fix.follow_up.code_review`) work without slash flags. The phase job also needs `permissions.actions: write` if the runtime dispatches follow-up workflows with the App token.
 
 ### Code review scope (`code_review` in agent.config)
 
