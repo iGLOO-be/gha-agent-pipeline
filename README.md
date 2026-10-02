@@ -88,6 +88,8 @@ jobs:
 
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
 
+**Chained code-review:** forward the `chain_code_review` input in the consumer `agent-phase.yml` (as in the excerpt above) and grant the App **Actions read & write** (`permission-actions: write` on `create-github-app-token`) — the runtime dispatches the follow-up `agent-phase.yml` `code-review` with the App token, so a missing scope makes the chain silently no-op.
+
 ### Agent runner tooling (`ripgrep`)
 
 Agent phases use shell search heavily; **`rg` (ripgrep)** on the phase runner is much faster than falling back to `grep -R`. Install it in the consumer setup composite (before `agent-phase-run`), not in the library.

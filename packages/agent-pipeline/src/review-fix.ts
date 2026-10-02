@@ -294,7 +294,6 @@ Branch: ${env.AGENT_BRANCH}`,
       issueNumber: env.ISSUE_NUMBER,
       prNumber: env.PR_NUMBER,
       agentBranch: env.AGENT_BRANCH,
-      reviewFeedback: env.REVIEW_FEEDBACK,
     });
 
     console.log(`\nReview fix pushed on branch ${env.AGENT_BRANCH}`);

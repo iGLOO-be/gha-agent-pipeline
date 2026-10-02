@@ -180,7 +180,9 @@ export async function buildReviewFixThreadContext(
   }
 
   return {
-    openThreadsMarkdown: formatReviewThreadsForPrompt(openThreads),
+    openThreadsMarkdown: formatReviewThreadsForPrompt(openThreads, {
+      includeBody: false,
+    }),
     warnings,
   };
 }
@@ -191,7 +193,7 @@ export function formatReviewFixThreadPromptSection(
   const parts: string[] = [
     "### Open review threads (reply + resolve when fixed)",
     "",
-    "For each thread you address in code, call `replyToReviewComment` with the **root** `rootCommentId` from the thread header, then `resolveReviewThreads` with the GraphQL `thread id` when the fix is clear (including **outdated** threads).",
+    "Thread ids only — the comment bodies are in the review line-comments section above. For each thread you address in code, call `replyToReviewComment` with the **root** `rootCommentId` from the thread header, then `resolveReviewThreads` with the GraphQL `thread id` when the fix is clear (including **outdated** threads).",
     "",
     context.openThreadsMarkdown,
   ];

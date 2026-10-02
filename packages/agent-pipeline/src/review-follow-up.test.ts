@@ -121,6 +121,10 @@ describe("review-follow-up", () => {
       expect(scoped.openThreadsMarkdown).toContain("PRRT_human");
       expect(scoped.openThreadsMarkdown).not.toContain("PRRT_resolved");
       expect(scoped.openThreadsMarkdown).not.toContain("PRRT_bot");
+      // Bodies live in the line-comments section, so the thread section only
+      // carries ids/rootCommentId to avoid duplicating review text.
+      expect(scoped.openThreadsMarkdown).not.toContain("fix this");
+      expect(scoped.openThreadsMarkdown).toContain("rootCommentId=2");
 
       const bare = await buildReviewFixThreadContext(
         octokit,

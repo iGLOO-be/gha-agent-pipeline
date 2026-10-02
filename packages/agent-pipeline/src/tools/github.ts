@@ -563,7 +563,6 @@ export type DispatchAgentPhaseWorkflowInput = {
   reviewFeedback?: string;
   reactionTarget?: string;
   reviewInstructions?: string;
-  chainCodeReview?: boolean;
 };
 
 /** Dispatch the consumer `agent-phase.yml` workflow (requires `actions: write` on the token). */
@@ -573,10 +572,7 @@ export async function dispatchAgentPhaseWorkflow(
   repo: string,
   input: DispatchAgentPhaseWorkflowInput,
 ): Promise<void> {
-  const workflowFile =
-    input.workflowFile ??
-    process.env.AGENT_PHASE_WORKFLOW_FILE ??
-    "agent-phase.yml";
+  const workflowFile = input.workflowFile ?? "agent-phase.yml";
 
   let ref = input.ref;
   if (!ref) {
@@ -604,9 +600,6 @@ export async function dispatchAgentPhaseWorkflow(
   }
   if (input.reviewInstructions != null && input.reviewInstructions !== "") {
     inputs.review_instructions = input.reviewInstructions;
-  }
-  if (input.chainCodeReview) {
-    inputs.chain_code_review = "true";
   }
 
   await octokit.actions.createWorkflowDispatch({
@@ -1490,21 +1483,23 @@ export async function resolvePullRequestReviewThread(
 
 export function formatReviewThreadsForPrompt(
   threads: PullRequestReviewThread[],
+  options?: { includeBody?: boolean },
 ): string {
   if (threads.length === 0) {
     return "(no open review threads in scope)";
   }
+  const includeBody = options?.includeBody ?? true;
   return threads
     .map((thread) => {
       const root = thread.comments[0];
       const path = root?.path ?? "(no path)";
       const line = root?.line != null ? ` line ${root.line}` : "";
       const author = root?.authorLogin ?? "unknown";
-      const body = (root?.body ?? "").trim();
+      const body = includeBody ? `\n${(root?.body ?? "").trim()}` : "";
       const outdated = thread.isOutdated ? " outdated" : "";
       const rootId =
         root?.id != null && root.id > 0 ? ` rootCommentId=${root.id}` : "";
-      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated})${rootId} ---\n${body}`;
+      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated})${rootId} ---${body}`;
     })
     .join("\n\n");
 }

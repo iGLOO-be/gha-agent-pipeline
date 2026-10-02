@@ -503,6 +503,29 @@ describe("tools/github", () => {
       expect(out).toContain("PRRT_abc");
       expect(out).toContain("src/a.ts line 3");
       expect(out).toContain("Use const");
+
+      const withoutBody = formatReviewThreadsForPrompt(
+        [
+          {
+            id: "PRRT_abc",
+            isResolved: false,
+            isOutdated: false,
+            comments: [
+              {
+                id: 42,
+                body: "Use const",
+                path: "src/a.ts",
+                line: 3,
+                authorLogin: "github-actions[bot]",
+              },
+            ],
+          },
+        ],
+        { includeBody: false },
+      );
+      expect(withoutBody).toContain("PRRT_abc");
+      expect(withoutBody).toContain("rootCommentId=42");
+      expect(withoutBody).not.toContain("Use const");
     });
   });
 

@@ -15,36 +15,12 @@ vi.mock("./tools/github.js", async (importOriginal) => {
 import {
   chainCodeReviewAfterImplement,
   chainCodeReviewAfterReviewFix,
-  parseChainCodeReviewFromSlashText,
   shouldChainCodeReviewAfterImplement,
   shouldChainCodeReviewAfterReviewFix,
-  stripChainCodeReviewSlashFlags,
 } from "./code-review-chain.js";
 
 describe("code-review-chain", () => {
-  it("detects slash chain flags", () => {
-    expect(parseChainCodeReviewFromSlashText("/agent fix --recheck")).toBe(
-      true,
-    );
-    expect(
-      parseChainCodeReviewFromSlashText("/agent implement +code-review"),
-    ).toBe(true);
-    expect(
-      parseChainCodeReviewFromSlashText("/agent implement --code-review"),
-    ).toBe(true);
-    expect(parseChainCodeReviewFromSlashText("/agent implement")).toBe(false);
-  });
-
-  it("strips chain flags from feedback", () => {
-    expect(stripChainCodeReviewSlashFlags("/agent fix --recheck please")).toBe(
-      "/agent fix please",
-    );
-    expect(stripChainCodeReviewSlashFlags("implement +code-review now")).toBe(
-      "implement now",
-    );
-  });
-
-  it("chains review-fix when env, config, or slash flag is set", () => {
+  it("chains review-fix when env or config is set", () => {
     const config = {
       ...loadAgentConfig(),
       review_fix: { follow_up: { code_review: false } },
@@ -62,11 +38,6 @@ describe("code-review-chain", () => {
         },
         {},
       ),
-    ).toBe(true);
-    expect(
-      shouldChainCodeReviewAfterReviewFix(config, {
-        reviewFeedback: "please --recheck",
-      }),
     ).toBe(true);
     expect(shouldChainCodeReviewAfterReviewFix(config, {})).toBe(false);
   });
@@ -118,7 +89,6 @@ describe("code-review-chain", () => {
         issueNumber: 1,
         prNumber: 2,
         agentBranch: "agent/1-slug",
-        reviewFeedback: "fix",
       });
 
       expect(dispatchMock).toHaveBeenCalledWith(
@@ -170,7 +140,6 @@ describe("code-review-chain", () => {
         issueNumber: 1,
         prNumber: 2,
         agentBranch: "agent/1-slug",
-        reviewFeedback: "fix",
       });
 
       expect(dispatchMock).not.toHaveBeenCalled();

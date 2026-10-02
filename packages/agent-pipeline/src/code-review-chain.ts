@@ -2,41 +2,22 @@ import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "./config.js";
 import { dispatchAgentPhaseWorkflow } from "./tools/github.js";
 
-/** Slash flags that request a follow-up /agent code-review after implement or review-fix. */
-export function parseChainCodeReviewFromSlashText(text: string): boolean {
-  return (
-    /--recheck\b/i.test(text) ||
-    /\+code-review\b/i.test(text) ||
-    /--code-review\b/i.test(text)
-  );
-}
-
-export function stripChainCodeReviewSlashFlags(text: string): string {
-  return text
-    .replace(/--recheck\b/gi, "")
-    .replace(/\+code-review\b/gi, "")
-    .replace(/--code-review\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
+/**
+ * Slash flags (`--recheck` / `+code-review` / `--code-review`) are detected and
+ * stripped in the workflow (`dispatch.yml`), which sets `chain_code_review`.
+ * The runtime only reads the env + config signals, so review-fix here must not
+ * re-parse `REVIEW_FEEDBACK` (it also contains appended review bodies/comments).
+ */
 export function shouldChainCodeReviewAfterReviewFix(
   config: AgentConfig,
   options: {
     chainCodeReviewEnv?: string;
-    reviewFeedback?: string;
   },
 ): boolean {
   if (options.chainCodeReviewEnv === "true") {
     return true;
   }
   if (config.review_fix?.follow_up?.code_review === true) {
-    return true;
-  }
-  if (
-    options.reviewFeedback &&
-    parseChainCodeReviewFromSlashText(options.reviewFeedback)
-  ) {
     return true;
   }
   return false;
@@ -105,13 +86,11 @@ export async function chainCodeReviewAfterReviewFix(
     issueNumber: number;
     prNumber: number;
     agentBranch: string;
-    reviewFeedback: string;
   },
 ): Promise<void> {
   if (
     !shouldChainCodeReviewAfterReviewFix(config, {
       chainCodeReviewEnv: process.env.REVIEW_FIX_CHAIN_CODE_REVIEW,
-      reviewFeedback: params.reviewFeedback,
     })
   ) {
     return;

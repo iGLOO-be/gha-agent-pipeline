@@ -101,12 +101,12 @@ jobs:
             }
 
             // Keep flags in sync with packages/agent-pipeline/src/code-review-chain.ts
-            function wantsChainCodeReviewFromSlash(body) {
-              return (
-                /--recheck\b/i.test(body) ||
-                /\+code-review\b/i.test(body) ||
-                /--code-review\b/i.test(body)
-              )
+            function wantsChainCodeReviewFromSlash(body, phase) {
+              if (/\+code-review\b/i.test(body) || /--code-review\b/i.test(body)) {
+                return true
+              }
+              // `--recheck` is the review-fix spelling; implement documents `+code-review` / `--code-review`.
+              return phase === 'review-fix' && /--recheck\b/i.test(body)
             }
 
             function stripChainCodeReviewSlashFlags(body) {
@@ -421,7 +421,7 @@ jobs:
                 }
 
                 const rawFeedback = body.replace('/agent fix', '').trim() || body
-                const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback)
+                const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
                 const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
                 const reviewFeedback = await appendPrReviewComments(
                   resolved.prNumber,
@@ -493,7 +493,8 @@ jobs:
 
               const question = phase === 'ask' ? body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.' : undefined
               const chainCodeReview =
-                phase === 'implement' && wantsChainCodeReviewFromSlash(body)
+                phase === 'implement' &&
+                wantsChainCodeReviewFromSlash(body, 'implement')
 
               const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
               const res = await fetch(dispatchUrl, {
@@ -558,7 +559,7 @@ jobs:
               }
 
               const rawFeedback = body.replace('/agent fix', '').trim() || body
-              const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback)
+              const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
               const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
 
               let reviewComments = []
