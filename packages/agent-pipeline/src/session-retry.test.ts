@@ -2,14 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { IMPLEMENT_MODEL, REVIEW_FIX_MODEL } from "./config.js";
 import {
   AgentSessionError,
+  getSessionContinueMaxAttempts,
   getSessionMaxAttempts,
   getSessionRetryBaseDelayMs,
   isRetriableSessionFinishReason,
+  isSessionTurnFailure,
   resolvePhaseModel,
+  SESSION_CONTINUE_USER_PROMPT,
 } from "./session-retry.js";
 
 const ENV_KEYS = [
   "AGENT_SESSION_MAX_ATTEMPTS",
+  "AGENT_SESSION_CONTINUE_MAX_ATTEMPTS",
   "AGENT_SESSION_RETRY_BASE_DELAY_MS",
   "AGENT_MODEL_PLAN",
   "AGENT_MODEL_IMPLEMENT",
@@ -48,6 +52,47 @@ describe("session-retry", () => {
       expect(isRetriableSessionFinishReason("mistake_limit")).toBe(false);
       expect(isRetriableSessionFinishReason("max_iterations")).toBe(false);
     });
+  });
+
+  describe("isSessionTurnFailure", () => {
+    it("treats missing result as failure", () => {
+      expect(isSessionTurnFailure(undefined)).toBe(true);
+      expect(isSessionTurnFailure(null)).toBe(true);
+    });
+
+    it("treats error and aborted as failure", () => {
+      expect(isSessionTurnFailure({ finishReason: "error" })).toBe(true);
+      expect(isSessionTurnFailure({ finishReason: "aborted" })).toBe(true);
+    });
+
+    it("does not treat completed as failure", () => {
+      expect(isSessionTurnFailure({ finishReason: "completed" })).toBe(false);
+    });
+  });
+
+  describe("getSessionContinueMaxAttempts", () => {
+    it("defaults to 2", () => {
+      expect(getSessionContinueMaxAttempts()).toBe(2);
+    });
+
+    it("parses a valid override", () => {
+      process.env.AGENT_SESSION_CONTINUE_MAX_ATTEMPTS = "1";
+      expect(getSessionContinueMaxAttempts()).toBe(1);
+    });
+
+    it("allows zero to disable in-session continue", () => {
+      process.env.AGENT_SESSION_CONTINUE_MAX_ATTEMPTS = "0";
+      expect(getSessionContinueMaxAttempts()).toBe(0);
+    });
+
+    it("falls back when out of range", () => {
+      process.env.AGENT_SESSION_CONTINUE_MAX_ATTEMPTS = "99";
+      expect(getSessionContinueMaxAttempts()).toBe(2);
+    });
+  });
+
+  it("exposes a continue prompt for transient upstream failures", () => {
+    expect(SESSION_CONTINUE_USER_PROMPT).toMatch(/transient provider error/i);
   });
 
   describe("getSessionMaxAttempts", () => {
