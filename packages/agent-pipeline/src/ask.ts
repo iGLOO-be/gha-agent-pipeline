@@ -10,7 +10,11 @@ import {
   prepareCommandRuntime,
 } from "./command-runtime.js";
 import { reportPhaseFailure } from "./report-failure.js";
-import { runAgentMain, runAgentSession } from "./runtime.js";
+import {
+  runAgentMain,
+  runAgentSession,
+  type AgentSessionResult,
+} from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
   appendRunFrictionStepSummary,
@@ -20,6 +24,7 @@ import { formatPhaseCompletionMarkdown } from "./phase-report.js";
 import {
   AGENT_COMMENT_MARKERS,
   createOctokit,
+  extractAgentAnswer,
   formatCommentsForPrompt,
   prependAgentMarker,
   readComments,
@@ -28,6 +33,8 @@ import {
 } from "./tools/github.js";
 import { createAskTools, type AnswerCommentTracker } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
+
+const MAX_ASK_ANSWER_ATTEMPTS = 2;
 
 async function main() {
   const env = loadAskEnv();
@@ -61,20 +68,32 @@ async function main() {
       ? `\nPull request: #${env.PR_NUMBER} — use readPrComments to read the PR discussion.`
       : "";
 
-    const session = await runAgentSession({
-      phase: cmd.runtimePhase,
-      modelId: cmd.modelId,
-      systemPrompt: cmd.systemPrompt,
-      tools,
-      runFriction,
-      sessionMetadata: {
+    let session: AgentSessionResult | undefined;
+    for (
+      let answerAttempt = 1;
+      answerAttempt <= MAX_ASK_ANSWER_ATTEMPTS;
+      answerAttempt++
+    ) {
+      const retryNote =
+        answerAttempt > 1
+          ? "\n\nIMPORTANT: Your previous run did not post an answer (submitAnswer was not called). You MUST call submitAnswer with markdown starting with ## Agent answer before finishing.\n"
+          : "";
+
+      session = await runAgentSession({
         phase: cmd.runtimePhase,
-        commandId: cmd.commandId,
-        issueNumber: env.ISSUE_NUMBER,
-        repository: env.GITHUB_REPOSITORY,
-        prNumber: env.PR_NUMBER,
-      },
-      prompt: `Answer the following question about GitHub issue #${env.ISSUE_NUMBER} in ${env.GITHUB_REPOSITORY}.
+        modelId: cmd.modelId,
+        systemPrompt: cmd.systemPrompt,
+        tools,
+        runFriction,
+        sessionMetadata: {
+          phase: cmd.runtimePhase,
+          commandId: cmd.commandId,
+          issueNumber: env.ISSUE_NUMBER,
+          repository: env.GITHUB_REPOSITORY,
+          prNumber: env.PR_NUMBER,
+          askAnswerAttempt: answerAttempt,
+        },
+        prompt: `Answer the following question about GitHub issue #${env.ISSUE_NUMBER} in ${env.GITHUB_REPOSITORY}.
 
 Issue title: ${issue.title}
 Issue body:
@@ -83,19 +102,37 @@ ${issue.body ?? "(empty)"}
 Issue conversation:
 ${conversation}
 ${prContext}
-Question: ${question}`,
-    });
+Question: ${question}${retryNote}`,
+      });
+
+      try {
+        await ensureAnswerCommentPosted(
+          octokit,
+          owner,
+          repo,
+          env.ISSUE_NUMBER,
+          session.outputText,
+          answerComment,
+        );
+        break;
+      } catch (error) {
+        if (answerAttempt === MAX_ASK_ANSWER_ATTEMPTS) {
+          throw error;
+        }
+        console.warn(
+          `Ask run did not post an answer (attempt ${answerAttempt}/${MAX_ASK_ANSWER_ATTEMPTS}); retrying session.`,
+        );
+        answerComment.posted = false;
+        answerComment.id = undefined;
+        answerComment.body = undefined;
+      }
+    }
 
     appendRunFrictionStepSummary(runFriction, "ask");
 
-    await ensureAnswerCommentPosted(
-      octokit,
-      owner,
-      repo,
-      env.ISSUE_NUMBER,
-      session.outputText,
-      answerComment,
-    );
+    if (!session) {
+      throw new Error("Ask agent did not run a session");
+    }
 
     // Build a unified comment: marker + Question + answer + completion block
     const completionBlock = formatPhaseCompletionMarkdown({
@@ -162,30 +199,26 @@ async function ensureAnswerCommentPosted(
     return;
   }
 
-  // Fallback: parse outputText for ## Agent answer
-  const answerMatch = outputText.match(
-    /(## Agent answer[\s\S]*?)(?=\n##\s|\n---|\n<!--|$)/,
-  );
-  if (answerMatch) {
-    const body = answerMatch[1].trim();
-    const { postComment } = await import("./tools/github.js");
-    const markedBody = prependAgentMarker(body, AGENT_COMMENT_MARKERS.ask);
-    const comment = await postComment(
-      octokit,
-      owner,
-      repo,
-      issueNumber,
-      markedBody,
-    );
-    answerComment.posted = true;
-    answerComment.id = comment.id;
-    answerComment.body = markedBody;
-    console.log("Posted answer comment from agent output fallback.");
-  } else {
-    console.warn(
-      "Agent session ended without submitAnswer and no ## Agent answer found in output.",
+  const answerBody = extractAgentAnswer(outputText);
+  if (!answerBody) {
+    throw new Error(
+      "Ask agent finished without posting an answer comment or producing answer output",
     );
   }
+
+  const { postComment } = await import("./tools/github.js");
+  const markedBody = prependAgentMarker(answerBody, AGENT_COMMENT_MARKERS.ask);
+  const comment = await postComment(
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    markedBody,
+  );
+  answerComment.posted = true;
+  answerComment.id = comment.id;
+  answerComment.body = markedBody;
+  console.log("Posted answer comment from agent output fallback.");
 }
 
 const env = loadAskEnv();
