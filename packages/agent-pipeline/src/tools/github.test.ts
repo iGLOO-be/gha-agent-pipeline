@@ -687,6 +687,19 @@ describe("tools/github", () => {
         parseMergeRiskLevel("## Walkthrough\n\nonly walkthrough"),
       ).toBeNull();
     });
+
+    it("anchors the level so justification words cannot win", () => {
+      expect(
+        parseMergeRiskLevel(
+          "## Merge risk\n\n**Moderate** — minimal blast radius.",
+        ),
+      ).toBe("medium");
+      expect(
+        parseMergeRiskLevel(
+          "## Merge risk\n\n**High** — minimal blast radius, low chance of breakage.",
+        ),
+      ).toBe("high");
+    });
   });
 
   describe("appendRiskScoreSection", () => {

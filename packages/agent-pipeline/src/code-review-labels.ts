@@ -6,13 +6,11 @@ import {
   parseMergeRiskLevel,
   riskLabelEnsureOptions,
   type PullRequestReviewEvent,
-  type RiskLevel,
 } from "./tools/github.js";
 
 export type CodeReviewLabelsApplyTo = "pr" | "issue" | "both";
 
 export type ResolvedCodeReviewMergeRiskLabels = {
-  enabled: true;
   low: string;
   medium: string;
   high: string;
@@ -38,10 +36,6 @@ export function resolveCodeReviewLabelsConfig(
   const mergeRiskBlock = labels.merge_risk;
   const mergeRiskEnabled = mergeRiskBlock?.enabled ?? true;
 
-  if (!statusOk && !statusPending && !mergeRiskBlock) {
-    return null;
-  }
-
   const resolved: ResolvedCodeReviewLabelsConfig = {
     applyTo: labels.apply_to ?? "pr",
     statusOk,
@@ -50,7 +44,6 @@ export function resolveCodeReviewLabelsConfig(
 
   if (mergeRiskBlock && mergeRiskEnabled) {
     resolved.mergeRisk = {
-      enabled: true,
       low: mergeRiskBlock.low ?? "agent-risk-low",
       medium: mergeRiskBlock.medium ?? "agent-risk-medium",
       high: mergeRiskBlock.high ?? "agent-risk-high",
@@ -89,13 +82,6 @@ function statusLabelForEvent(
   return config.statusOk ?? null;
 }
 
-function mergeRiskLabelName(
-  level: RiskLevel,
-  mergeRisk: ResolvedCodeReviewMergeRiskLabels,
-): string {
-  return mergeRisk[level];
-}
-
 export async function applyCodeReviewLabels(params: {
   octokit: Octokit;
   owner: string;
@@ -130,22 +116,13 @@ export async function applyCodeReviewLabels(params: {
     : null;
 
   for (const targetNumber of targets) {
-    if (statusLabel && statusSiblingLabels.length > 0) {
+    if (statusLabel) {
       await manageExclusiveLabels(
         octokit,
         owner,
         repo,
         targetNumber,
         statusSiblingLabels,
-        statusLabel,
-      );
-    } else if (statusLabel) {
-      await manageExclusiveLabels(
-        octokit,
-        owner,
-        repo,
-        targetNumber,
-        [statusLabel],
         statusLabel,
       );
     }
@@ -156,14 +133,13 @@ export async function applyCodeReviewLabels(params: {
         labelsConfig.mergeRisk.medium,
         labelsConfig.mergeRisk.high,
       ];
-      const active = mergeRiskLabelName(mergeLevel, labelsConfig.mergeRisk);
       await manageExclusiveLabels(
         octokit,
         owner,
         repo,
         targetNumber,
         names,
-        active,
+        labelsConfig.mergeRisk[mergeLevel],
         riskLabelEnsureOptions,
       );
     }

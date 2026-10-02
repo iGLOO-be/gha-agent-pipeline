@@ -1047,7 +1047,10 @@ export function parseMergeRiskLevel(body: string): RiskLevel | null {
   }
   const stripped = firstLine.replace(/\*\*/g, "");
   for (const { word, level } of MERGE_RISK_LEVEL_WORDS) {
-    if (word.test(stripped)) {
+    // Anchor the level to the start of the (bold-stripped) line so that
+    // justification words such as "minimal blast radius" cannot win over the
+    // actual level.
+    if (new RegExp(`^[-*:]?\\s*${word.source}`, "i").test(stripped)) {
       return level;
     }
   }

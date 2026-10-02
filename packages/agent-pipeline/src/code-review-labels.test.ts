@@ -44,7 +44,6 @@ describe("resolveCodeReviewLabelsConfig", () => {
       configWithLabels({ merge_risk: {} }),
     );
     expect(resolved?.mergeRisk).toEqual({
-      enabled: true,
       low: "agent-risk-low",
       medium: "agent-risk-medium",
       high: "agent-risk-high",
@@ -92,7 +91,6 @@ describe("applyCodeReviewLabels", () => {
         statusOk: "ai-review:ok",
         statusPending: "ai-review:pending",
         mergeRisk: {
-          enabled: true,
           low: "agent-risk-low",
           medium: "agent-risk-medium",
           high: "agent-risk-high",
