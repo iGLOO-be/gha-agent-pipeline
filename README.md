@@ -220,7 +220,7 @@ code_review:
 Optional `code_review.labels` applies GitHub labels after a review is posted (no-op when omitted):
 
 - **Status** — `status.ok` when the review is `COMMENT` (no hard findings); `status.pending` when `REQUEST_CHANGES`. Sibling status labels are removed when both are configured, and a stale status label is cleared when the current review event has no configured label.
-- **Merge risk** — when `merge_risk` is present and `enabled` (default `true`), the runner parses `## Merge risk` (**Minimal** / **Moderate** / **High**) and applies the configured label for that level (defaults: `agent-risk-low`, `agent-risk-medium`, `agent-risk-high`).
+- **Merge risk** — when `merge_risk` is present and `enabled` (default `true`), the runner parses `## Merge risk` (**Minimal** / **Moderate** / **High**) and applies the configured label for that level (defaults: `agent-risk-low`, `agent-risk-medium`, `agent-risk-high`). Sibling risk labels are removed, and a stale risk label is cleared when the review has no parseable level.
 - **apply_to** — `pr` (default), `issue`, or `both`.
 
 ```yaml

@@ -184,6 +184,45 @@ describe("applyCodeReviewLabels", () => {
     expect(removed).toContain("ai-review:ok");
   });
 
+  it("clears a stale merge-risk label when no level parses", async () => {
+    const { calls, octokit } = makeOctokit();
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: {
+        posted: true,
+        event: "COMMENT",
+        body: "no merge risk section",
+      },
+      labelsConfig: {
+        applyTo: "pr",
+        mergeRisk: {
+          low: "agent-risk-low",
+          medium: "agent-risk-medium",
+          high: "agent-risk-high",
+        },
+      },
+    });
+
+    const added = calls.filter((c) => c.method === "issues.addLabels");
+    expect(added).toEqual([]);
+
+    const removed = calls
+      .filter((c) => c.method === "issues.removeLabel")
+      .map((c) => (c.args[0] as { name: string }).name);
+    expect(removed).toEqual(
+      expect.arrayContaining([
+        "agent-risk-low",
+        "agent-risk-medium",
+        "agent-risk-high",
+      ]),
+    );
+  });
+
   it("applies labels only to the issue when apply_to is issue", async () => {
     const { calls, octokit } = makeOctokit();
 

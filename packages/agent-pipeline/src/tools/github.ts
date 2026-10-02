@@ -893,6 +893,31 @@ export async function removeLabelFromIssue(
   return data;
 }
 
+/**
+ * Removes several labels from an issue/PR, tolerating missing labels (404).
+ * Other failures are logged and swallowed so labelling never fails a phase.
+ */
+export async function removeLabelsFromIssue(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labelNames: readonly string[],
+): Promise<void> {
+  await Promise.all(
+    labelNames.map((name) =>
+      removeLabelFromIssue(octokit, owner, repo, issueNumber, name).catch(
+        (error) => {
+          const status = (error as { status?: number }).status;
+          if (status !== 404) {
+            console.warn(`Failed to remove label ${name}:`, error);
+          }
+        },
+      ),
+    ),
+  );
+}
+
 export type ReactionContent =
   "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes";
 
@@ -1087,19 +1112,12 @@ export async function manageExclusiveLabels(
     ),
   );
 
-  await Promise.all(
-    labelNames
-      .filter((name) => name !== activeLabel)
-      .map((name) =>
-        removeLabelFromIssue(octokit, owner, repo, issueNumber, name).catch(
-          (error) => {
-            const status = (error as { status?: number }).status;
-            if (status !== 404) {
-              console.warn(`Failed to remove label ${name}:`, error);
-            }
-          },
-        ),
-      ),
+  await removeLabelsFromIssue(
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    labelNames.filter((name) => name !== activeLabel),
   );
 
   await addLabelToIssue(octokit, owner, repo, issueNumber, activeLabel);

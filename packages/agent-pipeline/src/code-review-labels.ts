@@ -4,7 +4,7 @@ import type { ReviewTracker } from "./tools/index.js";
 import {
   manageExclusiveLabels,
   parseMergeRiskLevel,
-  removeLabelFromIssue,
+  removeLabelsFromIssue,
   riskLabelEnsureOptions,
   type PullRequestReviewEvent,
 } from "./tools/github.js";
@@ -134,17 +134,12 @@ export async function applyCodeReviewLabels(params: {
       // No status label for this event (only one side configured, or an
       // unknown event): clear any stale status label instead of leaving the
       // target looking approved by a previous review.
-      await Promise.all(
-        statusSiblingLabels.map((name) =>
-          removeLabelFromIssue(octokit, owner, repo, targetNumber, name).catch(
-            (error) => {
-              const status = (error as { status?: number }).status;
-              if (status !== 404) {
-                console.warn(`Failed to remove label ${name}:`, error);
-              }
-            },
-          ),
-        ),
+      await removeLabelsFromIssue(
+        octokit,
+        owner,
+        repo,
+        targetNumber,
+        statusSiblingLabels,
       );
     }
 
@@ -163,6 +158,14 @@ export async function applyCodeReviewLabels(params: {
         labelsConfig.mergeRisk[mergeLevel],
         riskLabelEnsureOptions,
       );
+    } else if (labelsConfig.mergeRisk) {
+      // No parseable risk level this round: drop any stale risk label rather
+      // than letting an old `agent-risk-*` contradict the latest review.
+      await removeLabelsFromIssue(octokit, owner, repo, targetNumber, [
+        labelsConfig.mergeRisk.low,
+        labelsConfig.mergeRisk.medium,
+        labelsConfig.mergeRisk.high,
+      ]);
     }
   }
 }
