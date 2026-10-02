@@ -57,3 +57,12 @@ code_review:
   path_filters:
     - "!graphify-out/**"
     - "!pnpm-lock.yaml"
+
+commands:
+  config-audit:
+    extends: ask
+    slash: config-audit
+    description: Explain agent.config.yml options and how this repo wires slash commands.
+    prompts:
+      append_instructions: |
+        Focus on the commands section and consumer dispatch wiring when relevant.

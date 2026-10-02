@@ -1,12 +1,15 @@
 import {
   resolveFixModel,
-  buildPhaseSystemPrompt,
   loadAgentConfig,
   parseRepository,
   resolveFixHeadSha,
   type FixEnvWithBranch,
   type FixPhaseEntry,
 } from "./config.js";
+import {
+  applyCommandGithubTools,
+  prepareCommandRuntime,
+} from "./command-runtime.js";
 import { commitAndPushBranch } from "./git/pr.js";
 import {
   assertLocalMergeResolved,
@@ -63,7 +66,6 @@ PRIORITY: GitHub reports this PR cannot merge into ${baseBranchName} (mergeable_
 export function buildBareFixWorkOrderHint(
   bareFix: boolean,
   hasFailedChecks: boolean,
-  entry: FixPhaseEntry,
 ): string {
   if (!bareFix) {
     return "";
@@ -72,15 +74,11 @@ export function buildBareFixWorkOrderHint(
     return `
 The fix trigger did not include explicit feedback. Failed CI checks are listed below — investigate with readCheckLogs and fix them first. Also address PR review bodies and line comments (including prior /agent code-review output) when they require changes for merge.`;
   }
-  if (entry === "ci-fix") {
-    return `
-No failed checks were preloaded on this SHA. Use readCheckRuns and readCheckLogs if needed to find CI failures.`;
-  }
   return `
 The fix trigger did not include explicit feedback. Treat the PR review bodies and line comments below (including prior /agent code-review output) as the work order. Apply suggested fixes where appropriate; skip judgement-call nits that are not required for merge.`;
 }
 
-async function preloadFailedChecksSummary(
+export async function preloadFailedChecksSummary(
   octokit: ReturnType<typeof createOctokit>,
   owner: string,
   repo: string,
@@ -94,6 +92,8 @@ async function preloadFailedChecksSummary(
       hasFailedChecks: hasFailedCheckRuns(checkRuns),
     };
   } catch (error) {
+    // ci-fix exists to fix failing checks: surface preload failures instead of
+    // silently degrading. The slash entry degrades below.
     if (entry === "ci-fix") {
       throw error;
     }
@@ -240,12 +240,17 @@ export async function runFixPhase(
     const bareFixHint = buildBareFixWorkOrderHint(
       bareFixForHints,
       hasFailedChecks,
+    );
+
+    const cmd = prepareCommandRuntime(
       entry,
+      resolveFixModel(config, entry),
+      config,
     );
 
     const runFriction = createRunFrictionCollector();
     const phaseReportTracker = createPhaseReportTracker();
-    const tools = await withReportRunFrictionTool(
+    let tools = await withReportRunFrictionTool(
       await createFixTools(
         octokit,
         owner,
@@ -257,17 +262,17 @@ export async function runFixPhase(
       ),
       runFriction,
     );
-
-    const modelId = resolveFixModel(config, entry);
+    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
 
     const session = await runAgentSession({
-      phase: entry,
-      modelId,
-      systemPrompt: buildPhaseSystemPrompt(entry, config),
+      phase: cmd.runtimePhase,
+      modelId: cmd.modelId,
+      systemPrompt: cmd.systemPrompt,
       tools,
       runFriction,
       sessionMetadata: {
-        phase: entry,
+        phase: cmd.runtimePhase,
+        commandId: cmd.commandId,
         issueNumber: env.ISSUE_NUMBER,
         prNumber: env.PR_NUMBER,
         headSha,

@@ -1,20 +1,32 @@
-import { loadCiFixEnv, parseRepository } from "./config.js";
+import {
+  CI_FIX_MODEL,
+  loadAgentConfig,
+  loadCiFixEnv,
+  parseRepository,
+} from "./config.js";
+import { prepareCommandRuntime } from "./command-runtime.js";
 import { runFixPhase } from "./fix-phase.js";
-import { runAgentMain } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
+import { runAgentMain } from "./runtime.js";
 import { createOctokit } from "./tools/github.js";
+
+const env = loadCiFixEnv();
+const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
+const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootCmd = prepareCommandRuntime(
+  "ci-fix",
+  CI_FIX_MODEL,
+  loadAgentConfig(),
+);
 
 async function main() {
   await runFixPhase("ci-fix", env);
 }
 
-const env = loadCiFixEnv();
-const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
-const octokit = createOctokit(env.GITHUB_TOKEN);
-
 runAgentMain(() =>
   runAgentPhase({
-    phase: "ci-fix",
+    phase: bootCmd.runtimePhase,
+    displayLabel: bootCmd.displayLabel,
     octokit,
     owner,
     repo,

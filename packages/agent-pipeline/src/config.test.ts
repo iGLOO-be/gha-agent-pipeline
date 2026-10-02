@@ -17,6 +17,7 @@ import {
   loadReviewFixEnv,
   parseRepository,
   PLAN_MODEL,
+  resolveFixHeadSha,
   resolveFixModel,
 } from "./config.js";
 import { FILE_EDIT_SYSTEM_HINT } from "./prompts/file-edits.js";
@@ -143,6 +144,32 @@ describe("config", () => {
       const config = loadAgentConfig(configPath);
       expect(resolveFixModel(config, "ci-fix")).toBe("model/ci");
       expect(resolveFixModel(config, "review-fix")).toBe("model/review");
+    });
+  });
+  describe("resolveFixHeadSha", () => {
+    function stubOctokit(headSha: string) {
+      return {
+        pulls: {
+          get: async () => ({ data: { head: { sha: headSha } } }),
+        },
+      };
+    }
+
+    it("returns the provided HEAD_SHA when non-empty", async () => {
+      const octokit = stubOctokit("pr-head");
+      expect(
+        await resolveFixHeadSha(octokit as never, "o", "r", 1, " abc123 "),
+      ).toBe("abc123");
+    });
+
+    it("falls back to the PR head when HEAD_SHA is empty or undefined", async () => {
+      const octokit = stubOctokit("pr-head");
+      expect(await resolveFixHeadSha(octokit as never, "o", "r", 1)).toBe(
+        "pr-head",
+      );
+      expect(await resolveFixHeadSha(octokit as never, "o", "r", 1, "  ")).toBe(
+        "pr-head",
+      );
     });
   });
 

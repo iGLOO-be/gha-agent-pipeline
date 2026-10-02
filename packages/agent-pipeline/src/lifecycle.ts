@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { AgentPhase } from "./config.js";
+import { formatCommandDisplayLabel } from "./commands/resolve.js";
 import {
   addLabelToIssue,
   addReactionToIssueComment,
@@ -32,9 +33,14 @@ export function buildStartupComment(
   phase: AgentPhase,
   targetType: "issue" | "pr",
   targetNumber: number,
+  displayLabel?: string,
 ): string {
   const runUrl = buildRunUrl();
-  const phaseLabel = PHASE_LABELS[phase] ?? phase;
+  const phaseLabel =
+    displayLabel ??
+    (phase in PHASE_LABELS
+      ? PHASE_LABELS[phase]
+      : formatCommandDisplayLabel(phase));
   const targetLabel =
     targetType === "pr" ? `PR #${targetNumber}` : `issue #${targetNumber}`;
   const runLink = runUrl
@@ -173,6 +179,7 @@ export async function reactToAgentTrigger(
 
 export type RunAgentPhaseOptions = {
   phase: AgentPhase;
+  displayLabel?: string;
   octokit: Octokit;
   owner: string;
   repo: string;
@@ -184,7 +191,16 @@ export type RunAgentPhaseOptions = {
 export async function runAgentPhase(
   options: RunAgentPhaseOptions,
 ): Promise<void> {
-  const { phase, octokit, owner, repo, issueNumber, prNumber, main } = options;
+  const {
+    phase,
+    displayLabel,
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    prNumber,
+    main,
+  } = options;
   const startupTarget = resolveStartupTarget(phase, issueNumber, prNumber);
 
   try {
@@ -202,7 +218,12 @@ export async function runAgentPhase(
       owner,
       repo,
       startupTarget.number,
-      buildStartupComment(phase, startupTarget.type, startupTarget.number),
+      buildStartupComment(
+        phase,
+        startupTarget.type,
+        startupTarget.number,
+        displayLabel,
+      ),
     );
 
     await clearAgentResumeLabels(octokit, owner, repo, {

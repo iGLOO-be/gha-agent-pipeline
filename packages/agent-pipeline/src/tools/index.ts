@@ -700,11 +700,3 @@ export const AGENT_TOOL_NAMES = [
   "postComment",
   "addLabel",
 ] as const;
-
-export const CI_FIX_TOOL_NAMES = [
-  ...AGENT_TOOL_NAMES,
-  "readCheckRuns",
-  "readCheckLogs",
-  "getCache",
-  "setCache",
-] as const;

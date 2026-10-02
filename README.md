@@ -206,6 +206,18 @@ When bumping `dispatch.yml` to a release that includes `/agent code-review`, add
 
 Optional `code_review` block in `.github/agent.config.yml` controls which changed files the review agent focuses on and path-specific instructions (CodeRabbit-style `path_filters` / `path_instructions`). Values in **agent.config take priority**; missing keys fall back to `.coderabbit.yaml` at the repo root (`reviews.path_filters`, `reviews.path_instructions`) when present.
 
+### Custom slash commands (`commands` in agent.config)
+
+Declare additional `/agent <slash>` commands (or override built-ins) under `commands`. Each custom command must set `extends` to a built-in runtime (`plan`, `implement`, `yolo`, `ci-fix`, `review-fix`, `ask`, `code-review`) so git/PR orchestration stays the same while you customize prompts, models, GitHub tool allowlists, and targets (`issue` / `pr`).
+
+List enabled commands as JSON for dispatch wiring:
+
+```bash
+pnpm exec agent-pipeline list-commands --format json
+```
+
+Dogfood example: `/agent config-audit` on an issue (extends `ask`).
+
 ```yaml
 code_review:
   path_filters:
@@ -239,7 +251,7 @@ After the consumer workflows are on **`main`**, comment on an issue or PR:
 - `/agent plan` — explore and post a plan
 - `/agent implement` — implement from the plan and open a PR
 - `/agent yolo` — implement directly from the issue
-- `/agent fix` — on an agent PR (comment or submitted review). One fix session covers merge conflicts, **failing CI checks** (preloaded when Checks read is granted + `readCheckRuns` / `readCheckLogs`), and review feedback. A bare `/agent fix` prioritizes open CI failures when checks are red, otherwise loads PR review bodies and inline comments (human and bot). If check preload fails (missing Checks permission), the slash fix still runs and the agent can call `readCheckRuns` when permitted. A PR comment containing `<!-- agent-blocked -->` skips any fix run (slash or CI auto-fix).
+- `/agent fix` — on an agent PR (comment or submitted review). One fix session covers merge conflicts, **failing CI checks** (preloaded when Checks read is granted + `readCheckRuns` / `readCheckLogs`), and review feedback. A bare `/agent fix` prioritizes open CI failures when checks are red, otherwise loads PR review bodies and inline comments (human and bot). If check preload fails (missing Checks permission), the slash fix still runs and the agent can call `readCheckRuns` when permitted. A PR comment containing `<!-- agent-blocked -->` skips any fix run (slash or CI auto-fix). Set `models.fix` to use one model for both `/agent fix` and CI auto-fix; without it, `models.review-fix` and `models.ci-fix` are used per entry.
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
 - `/agent ask` — read-only Q&A on an issue or PR
 
