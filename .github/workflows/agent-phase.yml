@@ -55,7 +55,11 @@ on:
         required: false
         type: string
       chain_code_review:
-        description: When true, review-fix dispatches a follow-up code-review after success
+        description: When true, implement or review-fix dispatches a follow-up code-review after success
+        required: false
+        type: string
+      implement_trigger_text:
+        description: Slash command body for implement (used for optional chain detection)
         required: false
         type: string
 
@@ -102,6 +106,7 @@ jobs:
           question: ${{ inputs.question }}
           review_instructions: ${{ inputs.review_instructions }}
           chain_code_review: ${{ inputs.chain_code_review }}
+          implement_trigger_text: ${{ inputs.implement_trigger_text }}
           node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

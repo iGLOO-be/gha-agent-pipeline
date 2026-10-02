@@ -36,6 +36,7 @@ import {
   formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
 } from "./phase-report.js";
+import { chainCodeReviewAfterImplement } from "./code-review-chain.js";
 
 async function main() {
   const env = loadAgentEnv();
@@ -194,6 +195,13 @@ Branch: ${branch}`,
       console.warn("Failed to add agent-implemented label:", error);
       // Continue execution even if label addition fails
     }
+
+    await chainCodeReviewAfterImplement(octokit, owner, repo, config, {
+      issueNumber: env.ISSUE_NUMBER,
+      prNumber: pr.number,
+      agentBranch: branch,
+      triggerText: process.env.IMPLEMENT_TRIGGER_TEXT,
+    });
 
     console.log(`\nPR created: ${pr.url}`);
   } catch (error) {

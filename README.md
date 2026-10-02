@@ -237,7 +237,7 @@ Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the trigg
 After the consumer workflows are on **`main`**, comment on an issue or PR:
 
 - `/agent plan` — explore and post a plan
-- `/agent implement` — implement from the plan and open a PR
+- `/agent implement` — implement from the plan and open a PR. Optional follow-up code-review: `implement.follow_up.code_review` in config, or `/agent implement +code-review` / `--code-review` on the slash command.
 - `/agent yolo` — implement directly from the issue
 - `/agent fix` — on an agent PR (comment or submitted review). A bare `/agent fix` after `/agent code-review` loads the latest PR review body and all inline review comments (human and bot) into the review-fix session. The agent replies on addressed review threads (`replyToReviewComment`) and resolves threads when the fix is clear. Optional follow-up: `/agent fix --recheck` or `/agent fix +code-review`, or `review_fix.follow_up.code_review: true` in `.github/agent.config.yml`, dispatches `/agent code-review` after a successful fix.
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review

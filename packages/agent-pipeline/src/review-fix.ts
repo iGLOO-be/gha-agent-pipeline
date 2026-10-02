@@ -39,7 +39,7 @@ import {
   formatPhaseCompletionMarkdown,
   resolveAgentCommitMessage,
 } from "./phase-report.js";
-import { chainCodeReviewAfterReviewFix } from "./review-fix-chain.js";
+import { chainCodeReviewAfterReviewFix } from "./code-review-chain.js";
 import {
   buildReviewFixThreadContext,
   formatReviewFixThreadPromptSection,

@@ -100,14 +100,19 @@ jobs:
               })
             }
 
-            function wantsChainCodeReviewAfterFix(feedback) {
-              return /--recheck\b/i.test(feedback) || /\+code-review\b/i.test(feedback)
+            function wantsChainCodeReviewFromSlash(body) {
+              return (
+                /--recheck\b/i.test(body) ||
+                /\+code-review\b/i.test(body) ||
+                /--code-review\b/i.test(body)
+              )
             }
 
-            function stripReviewFixChainFlags(feedback) {
-              return feedback
+            function stripChainCodeReviewSlashFlags(body) {
+              return body
                 .replace(/--recheck\b/gi, '')
                 .replace(/\+code-review\b/gi, '')
+                .replace(/--code-review\b/gi, '')
                 .replace(/\s+/g, ' ')
                 .trim()
             }
@@ -415,8 +420,8 @@ jobs:
                 }
 
                 const rawFeedback = body.replace('/agent fix', '').trim() || body
-                const chainCodeReview = wantsChainCodeReviewAfterFix(rawFeedback)
-                const feedback = stripReviewFixChainFlags(rawFeedback)
+                const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback)
+                const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
                 const reviewFeedback = await appendPrReviewComments(
                   resolved.prNumber,
                   feedback
@@ -486,6 +491,12 @@ jobs:
               })
 
               const question = phase === 'ask' ? body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.' : undefined
+              const chainCodeReview =
+                phase === 'implement' && wantsChainCodeReviewFromSlash(body)
+              const implementTriggerText =
+                phase === 'implement'
+                  ? stripChainCodeReviewSlashFlags(body.replace('/agent implement', '').trim() || body)
+                  : undefined
 
               const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
               const res = await fetch(dispatchUrl, {
@@ -502,7 +513,11 @@ jobs:
                     comment_id: commentId,
                     issue_number: issueNumber,
                     author_association: authorAssociation,
-                    ...(question != null ? { question } : {})
+                    ...(question != null ? { question } : {}),
+                    ...(chainCodeReview ? { chain_code_review: 'true' } : {}),
+                    ...(implementTriggerText != null && implementTriggerText !== ''
+                      ? { implement_trigger_text: implementTriggerText }
+                      : {})
                   }
                 })
               })
@@ -549,8 +564,8 @@ jobs:
               }
 
               const rawFeedback = body.replace('/agent fix', '').trim() || body
-              const chainCodeReview = wantsChainCodeReviewAfterFix(rawFeedback)
-              const feedback = stripReviewFixChainFlags(rawFeedback)
+              const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback)
+              const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
 
               let reviewComments = []
               try {

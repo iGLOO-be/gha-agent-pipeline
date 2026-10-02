@@ -219,6 +219,15 @@ export const agentConfigSchema = z
           .default(() => ({ code_review: false })),
       })
       .optional(),
+    implement: z
+      .object({
+        follow_up: z
+          .object({
+            code_review: z.boolean().default(false),
+          })
+          .default(() => ({ code_review: false })),
+      })
+      .optional(),
   })
   .transform((data) => ({
     version: data.version,
@@ -234,6 +243,7 @@ export const agentConfigSchema = z
     openrouter: data.openrouter,
     code_review: data.code_review,
     review_fix: data.review_fix,
+    implement: data.implement,
   }));
 
 export type AgentConfig = z.infer<typeof agentConfigSchema>;

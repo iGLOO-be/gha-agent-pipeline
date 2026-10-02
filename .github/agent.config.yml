@@ -61,3 +61,7 @@ code_review:
 review_fix:
   follow_up:
     code_review: true
+
+implement:
+  follow_up:
+    code_review: true
