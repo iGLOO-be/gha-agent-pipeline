@@ -208,7 +208,7 @@ describe("phase-report", () => {
       });
 
       expect(output).toContain("<!-- agent-phase-report -->");
-      expect(output).toContain("## Agent phase report (CI Fix)");
+      expect(output).toContain("## Agent phase report (Fix)");
       expect(output).toContain("Pushed CI fix commit.");
       expect(output).toContain("Fixed lint issues.");
       expect(output).toContain("### Test plan");
@@ -235,7 +235,7 @@ describe("phase-report", () => {
         sessionId: "sess-2",
       });
 
-      expect(output).toContain("## Agent phase report (Review Fix)");
+      expect(output).toContain("## Agent phase report (Fix)");
       expect(output).toContain("Addressed feedback.");
       expect(output).not.toContain("### Test plan");
       expect(output).toContain("### Run metrics");
@@ -299,7 +299,7 @@ describe("phase-report", () => {
         runFriction: collector,
       });
 
-      expect(output).toContain("## Agent phase report (CI Fix)");
+      expect(output).toContain("## Agent phase report (Fix)");
       expect(output).toContain("Nothing to fix.");
       expect(output).not.toContain("### Run metrics");
       expect(output).toContain("### Run friction");

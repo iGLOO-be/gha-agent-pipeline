@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import type { Octokit } from "@octokit/rest";
 import { z } from "zod";
 import { validateCommandRegistry } from "./commands/resolve.js";
 import type { CommandOverrideConfig } from "./commands/types.js";
@@ -88,6 +89,7 @@ export const agentConfigSchema = z
       .object({
         plan: z.string().min(1).default("deepseek/deepseek-v4-pro"),
         implement: z.string().min(1).default("moonshotai/kimi-k2.7-code"),
+        fix: z.string().min(1).optional(),
         "ci-fix": z.string().min(1).default("moonshotai/kimi-k2.7-code"),
         "review-fix": z.string().min(1).default("moonshotai/kimi-k2.7-code"),
         ask: z.string().min(1).default("deepseek/deepseek-v4-pro"),
@@ -467,14 +469,23 @@ Do not commit, push, or open a PR yourself. The runner will handle git operation
 
 Never announce completion or post comments on the GitHub issue. The runner will post the summary comment after pushing and opening the PR.`;
 
-const ciFixPromptBody = `The pull request failed CI. Fix the code so lint and build pass.
+function fixPromptBody(config: AgentConfig): string {
+  return `The pull request may have merge conflicts, failing CI checks, and/or review feedback. Update the code on the existing branch to address all of them.
 
-Workflow:
-1. Use readCheckRuns and readCheckLogs to understand failures.
-2. Use list_files, read_files, search_codebase, editor, and apply_patch to fix the code.
-3. Keep changes minimal and focused on CI failures.
-4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+Workflow (priority order):
+1. If the merge context reports conflicts, resolve them FIRST using read_files and editor. Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>).
+2. Use readCheckRuns and readCheckLogs to understand CI failures; fix lint, build, and tests. Keep CI fixes minimal.
+3. Read review feedback, PR review bodies, referenced review comments, and PR discussion injected in the user prompt. Use readPullRequestReviewComments to re-fetch line comments when needed.
+4. Do not use fetch_web_content for github.com pull request or discussion URLs on this repository — they require authentication and are already loaded by the runner when possible.
+5. Use list_files, read_files, search_codebase, editor, and apply_patch for code changes.
+6. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+7. After code changes, reply on each addressed inline review thread: call \`replyToReviewComment\` with the root review comment id (\`rootCommentId\` from the thread context). When the fix is clear, call \`resolveReviewThreads\` with the GraphQL thread id (including outdated threads). Skip threads you did not change or that remain open questions.
 ${GIT_SHALLOW_WORKSPACE_HINT}
+
+Merge handling:
+- The runner synchronizes the branch with ${config.git.base_branch} using the default "${config.git.merge_strategy}" strategy before this session.
+- Use getMergeStatus at any time to re-check the local conflict file list and the PR mergeable state.
+- Do not run git commands yourself and do not abort the merge.
 
 ${FILE_EDIT_SYSTEM_HINT}
 
@@ -482,9 +493,10 @@ ${RUN_FRICTION_SYSTEM_HINT}
 
 ${SUBMIT_PHASE_REPORT_PROMPT}
 
-Optionally pass \`commitMessage\` in \`submitPhaseReport\` (single-line conventional commit subject). If omitted, the runner uses \`fix(ci): address failures for PR #<number>\`.
+Optionally pass \`commitMessage\` in \`submitPhaseReport\` (single-line conventional commit subject). If omitted, the runner uses a default \`fix(...)\` subject.
 
 Do not commit or push. The runner will handle git operations after you finish.`;
+}
 
 const yoloPromptBody = `Implement the GitHub issue using the instructions in the issue description.
 
@@ -585,41 +597,12 @@ Guidelines:
 - Keep answers concise and actionable.`;
 }
 
-function reviewFixPromptBody(config: AgentConfig): string {
-  return `Review feedback was left on an open agent pull request (from a human and/or a prior /agent code-review). Update the code on the existing branch to address it.
-
-Workflow:
-1. Read the review feedback, PR review bodies, referenced review comments, and PR discussion injected below. Use readPullRequestReviewComments if you need to re-fetch line comments.
-2. Do not use fetch_web_content for github.com pull request or discussion URLs on this repository — they require authentication and are already loaded by the runner when possible.
-3. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
-4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
-5. After code changes, reply on each addressed inline review thread: call \`replyToReviewComment\` with the root review comment id (\`rootCommentId\` from the thread context). When the fix is clear, call \`resolveReviewThreads\` with the GraphQL thread id (including outdated threads). Skip threads you did not change or that remain open questions.
-${GIT_SHALLOW_WORKSPACE_HINT}
-
-Merge handling:
-- The runner synchronizes the branch with ${config.git.base_branch} using the default "${config.git.merge_strategy}" strategy before this session.
-- If the merge context below reports conflicts, resolve them FIRST using read_files and editor. Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>) and keep the correct resolution.
-- After conflicts are resolved, address the review feedback in the same session.
-- Use getMergeStatus at any time to re-check the local conflict file list and the PR mergeable state.
-- Do not run git commands yourself and do not abort the merge.
-
-${FILE_EDIT_SYSTEM_HINT}
-
-${RUN_FRICTION_SYSTEM_HINT}
-
-${SUBMIT_PHASE_REPORT_PROMPT}
-
-Optionally pass \`commitMessage\` in \`submitPhaseReport\` (single-line conventional commit subject). If omitted, the runner uses \`fix(review): address feedback on PR #<number>\`.
-
-Do not commit or push. The runner will handle git operations after you finish.`;
-}
-
 const PHASE_PROMPT_BODY: Record<AgentPhase, (config: AgentConfig) => string> = {
   plan: () => planPromptBody,
   implement: () => implementPromptBody,
-  "ci-fix": () => ciFixPromptBody,
+  "ci-fix": fixPromptBody,
   yolo: () => yoloPromptBody,
-  "review-fix": reviewFixPromptBody,
+  "review-fix": fixPromptBody,
   ask: () => askPromptBody(),
   "code-review": () => codeReviewPromptBody(),
 };
@@ -658,8 +641,22 @@ const agentConfig = loadAgentConfig();
 export const PLAN_MODEL = agentConfig.models.plan;
 export const IMPLEMENT_MODEL = agentConfig.models.implement;
 export const YOLO_MODEL = IMPLEMENT_MODEL;
-export const CI_FIX_MODEL = agentConfig.models["ci-fix"];
-export const REVIEW_FIX_MODEL = agentConfig.models["review-fix"];
+export type FixPhaseEntry = "ci-fix" | "review-fix";
+
+export function resolveFixModel(
+  config: AgentConfig,
+  entry: FixPhaseEntry,
+): string {
+  if (config.models.fix) {
+    return config.models.fix;
+  }
+  return entry === "ci-fix"
+    ? config.models["ci-fix"]
+    : config.models["review-fix"];
+}
+
+export const CI_FIX_MODEL = resolveFixModel(agentConfig, "ci-fix");
+export const REVIEW_FIX_MODEL = resolveFixModel(agentConfig, "review-fix");
 export const ASK_MODEL = agentConfig.models.ask;
 export const CODE_REVIEW_MODEL = agentConfig.models["code-review"];
 export const DEFAULT_MERGE_STRATEGY = agentConfig.git.merge_strategy;
@@ -690,9 +687,17 @@ const envSchema = z.object({
   AGENT_BRANCH: optionalEnvString,
 });
 
-const ciFixEnvSchema = envSchema.extend({
+const fixEnvSchema = envSchema.extend({
   PR_NUMBER: z.coerce.number().int().positive(),
-  HEAD_SHA: z.string().min(1),
+  REVIEW_FEEDBACK: z.preprocess(
+    (value) => (value === undefined || value === null ? "" : String(value)),
+    z.string(),
+  ),
+  HEAD_SHA: optionalEnvString,
+});
+
+const fixEnvWithBranchSchema = fixEnvSchema.extend({
+  AGENT_BRANCH: z.string().min(1),
 });
 
 export type AgentEnv = z.infer<typeof envSchema>;
@@ -706,29 +711,42 @@ export function loadAgentEnv(): AgentEnv {
   return parsed.data;
 }
 
-const reviewFixEnvSchema = envSchema.extend({
-  PR_NUMBER: z.coerce.number().int().positive(),
-  AGENT_BRANCH: z.string().min(1),
-  REVIEW_FEEDBACK: z.string().min(1),
-});
+export type FixEnvWithBranch = z.infer<typeof fixEnvWithBranchSchema>;
+export type CiFixEnv = FixEnvWithBranch;
+export type ReviewFixEnv = FixEnvWithBranch;
 
-export type CiFixEnv = z.infer<typeof ciFixEnvSchema>;
-export type ReviewFixEnv = z.infer<typeof reviewFixEnvSchema>;
+export async function resolveFixHeadSha(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  headSha?: string,
+): Promise<string> {
+  const trimmed = headSha?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+  const { data } = await octokit.pulls.get({
+    owner,
+    repo,
+    pull_number: prNumber,
+  });
+  return data.head.sha;
+}
 
 export function loadCiFixEnv(): CiFixEnv {
-  const parsed = ciFixEnvSchema.safeParse(process.env);
-  if (!parsed.success) {
-    const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
-    throw new Error(`Missing or invalid ci-fix environment: ${missing}`);
-  }
-  return parsed.data;
+  return loadFixEnvWithBranch("ci-fix");
 }
 
 export function loadReviewFixEnv(): ReviewFixEnv {
-  const parsed = reviewFixEnvSchema.safeParse(process.env);
+  return loadFixEnvWithBranch("review-fix");
+}
+
+function loadFixEnvWithBranch(entry: FixPhaseEntry): FixEnvWithBranch {
+  const parsed = fixEnvWithBranchSchema.safeParse(process.env);
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
-    throw new Error(`Missing or invalid review-fix environment: ${missing}`);
+    throw new Error(`Missing or invalid ${entry} environment: ${missing}`);
   }
   return parsed.data;
 }

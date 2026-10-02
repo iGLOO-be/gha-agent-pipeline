@@ -276,7 +276,7 @@ After the consumer workflows are on **`main`**, comment on an issue or PR:
 - `/agent plan` — explore and post a plan
 - `/agent implement` — implement from the plan and open a PR. Optional follow-up code-review: `implement.follow_up.code_review` in config, or `/agent implement +code-review` / `--code-review` on the slash command.
 - `/agent yolo` — implement directly from the issue
-- `/agent fix` — on an agent PR (comment or submitted review). A bare `/agent fix` after `/agent code-review` loads the latest PR review body and all inline review comments (human and bot) into the review-fix session. The agent replies on addressed review threads (`replyToReviewComment`) and resolves threads when the fix is clear. Optional follow-up: `/agent fix --recheck` or `/agent fix +code-review`, or `review_fix.follow_up.code_review: true` in `.github/agent.config.yml`, dispatches `/agent code-review` after a successful fix.
+- `/agent fix` — on an agent PR (comment or submitted review). One fix session covers merge conflicts, **failing CI checks** (preloaded when Checks read is granted + `readCheckRuns` / `readCheckLogs`), and review feedback. A bare `/agent fix` prioritizes open CI failures when checks are red, otherwise loads PR review bodies and inline comments (human and bot). The agent replies on addressed review threads (`replyToReviewComment`) and resolves threads when the fix is clear. If check preload fails (missing Checks permission), the slash fix still runs and the agent can call `readCheckRuns` when permitted. A PR comment containing `<!-- agent-blocked -->` skips any fix run (slash or CI auto-fix). Optional follow-up: `/agent fix --recheck` or `/agent fix +code-review`, or `review_fix.follow_up.code_review: true` in `.github/agent.config.yml`, dispatches `/agent code-review` after a successful fix. Set `models.fix` to use one model for both `/agent fix` and CI auto-fix; without it, `models.review-fix` and `models.ci-fix` are used per entry.
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
 - `/agent ask` — read-only Q&A on an issue or PR
 
@@ -298,7 +298,7 @@ Use the same GitHub App as the demo (or a dedicated app) with these **repository
 | Issues        | Read & write  | Plans, agent comments, labels                                                                                                                                                                                                                          |
 | Pull requests | Read & write  | Agent PRs, reviews                                                                                                                                                                                                                                     |
 | Actions       | Read & write  | Workflow tokens, nested pipeline checkout, and **chained** `code-review` after implement/review-fix (`workflow_dispatch` via the App token — grant Actions write on the app and set `permission-actions: write` on `create-github-app-token` in setup) |
-| **Checks**    | **Read-only** | **Agent CI Fix** — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns` in `ci-fix`)                                                                           |
+| **Checks**    | **Read-only** | **Agent fix** (slash `/agent fix` and CI auto-fix) — lists failed checks via [`checks.listForRef`](https://docs.github.com/rest/checks/runs#list-check-runs-for-a-git-reference) (`readCheckRuns`)                                                     |
 
 `agent-ci-fix.yml` sets `permissions.checks: read` on the job, but that only applies if the **app installation** also grants Checks read. Without it, CI Fix fails before the agent runs. Agent CI fix and Agent CI success only operate on PRs labelled `agent-pr` (the label set by `implement`/`yolo` at PR creation).
 
@@ -380,15 +380,15 @@ openrouter:
 
 When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. End-of-phase usage tables list **Model (requested)** and **Served model(s)** (upstream slugs parsed from OpenRouter responses, including `openrouter_metadata` when enabled). When Cline’s aggregated `totalCost` is zero, **Estimated cost** falls back to the sum of OpenRouter `usage.cost` captured on the same HTTP responses. See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
 
-| Phase         | Required                                                       | Optional / routing                                                                             |
-| ------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `plan`        | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
-| `implement`   | `ISSUE_NUMBER`                                                 | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                 |
-| `yolo`        | `ISSUE_NUMBER`                                                 | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`         |
-| `review-fix`  | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH`, `REVIEW_FEEDBACK` | `COMMENT_ID`, `REACTION_TARGET` (`issue_comment` or `pull_request_review`), `SUCCESS_REACTION` |
-| `ci-fix`      | `ISSUE_NUMBER`, `PR_NUMBER`, `HEAD_SHA`, `AGENT_BRANCH`        | (none — no trigger comment/reaction)                                                           |
-| `ask`         | `ISSUE_NUMBER`, `QUESTION`                                     | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                    |
-| `code-review` | `ISSUE_NUMBER`, `PR_NUMBER`                                    | `REVIEW_INSTRUCTIONS`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)          |
+| Phase         | Required                                    | Optional / routing                                                                                                                     |
+| ------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `plan`        | `ISSUE_NUMBER`                              | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                         |
+| `implement`   | `ISSUE_NUMBER`                              | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                         |
+| `yolo`        | `ISSUE_NUMBER`                              | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`                                                 |
+| `review-fix`  | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH` | `REVIEW_FEEDBACK` (empty for bare `/agent fix`), `HEAD_SHA` (defaults to PR head), `COMMENT_ID`, `REACTION_TARGET`, `SUCCESS_REACTION` |
+| `ci-fix`      | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH` | `HEAD_SHA` (defaults to PR head), `REVIEW_FEEDBACK` (usually empty)                                                                    |
+| `ask`         | `ISSUE_NUMBER`, `QUESTION`                  | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                            |
+| `code-review` | `ISSUE_NUMBER`, `PR_NUMBER`                 | `REVIEW_INSTRUCTIONS`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                  |
 
 Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript `runAgentPhase()` wrapper before and after the phase `main()`. The `agent-phase.yml` workflow must not repeat those steps (it only runs the CLI and keeps `always()` label cleanup as a safety net).
 

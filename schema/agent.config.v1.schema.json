@@ -67,16 +67,21 @@
           "description": "Model used for the /agent implement and /agent yolo phases.",
           "default": "moonshotai/kimi-k2.7-code"
         },
+        "fix": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model used for both /agent fix and CI auto-fix when set; overrides entry-specific keys below."
+        },
         "ci-fix": {
           "type": "string",
           "minLength": 1,
-          "description": "Model used for the /agent fix (CI) phase.",
+          "description": "Model for CI auto-fix when models.fix is unset.",
           "default": "moonshotai/kimi-k2.7-code"
         },
         "review-fix": {
           "type": "string",
           "minLength": 1,
-          "description": "Model used for the /agent fix (review) phase.",
+          "description": "Model for /agent fix when models.fix is unset.",
           "default": "moonshotai/kimi-k2.7-code"
         },
         "ask": {

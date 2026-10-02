@@ -50,7 +50,7 @@ Parent epic: [gha-agent-demo#138](https://github.com/iGLOO-be/gha-agent-demo/iss
 
 ## Agent phase report
 
-When the agent finishes edits (implement, yolo, ci-fix, review-fix), it may call `submitPhaseReport` to provide a structured markdown summary. This is the agent's **business summary** only: what changed, which files were touched, and how to verify the work.
+When the agent finishes edits (implement, yolo, ci-fix / review-fix — unified **fix** runtime), it may call `submitPhaseReport` to provide a structured markdown summary. This is the agent's **business summary** only: what changed, which files were touched, and how to verify the work.
 
 The runner wraps this into a unified end-of-phase block (`## Agent phase report ({phase})`) that also includes a status line and — injected automatically by the runner, **never** by the agent — the run metrics and run friction sections:
 

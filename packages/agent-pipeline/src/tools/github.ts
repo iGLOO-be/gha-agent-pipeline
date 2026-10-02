@@ -325,10 +325,18 @@ export async function readCheckLogs(
   return `${combined.slice(0, MAX_LOG_CHARS)}\n\n…(truncated)`;
 }
 
-export function formatFailedChecksForPrompt(runs: CheckRunSummary[]): string {
-  const failed = runs.filter(
+export function failedCheckRuns(runs: CheckRunSummary[]): CheckRunSummary[] {
+  return runs.filter(
     (run) => run.conclusion === "failure" || run.conclusion === "timed_out",
   );
+}
+
+export function hasFailedCheckRuns(runs: CheckRunSummary[]): boolean {
+  return failedCheckRuns(runs).length > 0;
+}
+
+export function formatFailedChecksForPrompt(runs: CheckRunSummary[]): string {
+  const failed = failedCheckRuns(runs);
   if (failed.length === 0) {
     return "(no failed check runs on this SHA)";
   }
