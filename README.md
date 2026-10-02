@@ -81,6 +81,8 @@ jobs:
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
           chain_code_review: ${{ inputs.chain_code_review }}
+          review_loop_active: ${{ inputs.review_loop_active }}
+          review_loop_round: ${{ inputs.review_loop_round }}
           node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -89,6 +91,8 @@ jobs:
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
 
 **Chained code-review:** forward the `chain_code_review` input in the consumer `agent-phase.yml` (as in the excerpt above) and grant the App **Actions read & write** (`permission-actions: write` on `create-github-app-token`) — the runtime dispatches the follow-up `agent-phase.yml` `code-review` with the App token, so a missing scope makes the chain silently no-op.
+
+**Review loop (after implement only):** set `review_loop.enabled: true` and `review_loop.max_rounds` in `.github/agent.config.yml`. After `/agent implement`, the runtime dispatches **code-review → review-fix → code-review** until the review is `COMMENT` (no hard findings), review-fix makes no changes, or the round cap is hit. Forward `review_loop_active` and `review_loop_round` on the consumer `agent-phase.yml` (dogfood template includes them). Manual `/agent code-review` does not start the loop unless those env vars are set by a prior chained run. Same **Actions write** requirement as chained code-review.
 
 ### Agent runner tooling (`ripgrep`)
 

@@ -40,6 +40,10 @@ import {
   formatPhaseReportForPr,
 } from "./phase-report.js";
 import { chainCodeReviewAfterImplement } from "./code-review-chain.js";
+import {
+  isReviewLoopEnabled,
+  startReviewLoopAfterImplement,
+} from "./review-loop.js";
 
 async function main() {
   const env = loadAgentEnv();
@@ -214,11 +218,19 @@ Branch: ${branch}${extraArgsBlock}`,
       // Continue execution even if label addition fails
     }
 
-    await chainCodeReviewAfterImplement(octokit, owner, repo, config, {
-      issueNumber: env.ISSUE_NUMBER,
-      prNumber: pr.number,
-      agentBranch: branch,
-    });
+    if (isReviewLoopEnabled(config)) {
+      await startReviewLoopAfterImplement(octokit, owner, repo, {
+        issueNumber: env.ISSUE_NUMBER,
+        prNumber: pr.number,
+        agentBranch: branch,
+      });
+    } else {
+      await chainCodeReviewAfterImplement(octokit, owner, repo, config, {
+        issueNumber: env.ISSUE_NUMBER,
+        prNumber: pr.number,
+        agentBranch: branch,
+      });
+    }
 
     console.log(`\nPR created: ${pr.url}`);
   } catch (error) {

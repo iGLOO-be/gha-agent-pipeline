@@ -314,6 +314,15 @@ export const agentConfigSchema = z
           .default(() => ({ code_review: false })),
       })
       .optional(),
+    review_loop: z
+      .object({
+        enabled: z.boolean().default(false),
+        max_rounds: z.number().int().positive().default(3),
+      })
+      .default(() => ({
+        enabled: false,
+        max_rounds: 3,
+      })),
     commands: z.record(z.string().min(1), commandOverrideSchema).optional(),
   })
   .transform((data) => ({
@@ -331,6 +340,7 @@ export const agentConfigSchema = z
     code_review: data.code_review,
     review_fix: data.review_fix,
     implement: data.implement,
+    review_loop: data.review_loop,
     commands: data.commands as
       Record<string, CommandOverrideConfig> | undefined,
   }));

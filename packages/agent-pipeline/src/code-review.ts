@@ -55,6 +55,7 @@ import {
 } from "./tools/github.js";
 import { createCodeReviewTools, type ReviewTracker } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
+import { afterCodeReviewInReviewLoop } from "./review-loop.js";
 
 const STANDARD_FILES = ["AGENTS.md", "README.md", "CONTRIBUTING.md"] as const;
 const MAX_STANDARD_FILE_CHARS = 8_000;
@@ -275,6 +276,13 @@ ${reviewDiff.diff || "(empty diff)"}
           runFriction,
         }),
       );
+
+      await afterCodeReviewInReviewLoop(octokit, owner, repo, config, {
+        issueNumber: env.ISSUE_NUMBER,
+        prNumber: env.PR_NUMBER,
+        headRef: env.AGENT_BRANCH ?? pr.head.ref,
+        review,
+      });
     }
 
     console.log("\nCode-review agent completed.");
