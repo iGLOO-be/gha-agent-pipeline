@@ -682,6 +682,30 @@ export async function getPullRequestMergeState(
   };
 }
 
+export type PullRequestMergeState = Awaited<
+  ReturnType<typeof getPullRequestMergeState>
+>;
+
+export class PullRequestStillConflictingError extends Error {
+  readonly prNumber: number;
+  readonly mergeable_state: string;
+  readonly behind_by: number | null;
+  readonly state: PullRequestMergeState;
+
+  constructor(prNumber: number, state: PullRequestMergeState) {
+    const behindSuffix =
+      state.behind_by != null ? `, behind_by: ${state.behind_by}` : "";
+    super(
+      `PR #${prNumber} still has merge conflicts (mergeable_state: ${state.mergeable_state}${behindSuffix}).`,
+    );
+    this.name = "PullRequestStillConflictingError";
+    this.prNumber = prNumber;
+    this.mergeable_state = state.mergeable_state;
+    this.behind_by = state.behind_by;
+    this.state = state;
+  }
+}
+
 function isPullRequestMergeStateReady(
   state: Awaited<ReturnType<typeof getPullRequestMergeState>>,
 ): boolean {
@@ -746,9 +770,7 @@ export async function assertPullRequestNotConflicting(
   }
 
   if (finalState.conflicts) {
-    throw new Error(
-      `PR #${prNumber} still has merge conflicts (mergeable_state: ${finalState.mergeable_state}${finalState.behind_by != null ? `, behind_by: ${finalState.behind_by}` : ""}).`,
-    );
+    throw new PullRequestStillConflictingError(prNumber, finalState);
   }
 }
 
