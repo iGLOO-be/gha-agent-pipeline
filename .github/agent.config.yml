@@ -57,3 +57,7 @@ code_review:
   path_filters:
     - "!graphify-out/**"
     - "!pnpm-lock.yaml"
+
+review_fix:
+  follow_up:
+    code_review: true
