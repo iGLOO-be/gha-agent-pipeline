@@ -208,6 +208,49 @@ export function extractAgentPlan(text: string): string | null {
   return normalizeAgentPlanBody(match[0].trim());
 }
 
+const AGENT_ANSWER_HEADING = "## Agent answer";
+
+export function normalizeAgentAnswerBody(body: string): string {
+  const normalizedHeading = body.replace(
+    /^##\s*Agent answer\s*$/im,
+    AGENT_ANSWER_HEADING,
+  );
+
+  if (normalizedHeading.includes("\\n")) {
+    return unescapeToolString(normalizedHeading);
+  }
+
+  return normalizedHeading.startsWith(AGENT_ANSWER_HEADING)
+    ? normalizedHeading
+    : `${AGENT_ANSWER_HEADING}\n\n${normalizedHeading}`;
+}
+
+/** Minimum assistant text length to accept as a fallback when submitAnswer was not called. */
+const MIN_ANSWER_FALLBACK_CHARS = 40;
+
+export function extractAgentAnswer(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const sectionMatch = trimmed.match(/##\s*Agent answer\b[\s\S]*/i);
+  if (sectionMatch) {
+    const section = sectionMatch[0].trim();
+    const withoutTrailingReport = section.replace(
+      /\n##\s+Agent phase report[\s\S]*$/i,
+      "",
+    );
+    return normalizeAgentAnswerBody(withoutTrailingReport.trim());
+  }
+
+  if (trimmed.length >= MIN_ANSWER_FALLBACK_CHARS) {
+    return normalizeAgentAnswerBody(trimmed);
+  }
+
+  return null;
+}
+
 export async function findPullRequestForRef(
   octokit: Octokit,
   owner: string,
