@@ -52,7 +52,7 @@ describe("resolveCodeReviewLabelsConfig", () => {
 });
 
 describe("applyCodeReviewLabels", () => {
-  it("applies status and merge-risk labels on the PR", async () => {
+  function makeOctokit() {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     const octokit = {
       issues: {
@@ -74,6 +74,11 @@ describe("applyCodeReviewLabels", () => {
         },
       },
     };
+    return { calls, octokit };
+  }
+
+  it("applies status and merge-risk labels on the PR", async () => {
+    const { calls, octokit } = makeOctokit();
 
     await applyCodeReviewLabels({
       octokit: octokit as never,
@@ -115,5 +120,38 @@ describe("applyCodeReviewLabels", () => {
     expect(removed).toContain("ai-review:pending");
     expect(removed).toContain("agent-risk-low");
     expect(removed).toContain("agent-risk-high");
+  });
+
+  it("does not label status when the review event is unset", async () => {
+    const { calls, octokit } = makeOctokit();
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: {
+        posted: true,
+        body: "## Merge risk\n\n**High** — breaking API.",
+      },
+      labelsConfig: {
+        applyTo: "pr",
+        statusOk: "ai-review:ok",
+        statusPending: "ai-review:pending",
+        mergeRisk: {
+          low: "agent-risk-low",
+          medium: "agent-risk-medium",
+          high: "agent-risk-high",
+        },
+      },
+    });
+
+    const added = calls
+      .filter((c) => c.method === "issues.addLabels")
+      .map((c) => (c.args[0] as { labels: string[] }).labels)
+      .flat();
+    expect(added).toEqual(["agent-risk-high"]);
+    expect(added).not.toContain("ai-review:ok");
   });
 });

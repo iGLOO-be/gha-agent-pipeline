@@ -700,6 +700,18 @@ describe("tools/github", () => {
         ),
       ).toBe("high");
     });
+
+    it("tolerates bullets and a short level/risk prefix", () => {
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\n- **High** — breaking API."),
+      ).toBe("high");
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\nLevel: **High** — breaking API."),
+      ).toBe("high");
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\nRisk: Minimal — safe tweak."),
+      ).toBe("low");
+    });
   });
 
   describe("appendRiskScoreSection", () => {

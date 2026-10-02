@@ -103,9 +103,13 @@ export async function applyCodeReviewLabels(params: {
     prNumber,
     issueNumber,
   );
-  const event = review.event ?? "COMMENT";
   const reviewBody = review.body ?? "";
-  const statusLabel = statusLabelForEvent(event, labelsConfig);
+  // Fail safe: an unknown review event must not be labelled as `status.ok`
+  // (a possibly-blocking review would look approved). Both writers set
+  // `event`, so this only guards against future regressions.
+  const statusLabel = review.event
+    ? statusLabelForEvent(review.event, labelsConfig)
+    : null;
   const statusSiblingLabels = [
     labelsConfig.statusOk,
     labelsConfig.statusPending,
