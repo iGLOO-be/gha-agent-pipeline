@@ -1,13 +1,10 @@
-import type { Octokit } from "@octokit/rest";
 import {
-  assertPullRequestNotConflicting,
-  getPullRequestMergeState,
   PullRequestStillConflictingError,
+  type PullRequestMergeState,
 } from "./tools/github.js";
 
 export { PullRequestStillConflictingError };
-
-export type PrMergeState = Awaited<ReturnType<typeof getPullRequestMergeState>>;
+export type { PullRequestMergeState };
 
 const DEFAULT_MAX_PASSES = 2;
 const MIN_MAX_PASSES = 1;
@@ -26,7 +23,9 @@ export function getUpstreamDriftMaxPasses(): number {
   return Math.min(MAX_MAX_PASSES, Math.max(MIN_MAX_PASSES, parsed));
 }
 
-export function isUpstreamDriftAfterPush(state: PrMergeState): boolean {
+export function isUpstreamDriftAfterPush(
+  state: PullRequestMergeState,
+): boolean {
   return state.conflicts && (state.behind_by ?? 0) > 0;
 }
 
@@ -46,13 +45,4 @@ export function formatMergeStillBlockedStatusLine(
   const behind =
     error.behind_by != null ? `, \`behind_by: ${error.behind_by}\`` : "";
   return `${pushedLine} However, GitHub still reports the PR cannot merge into \`${baseBranch}\` (\`mergeable_state: ${error.mergeable_state}\`${behind}). Re-run \`/agent fix\` or resolve conflicts manually.`;
-}
-
-export async function assertPullRequestMergeAfterPush(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  prNumber: number,
-): Promise<void> {
-  await assertPullRequestNotConflicting(octokit, owner, repo, prNumber);
 }

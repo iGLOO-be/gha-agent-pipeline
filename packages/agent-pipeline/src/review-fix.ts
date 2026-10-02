@@ -9,7 +9,6 @@ import {
   prepareCommandRuntime,
 } from "./command-runtime.js";
 import {
-  assertPullRequestMergeAfterPush,
   formatMergeStillBlockedStatusLine,
   getUpstreamDriftMaxPasses,
   PullRequestStillConflictingError,
@@ -34,6 +33,7 @@ import {
 } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
+  assertPullRequestNotConflicting,
   clearAgentResumeLabels,
   createOctokit,
   findPlanComment,
@@ -53,6 +53,11 @@ import {
   resolveAgentCommitMessage,
   type PhaseReport,
 } from "./phase-report.js";
+import { chainCodeReviewAfterReviewFix } from "./code-review-chain.js";
+import {
+  buildReviewFixThreadContext,
+  formatReviewFixThreadPromptSection,
+} from "./review-follow-up.js";
 
 function buildConflictPriorityHint(
   prState: Awaited<ReturnType<typeof getPullRequestMergeState>>,
@@ -200,10 +205,19 @@ async function main() {
       config.git.base_branch,
     );
 
+    const reviewFixThreadContext = await buildReviewFixThreadContext(
+      octokit,
+      owner,
+      repo,
+      env.PR_NUMBER,
+      reviewCommentContext.bareFixTrigger,
+    );
+    const reviewFixThreadsSection = formatReviewFixThreadPromptSection(
+      reviewFixThreadContext,
+    );
+
     const runFriction = createRunFrictionCollector();
     const maxPasses = getUpstreamDriftMaxPasses();
-    let lastSession: AgentSessionResult | undefined;
-    let lastPhaseReport = createPhaseReportTracker().report;
 
     for (let pass = 0; pass < maxPasses; pass++) {
       if (pass > 0) {
@@ -304,6 +318,8 @@ ${plan ?? "(no plan comment found)"}
 PR discussion:
 ${prThread}
 
+${reviewFixThreadsSection}
+
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`
             : `${driftRetryPrompt}Address remaining merge issues on PR #${env.PR_NUMBER} (issue #${env.ISSUE_NUMBER}).
@@ -314,9 +330,6 @@ ${mergeContext}
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
       });
-
-      lastSession = session;
-      lastPhaseReport = phaseReportTracker.report;
 
       await prepareResolvedMergeForCommit();
 
@@ -341,7 +354,7 @@ Branch: ${env.AGENT_BRANCH}`,
           env.PR_NUMBER,
           buildReviewFixComment(
             `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
-            lastPhaseReport,
+            phaseReportTracker.report,
             session,
             runFriction,
           ),
@@ -359,7 +372,7 @@ Branch: ${env.AGENT_BRANCH}`,
       await assertLocalMergeResolved();
 
       try {
-        await assertPullRequestMergeAfterPush(
+        await assertPullRequestNotConflicting(
           octokit,
           owner,
           repo,
@@ -372,7 +385,7 @@ Branch: ${env.AGENT_BRANCH}`,
           env.PR_NUMBER,
           buildReviewFixComment(
             `Pushed review fixes for PR #${env.PR_NUMBER}.`,
-            lastPhaseReport,
+            phaseReportTracker.report,
             session,
             runFriction,
           ),
@@ -381,6 +394,13 @@ Branch: ${env.AGENT_BRANCH}`,
           issueNumber: env.ISSUE_NUMBER,
           prNumber: env.PR_NUMBER,
         });
+
+        await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
+          issueNumber: env.ISSUE_NUMBER,
+          prNumber: env.PR_NUMBER,
+          agentBranch: env.AGENT_BRANCH,
+        });
+
         console.log(`\nReview fix pushed on branch ${env.AGENT_BRANCH}`);
         appendRunFrictionStepSummary(runFriction, "review-fix");
         return;
@@ -403,7 +423,7 @@ Branch: ${env.AGENT_BRANCH}`,
                 config.git.base_branch,
                 error,
               ),
-              lastPhaseReport,
+              phaseReportTracker.report,
               session,
               runFriction,
             ),

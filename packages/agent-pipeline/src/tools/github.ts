@@ -34,6 +34,7 @@ export const AGENT_COMMENT_MARKERS = {
   askFailed: "agent-ask-failed",
   codeReview: "agent-code-review",
   codeReviewFailed: "agent-code-review-failed",
+  reviewFixReply: "agent-review-fix-reply",
 } as const;
 
 /** Lifecycle label applied while an agent phase is running. */
@@ -529,6 +530,87 @@ export async function getPullRequestReviewComment(
   return data;
 }
 
+export async function createReplyForReviewComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commentId: number,
+  body: string,
+) {
+  const markedBody = prependAgentMarker(
+    body,
+    AGENT_COMMENT_MARKERS.reviewFixReply,
+  );
+  const { data } = await octokit.pulls.createReplyForReviewComment({
+    owner,
+    repo,
+    pull_number: prNumber,
+    comment_id: commentId,
+    body: markedBody,
+  });
+  return data;
+}
+
+export type DispatchAgentPhaseWorkflowInput = {
+  phase: string;
+  commentId: string | number;
+  issueNumber: number;
+  prNumber: number;
+  headRef: string;
+  workflowFile?: string;
+  ref?: string;
+  reviewFeedback?: string;
+  reactionTarget?: string;
+  reviewInstructions?: string;
+};
+
+/** Dispatch the consumer `agent-phase.yml` workflow (requires `actions: write` on the token). */
+export async function dispatchAgentPhaseWorkflow(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  input: DispatchAgentPhaseWorkflowInput,
+): Promise<void> {
+  const workflowFile = input.workflowFile ?? "agent-phase.yml";
+
+  let ref = input.ref;
+  if (!ref) {
+    const { data: repoMeta } = await octokit.repos.get({ owner, repo });
+    ref = repoMeta.default_branch;
+  }
+
+  const workflowPath = workflowFile.includes("/")
+    ? workflowFile
+    : `.github/workflows/${workflowFile}`;
+
+  const inputs: Record<string, string> = {
+    phase: input.phase,
+    comment_id: String(input.commentId),
+    issue_number: String(input.issueNumber),
+    pr_number: String(input.prNumber),
+    head_ref: input.headRef,
+  };
+
+  if (input.reviewFeedback != null && input.reviewFeedback !== "") {
+    inputs.review_feedback = input.reviewFeedback;
+  }
+  if (input.reactionTarget) {
+    inputs.reaction_target = input.reactionTarget;
+  }
+  if (input.reviewInstructions != null && input.reviewInstructions !== "") {
+    inputs.review_instructions = input.reviewInstructions;
+  }
+
+  await octokit.actions.createWorkflowDispatch({
+    owner,
+    repo,
+    workflow_id: workflowPath,
+    ref,
+    inputs,
+  });
+}
+
 export async function listReviewCommentsForReview(
   octokit: Octokit,
   owner: string,
@@ -915,6 +997,31 @@ export async function removeLabelFromIssue(
   return data;
 }
 
+/**
+ * Removes several labels from an issue/PR, tolerating missing labels (404).
+ * Other failures are logged and swallowed so labelling never fails a phase.
+ */
+export async function removeLabelsFromIssue(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labelNames: readonly string[],
+): Promise<void> {
+  await Promise.all(
+    labelNames.map((name) =>
+      removeLabelFromIssue(octokit, owner, repo, issueNumber, name).catch(
+        (error) => {
+          const status = (error as { status?: number }).status;
+          if (status !== 404) {
+            console.warn(`Failed to remove label ${name}:`, error);
+          }
+        },
+      ),
+    ),
+  );
+}
+
 export type ReactionContent =
   "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes";
 
@@ -1046,6 +1153,80 @@ export function parseRiskLevel(text: string): RiskLevel | null {
   return null;
 }
 
+// Anchored to the start of the (bold-stripped) line so justification words
+// such as "minimal blast radius" cannot win over the actual level. An optional
+// short `level:` / `risk:` prefix is tolerated.
+const MERGE_RISK_LEVEL_WORDS: { line: RegExp; level: RiskLevel }[] = [
+  { line: /^(?:level|risk)?[:\s-]*minimal\b/i, level: "low" },
+  { line: /^(?:level|risk)?[:\s-]*moderate\b/i, level: "medium" },
+  { line: /^(?:level|risk)?[:\s-]*high\b/i, level: "high" },
+];
+
+/** Parses ## Merge risk (Minimal / Moderate / High) from a code-review body. */
+export function parseMergeRiskLevel(body: string): RiskLevel | null {
+  const sectionMatch = body.match(
+    /## Merge risk[:\s]*\n([\s\S]*?)(?=\n## |\n$|$)/i,
+  );
+  if (!sectionMatch) {
+    return null;
+  }
+  const firstLine = sectionMatch[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) {
+    return null;
+  }
+  const candidate = firstLine.replace(/\*\*/g, "").replace(/^[-*:]?\s*/, "");
+  for (const { line, level } of MERGE_RISK_LEVEL_WORDS) {
+    if (line.test(candidate)) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function riskLabelEnsureOptions(labelName: string): {
+  color?: string;
+  description?: string;
+} {
+  const match = /^agent-risk-(low|medium|high)$/.exec(labelName);
+  if (!match) {
+    return {};
+  }
+  const level = match[1] as RiskLevel;
+  return RISK_LABEL_CONFIG[level];
+}
+
+export async function manageExclusiveLabels(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labelNames: readonly string[],
+  activeLabel: string,
+  ensureOptions?: (labelName: string) => {
+    color?: string;
+    description?: string;
+  },
+) {
+  await Promise.all(
+    labelNames.map((name) =>
+      ensureLabel(octokit, owner, repo, name, ensureOptions?.(name) ?? {}),
+    ),
+  );
+
+  await removeLabelsFromIssue(
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    labelNames.filter((name) => name !== activeLabel),
+  );
+
+  await addLabelToIssue(octokit, owner, repo, issueNumber, activeLabel);
+}
+
 export function extractRiskJustification(text: string): string | null {
   const sectionMatch = text.match(
     /### Risk [Ss]core[:\s]*\n?([\s\S]*?)(?:\n### |\n## |---|\n$)/,
@@ -1081,39 +1262,15 @@ export async function manageRiskLabels(
   issueNumber: number,
   level: RiskLevel,
 ) {
-  await Promise.all(
-    RISK_LEVELS.map((lvl) =>
-      ensureLabel(octokit, owner, repo, `agent-risk-${lvl}`, {
-        color: RISK_LABEL_CONFIG[lvl].color,
-        description: RISK_LABEL_CONFIG[lvl].description,
-      }),
-    ),
-  );
-
-  const others = RISK_LEVELS.filter((lvl) => lvl !== level);
-  await Promise.all(
-    others.map((lvl) =>
-      removeLabelFromIssue(
-        octokit,
-        owner,
-        repo,
-        issueNumber,
-        `agent-risk-${lvl}`,
-      ).catch((error) => {
-        const status = (error as { status?: number }).status;
-        if (status !== 404) {
-          console.warn(`Failed to remove agent-risk-${lvl} label:`, error);
-        }
-      }),
-    ),
-  );
-
-  await addLabelToIssue(
+  const labelNames = RISK_LEVELS.map((lvl) => `agent-risk-${lvl}`);
+  await manageExclusiveLabels(
     octokit,
     owner,
     repo,
     issueNumber,
+    labelNames,
     `agent-risk-${level}`,
+    riskLabelEnsureOptions,
   );
 }
 
@@ -1423,19 +1580,23 @@ export async function resolvePullRequestReviewThread(
 
 export function formatReviewThreadsForPrompt(
   threads: PullRequestReviewThread[],
+  options?: { includeBody?: boolean },
 ): string {
   if (threads.length === 0) {
     return "(no open review threads in scope)";
   }
+  const includeBody = options?.includeBody ?? true;
   return threads
     .map((thread) => {
       const root = thread.comments[0];
       const path = root?.path ?? "(no path)";
       const line = root?.line != null ? ` line ${root.line}` : "";
       const author = root?.authorLogin ?? "unknown";
-      const body = (root?.body ?? "").trim();
+      const body = includeBody ? `\n${(root?.body ?? "").trim()}` : "";
       const outdated = thread.isOutdated ? " outdated" : "";
-      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated}) ---\n${body}`;
+      const rootId =
+        root?.id != null && root.id > 0 ? ` rootCommentId=${root.id}` : "";
+      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated})${rootId} ---${body}`;
     })
     .join("\n\n");
 }

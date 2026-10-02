@@ -148,13 +148,32 @@ jobs:
               })
             }
 
+            // Keep flags in sync with packages/agent-pipeline/src/code-review-chain.ts
+            function wantsChainCodeReviewFromSlash(body, phase) {
+              if (/\+code-review\b/i.test(body) || /--code-review\b/i.test(body)) {
+                return true
+              }
+              // `--recheck` is the review-fix spelling; implement documents `+code-review` / `--code-review`.
+              return phase === 'review-fix' && /--recheck\b/i.test(body)
+            }
+
+            function stripChainCodeReviewSlashFlags(body) {
+              return body
+                .replace(/--recheck\b/gi, '')
+                .replace(/\+code-review\b/gi, '')
+                .replace(/--code-review\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+            }
+
             async function dispatchReviewFix({
               commentId,
               prNumber,
               issueNumber,
               headRef,
               reviewFeedback,
-              reactionTarget
+              reactionTarget,
+              chainCodeReview
             }) {
               await fetch(
                 `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`,
@@ -174,7 +193,8 @@ jobs:
                       issue_number: String(issueNumber),
                       head_ref: headRef,
                       review_feedback: reviewFeedback,
-                      reaction_target: reactionTarget
+                      reaction_target: reactionTarget,
+                      ...(chainCodeReview ? { chain_code_review: 'true' } : {})
                     }
                   })
                 }
@@ -420,7 +440,9 @@ jobs:
                 }
 
                 if (isFix) {
-                  const feedback = body.replace(/\/agent\s+fix/gi, '').trim() || body
+                  const rawFeedback = body.replace(/\/agent\s+fix/gi, '').trim() || body
+                  const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
+                  const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
                   const reviewFeedback = await appendPrReviewComments(
                     resolved.prNumber,
                     feedback
@@ -432,7 +454,8 @@ jobs:
                     issueNumber: resolved.issueNumber,
                     headRef: resolved.headRef,
                     reviewFeedback,
-                    reactionTarget: 'issue_comment'
+                    reactionTarget: 'issue_comment',
+                    chainCodeReview
                   })
                   return
                 }
@@ -520,6 +543,9 @@ jobs:
                 runtimePhase === 'ask'
                   ? args || 'Summarize the context and current agent status.'
                   : ''
+              const chainCodeReview =
+                runtimePhase === 'implement' &&
+                wantsChainCodeReviewFromSlash(body, 'implement')
 
               await dispatchAgentPhase({
                 phase: command.id,
@@ -528,7 +554,8 @@ jobs:
                 comment_id: commentId,
                 issue_number: issueNumber,
                 author_association: authorAssociation,
-                ...(runtimePhase === 'ask' ? { question } : {})
+                ...(runtimePhase === 'ask' ? { question } : {}),
+                ...(chainCodeReview ? { chain_code_review: 'true' } : {})
               })
               return
             }
@@ -567,7 +594,9 @@ jobs:
                 return
               }
 
-              const feedback = body.replace('/agent fix', '').trim() || body
+              const rawFeedback = body.replace('/agent fix', '').trim() || body
+              const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
+              const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
 
               let reviewComments = []
               try {
@@ -603,5 +632,6 @@ jobs:
                 headRef: resolved.headRef,
                 reviewFeedback,
                 reactionTarget: 'pull_request_review',
+                chainCodeReview
               })
             }

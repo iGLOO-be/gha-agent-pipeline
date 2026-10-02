@@ -516,6 +516,8 @@ describe("config", () => {
       expect(prompt).toContain("submitPhaseReport");
       expect(prompt).toContain("Agent phase report");
       expect(prompt).toContain("commitMessage");
+      expect(prompt).toContain("replyToReviewComment");
+      expect(prompt).toContain("resolveReviewThreads");
     });
     it("includes submitAnswer in ask prompt", () => {
       const config = loadAgentConfig(join(tempDir, "missing.yml"));

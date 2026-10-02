@@ -37,6 +37,10 @@ import {
   appendRunFrictionStepSummary,
   createRunFrictionCollector,
 } from "./run-friction.js";
+import {
+  applyCodeReviewLabels,
+  resolveCodeReviewLabelsConfig,
+} from "./code-review-labels.js";
 import { buildCodeReviewPhaseComment } from "./code-review-completion.js";
 import {
   AGENT_COMMENT_MARKERS,
@@ -237,6 +241,23 @@ ${reviewDiff.diff || "(empty diff)"}
     );
 
     if (review.posted) {
+      const labelsConfig = resolveCodeReviewLabelsConfig(config);
+      if (labelsConfig) {
+        try {
+          await applyCodeReviewLabels({
+            octokit,
+            owner,
+            repo,
+            prNumber: env.PR_NUMBER,
+            issueNumber: env.ISSUE_NUMBER,
+            review,
+            labelsConfig,
+          });
+        } catch (error) {
+          console.warn("Failed to apply code-review labels:", error);
+        }
+      }
+
       await postComment(
         octokit,
         owner,
@@ -306,6 +327,7 @@ async function ensureReviewPosted(
   review.id = posted.id;
   review.body = markedBody;
   review.htmlUrl = posted.html_url;
+  review.event = parsed.event;
   console.log("Posted code review from agent output fallback.");
 }
 

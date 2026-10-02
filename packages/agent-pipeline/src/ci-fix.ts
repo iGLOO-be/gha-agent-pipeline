@@ -9,7 +9,6 @@ import {
   prepareCommandRuntime,
 } from "./command-runtime.js";
 import {
-  assertPullRequestMergeAfterPush,
   formatMergeStillBlockedStatusLine,
   getUpstreamDriftMaxPasses,
   PullRequestStillConflictingError,
@@ -34,6 +33,7 @@ import {
 } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
+  assertPullRequestNotConflicting,
   clearAgentResumeLabels,
   createOctokit,
   findPlanComment,
@@ -269,7 +269,7 @@ Repository: ${env.GITHUB_REPOSITORY}`,
       const pushedLine = `Pushed a CI fix commit for \`${env.HEAD_SHA.slice(0, 7)}\`.`;
 
       try {
-        await assertPullRequestMergeAfterPush(
+        await assertPullRequestNotConflicting(
           octokit,
           owner,
           repo,

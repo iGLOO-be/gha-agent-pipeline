@@ -273,6 +273,43 @@ export const agentConfigSchema = z
               .default("agent_only"),
           })
           .default(() => ({ resolve_threads: "agent_only" as const })),
+        labels: z
+          .object({
+            apply_to: z.enum(["pr", "issue", "both"]).default("pr"),
+            status: z
+              .object({
+                ok: z.string().min(1).optional(),
+                pending: z.string().min(1).optional(),
+              })
+              .default(() => ({})),
+            merge_risk: z
+              .object({
+                enabled: z.boolean().default(true),
+                low: z.string().min(1).default("agent-risk-low"),
+                medium: z.string().min(1).default("agent-risk-medium"),
+                high: z.string().min(1).default("agent-risk-high"),
+              })
+              .optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+    review_fix: z
+      .object({
+        follow_up: z
+          .object({
+            code_review: z.boolean().default(false),
+          })
+          .default(() => ({ code_review: false })),
+      })
+      .optional(),
+    implement: z
+      .object({
+        follow_up: z
+          .object({
+            code_review: z.boolean().default(false),
+          })
+          .default(() => ({ code_review: false })),
       })
       .optional(),
     commands: z.record(z.string().min(1), commandOverrideSchema).optional(),
@@ -290,6 +327,8 @@ export const agentConfigSchema = z
     app: data.app,
     openrouter: data.openrouter,
     code_review: data.code_review,
+    review_fix: data.review_fix,
+    implement: data.implement,
     commands: data.commands as
       Record<string, CommandOverrideConfig> | undefined,
   }));
@@ -554,6 +593,7 @@ Workflow:
 2. Do not use fetch_web_content for github.com pull request or discussion URLs on this repository — they require authentication and are already loaded by the runner when possible.
 3. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+5. After code changes, reply on each addressed inline review thread: call \`replyToReviewComment\` with the root review comment id (\`rootCommentId\` from the thread context). When the fix is clear, call \`resolveReviewThreads\` with the GraphQL thread id (including outdated threads). Skip threads you did not change or that remain open questions.
 ${GIT_SHALLOW_WORKSPACE_HINT}
 
 Merge handling:

@@ -38,6 +38,7 @@ runs:
       with:
         app-id: ${{ inputs.app_id }}
         private-key: ${{ inputs.app_private_key }}
+        permission-actions: write
         owner: ${{ github.repository_owner }}
         repositories: |
           ${{ github.event.repository.name }}
