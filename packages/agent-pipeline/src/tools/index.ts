@@ -503,6 +503,7 @@ export type ReviewTracker = {
   id?: number;
   body?: string;
   htmlUrl?: string;
+  event?: PullRequestReviewEvent;
 };
 
 export type CodeReviewToolsOptions = {
@@ -600,6 +601,7 @@ export async function createCodeReviewTools(
       review.id = posted.id;
       review.body = markedBody;
       review.htmlUrl = posted.html_url;
+      review.event = input.event;
       return { id: posted.id, url: posted.html_url, event: posted.state };
     },
   });
