@@ -39,6 +39,11 @@ import {
   formatPhaseCompletionMarkdown,
   resolveAgentCommitMessage,
 } from "./phase-report.js";
+import { chainCodeReviewAfterReviewFix } from "./review-fix-chain.js";
+import {
+  buildReviewFixThreadContext,
+  formatReviewFixThreadPromptSection,
+} from "./review-follow-up.js";
 
 function buildConflictPriorityHint(
   prState: Awaited<ReturnType<typeof getPullRequestMergeState>>,
@@ -138,6 +143,17 @@ async function main() {
       config.git.base_branch,
     );
 
+    const reviewFixThreadContext = await buildReviewFixThreadContext(
+      octokit,
+      owner,
+      repo,
+      env.PR_NUMBER,
+      reviewCommentContext.bareFixTrigger,
+    );
+    const reviewFixThreadsSection = formatReviewFixThreadPromptSection(
+      reviewFixThreadContext,
+    );
+
     const runFriction = createRunFrictionCollector();
     const phaseReportTracker = createPhaseReportTracker();
     const tools = await withReportRunFrictionTool(
@@ -200,6 +216,8 @@ ${plan ?? "(no plan comment found)"}
 PR discussion:
 ${prThread}
 
+${reviewFixThreadsSection}
+
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
     });
@@ -252,6 +270,12 @@ Branch: ${env.AGENT_BRANCH}`,
         issueNumber: env.ISSUE_NUMBER,
         prNumber: env.PR_NUMBER,
       });
+      await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
+        issueNumber: env.ISSUE_NUMBER,
+        prNumber: env.PR_NUMBER,
+        agentBranch: env.AGENT_BRANCH,
+        reviewFeedback: env.REVIEW_FEEDBACK,
+      });
       return;
     }
 
@@ -270,6 +294,13 @@ Branch: ${env.AGENT_BRANCH}`,
     await clearAgentResumeLabels(octokit, owner, repo, {
       issueNumber: env.ISSUE_NUMBER,
       prNumber: env.PR_NUMBER,
+    });
+
+    await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
+      issueNumber: env.ISSUE_NUMBER,
+      prNumber: env.PR_NUMBER,
+      agentBranch: env.AGENT_BRANCH,
+      reviewFeedback: env.REVIEW_FEEDBACK,
     });
 
     console.log(`\nReview fix pushed on branch ${env.AGENT_BRANCH}`);

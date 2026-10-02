@@ -210,6 +210,15 @@ export const agentConfigSchema = z
           .default(() => ({ resolve_threads: "agent_only" as const })),
       })
       .optional(),
+    review_fix: z
+      .object({
+        follow_up: z
+          .object({
+            code_review: z.boolean().default(false),
+          })
+          .default(() => ({ code_review: false })),
+      })
+      .optional(),
   })
   .transform((data) => ({
     version: data.version,
@@ -224,6 +233,7 @@ export const agentConfigSchema = z
     app: data.app,
     openrouter: data.openrouter,
     code_review: data.code_review,
+    review_fix: data.review_fix,
   }));
 
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
@@ -493,6 +503,7 @@ Workflow:
 2. Do not use fetch_web_content for github.com pull request or discussion URLs on this repository — they require authentication and are already loaded by the runner when possible.
 3. Use list_files, read_files, search_codebase, editor, and apply_patch to apply minimal changes.
 4. Read AGENTS.md and the repo docs (README, package.json scripts) to understand the project conventions. If formatting or linting is part of the repo workflow, run the documented commands via run_commands during your session. Do not run Prettier on \`.\` unless the repo explicitly instructs it.
+5. After code changes, reply on each addressed inline review thread: call \`replyToReviewComment\` with the root review comment id (\`rootCommentId\` from the thread context). When the fix is clear, call \`resolveReviewThreads\` with the GraphQL thread id (including outdated threads). Skip threads you did not change or that remain open questions.
 ${GIT_SHALLOW_WORKSPACE_HINT}
 
 Merge handling:

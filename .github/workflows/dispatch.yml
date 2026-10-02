@@ -100,13 +100,26 @@ jobs:
               })
             }
 
+            function wantsChainCodeReviewAfterFix(feedback) {
+              return /--recheck\b/i.test(feedback) || /\+code-review\b/i.test(feedback)
+            }
+
+            function stripReviewFixChainFlags(feedback) {
+              return feedback
+                .replace(/--recheck\b/gi, '')
+                .replace(/\+code-review\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+            }
+
             async function dispatchReviewFix({
               commentId,
               prNumber,
               issueNumber,
               headRef,
               reviewFeedback,
-              reactionTarget
+              reactionTarget,
+              chainCodeReview
             }) {
               await fetch(
                 `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`,
@@ -126,7 +139,8 @@ jobs:
                       issue_number: String(issueNumber),
                       head_ref: headRef,
                       review_feedback: reviewFeedback,
-                      reaction_target: reactionTarget
+                      reaction_target: reactionTarget,
+                      ...(chainCodeReview ? { chain_code_review: 'true' } : {})
                     }
                   })
                 }
@@ -400,7 +414,9 @@ jobs:
                   return
                 }
 
-                const feedback = body.replace('/agent fix', '').trim() || body
+                const rawFeedback = body.replace('/agent fix', '').trim() || body
+                const chainCodeReview = wantsChainCodeReviewAfterFix(rawFeedback)
+                const feedback = stripReviewFixChainFlags(rawFeedback)
                 const reviewFeedback = await appendPrReviewComments(
                   resolved.prNumber,
                   feedback
@@ -412,7 +428,8 @@ jobs:
                   issueNumber: resolved.issueNumber,
                   headRef: resolved.headRef,
                   reviewFeedback,
-                  reactionTarget: 'issue_comment'
+                  reactionTarget: 'issue_comment',
+                  chainCodeReview
                 })
                 return
               }
@@ -531,7 +548,9 @@ jobs:
                 return
               }
 
-              const feedback = body.replace('/agent fix', '').trim() || body
+              const rawFeedback = body.replace('/agent fix', '').trim() || body
+              const chainCodeReview = wantsChainCodeReviewAfterFix(rawFeedback)
+              const feedback = stripReviewFixChainFlags(rawFeedback)
 
               let reviewComments = []
               try {
@@ -567,5 +586,6 @@ jobs:
                 headRef: resolved.headRef,
                 reviewFeedback,
                 reactionTarget: 'pull_request_review',
+                chainCodeReview
               })
             }

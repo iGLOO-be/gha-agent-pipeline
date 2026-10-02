@@ -51,6 +51,9 @@ inputs:
   review_instructions:
     description: Optional extra instructions for the code-review phase.
     required: false
+  chain_code_review:
+    description: When true, review-fix may dispatch a follow-up code-review after success.
+    required: false
   pipeline_ref:
     description: >
       Git ref of the pipeline library runtime to install. Defaults to the ref of
@@ -92,6 +95,7 @@ runs:
         REVIEW_FEEDBACK: ${{ inputs.phase == 'review-fix' && inputs.review_feedback || '' }}
         QUESTION: ${{ inputs.phase == 'ask' && inputs.question || '' }}
         REVIEW_INSTRUCTIONS: ${{ inputs.phase == 'code-review' && inputs.review_instructions || '' }}
+        REVIEW_FIX_CHAIN_CODE_REVIEW: ${{ inputs.phase == 'review-fix' && inputs.chain_code_review == 'true' && 'true' || '' }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
         SUCCESS_REACTION: ${{ inputs.phase == 'plan' && '+1' || inputs.phase == 'ask' && 'rocket' || 'rocket' }}

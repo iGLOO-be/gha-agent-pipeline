@@ -317,6 +317,24 @@
         }
       },
       "default": {}
+    },
+    "review_fix": {
+      "type": "object",
+      "description": "Optional behavior for the /agent fix (review-fix) phase.",
+      "properties": {
+        "follow_up": {
+          "type": "object",
+          "properties": {
+            "code_review": {
+              "type": "boolean",
+              "description": "When true, dispatch /agent code-review after a successful review-fix run.",
+              "default": false
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
     }
   },
   "default": {}

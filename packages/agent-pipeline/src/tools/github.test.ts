@@ -6,6 +6,8 @@ import {
   buildRunUrl,
   clearAgentResumeLabels,
   createPullRequestReview,
+  createReplyForReviewComment,
+  dispatchAgentPhaseWorkflow,
   extractAgentPlan,
   findPlanComment,
   findPlanCommentUrl,
@@ -796,6 +798,72 @@ describe("tools/github", () => {
       );
       expect(result.id).toBe(12);
       expect(events).toEqual(["REQUEST_CHANGES", "COMMENT"]);
+    });
+  });
+
+  describe("createReplyForReviewComment", () => {
+    it("posts a marked reply on a review comment thread", async () => {
+      const octokit = {
+        pulls: {
+          createReplyForReviewComment: async (args: {
+            comment_id: number;
+            body: string;
+          }) => {
+            expect(args.comment_id).toBe(55);
+            expect(args.body).toContain(AGENT_COMMENT_MARKERS.reviewFixReply);
+            expect(args.body).toContain("Fixed in latest commit");
+            return {
+              data: { id: 99, html_url: "https://example/reply/99" },
+            };
+          },
+        },
+      } as unknown as Parameters<typeof createReplyForReviewComment>[0];
+
+      const reply = await createReplyForReviewComment(
+        octokit,
+        "owner",
+        "repo",
+        42,
+        55,
+        "Fixed in latest commit",
+      );
+      expect(reply.id).toBe(99);
+    });
+  });
+
+  describe("dispatchAgentPhaseWorkflow", () => {
+    it("dispatches agent-phase with default branch ref", async () => {
+      let dispatched: Record<string, unknown> | undefined;
+      const octokit = {
+        repos: {
+          get: async () => ({ data: { default_branch: "main" } }),
+        },
+        actions: {
+          createWorkflowDispatch: async (args: Record<string, unknown>) => {
+            dispatched = args;
+          },
+        },
+      } as unknown as Parameters<typeof dispatchAgentPhaseWorkflow>[0];
+
+      await dispatchAgentPhaseWorkflow(octokit, "owner", "repo", {
+        phase: "code-review",
+        commentId: 1,
+        issueNumber: 2,
+        prNumber: 3,
+        headRef: "agent/2-slug",
+        reviewInstructions: "recheck",
+      });
+
+      expect(dispatched?.workflow_id).toBe(".github/workflows/agent-phase.yml");
+      expect(dispatched?.ref).toBe("main");
+      expect(dispatched?.inputs).toMatchObject({
+        phase: "code-review",
+        comment_id: "1",
+        issue_number: "2",
+        pr_number: "3",
+        head_ref: "agent/2-slug",
+        review_instructions: "recheck",
+      });
     });
   });
 });
