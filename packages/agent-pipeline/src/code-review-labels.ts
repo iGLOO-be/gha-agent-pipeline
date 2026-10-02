@@ -4,6 +4,7 @@ import type { ReviewTracker } from "./tools/index.js";
 import {
   manageExclusiveLabels,
   parseMergeRiskLevel,
+  removeLabelFromIssue,
   riskLabelEnsureOptions,
   type PullRequestReviewEvent,
 } from "./tools/github.js";
@@ -128,6 +129,22 @@ export async function applyCodeReviewLabels(params: {
         targetNumber,
         statusSiblingLabels,
         statusLabel,
+      );
+    } else if (statusSiblingLabels.length > 0) {
+      // No status label for this event (only one side configured, or an
+      // unknown event): clear any stale status label instead of leaving the
+      // target looking approved by a previous review.
+      await Promise.all(
+        statusSiblingLabels.map((name) =>
+          removeLabelFromIssue(octokit, owner, repo, targetNumber, name).catch(
+            (error) => {
+              const status = (error as { status?: number }).status;
+              if (status !== 404) {
+                console.warn(`Failed to remove label ${name}:`, error);
+              }
+            },
+          ),
+        ),
       );
     }
 

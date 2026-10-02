@@ -154,4 +154,84 @@ describe("applyCodeReviewLabels", () => {
     expect(added).toEqual(["agent-risk-high"]);
     expect(added).not.toContain("ai-review:ok");
   });
+
+  it("clears a stale status label when the event has no configured label", async () => {
+    const { calls, octokit } = makeOctokit();
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: {
+        posted: true,
+        event: "REQUEST_CHANGES",
+        body: "no merge risk section",
+      },
+      labelsConfig: { applyTo: "pr", statusOk: "ai-review:ok" },
+    });
+
+    const added = calls
+      .filter((c) => c.method === "issues.addLabels")
+      .map((c) => (c.args[0] as { labels: string[] }).labels)
+      .flat();
+    expect(added).toEqual([]);
+
+    const removed = calls
+      .filter((c) => c.method === "issues.removeLabel")
+      .map((c) => (c.args[0] as { name: string }).name);
+    expect(removed).toContain("ai-review:ok");
+  });
+
+  it("applies labels only to the issue when apply_to is issue", async () => {
+    const { calls, octokit } = makeOctokit();
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: { posted: true, event: "COMMENT", body: "x" },
+      labelsConfig: { applyTo: "issue", statusOk: "ai-review:ok" },
+    });
+
+    const targets = calls
+      .filter((c) => c.method === "issues.addLabels")
+      .map((c) => (c.args[0] as { issue_number: number }).issue_number);
+    expect(targets).toEqual([7]);
+  });
+
+  it("dedupes the target when apply_to is both and numbers coincide", async () => {
+    const { calls, octokit } = makeOctokit();
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 42,
+      review: {
+        posted: true,
+        event: "COMMENT",
+        body: "## Merge risk\n\n**High** — breaking API.",
+      },
+      labelsConfig: {
+        applyTo: "both",
+        statusOk: "ai-review:ok",
+        mergeRisk: {
+          low: "agent-risk-low",
+          medium: "agent-risk-medium",
+          high: "agent-risk-high",
+        },
+      },
+    });
+
+    const added = calls.filter((c) => c.method === "issues.addLabels");
+    expect(added).toHaveLength(2);
+    expect(
+      added.map((c) => (c.args[0] as { issue_number: number }).issue_number),
+    ).toEqual([42, 42]);
+  });
 });
