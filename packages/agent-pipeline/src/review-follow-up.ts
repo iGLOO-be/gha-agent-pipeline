@@ -137,3 +137,74 @@ export function formatFollowUpPromptSection(
 
   return parts.join("\n");
 }
+
+export type ReviewFixThreadContext = {
+  openThreadsMarkdown: string;
+  warnings: string[];
+};
+
+export async function buildReviewFixThreadContext(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  bareFixTrigger: boolean,
+): Promise<ReviewFixThreadContext> {
+  const warnings: string[] = [];
+  let openThreads: PullRequestReviewThread[] = [];
+
+  try {
+    const allThreads = await listPullRequestReviewThreads(
+      octokit,
+      owner,
+      repo,
+      prNumber,
+    );
+    openThreads = allThreads.filter((thread) => {
+      if (thread.isResolved) {
+        return false;
+      }
+      if (bareFixTrigger) {
+        return true;
+      }
+      const root = thread.comments[0];
+      if (!root) {
+        return false;
+      }
+      return !isAutomatedReviewAuthor(root.authorLogin);
+    });
+  } catch (error) {
+    warnings.push(
+      `Could not list pull request review threads: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  return {
+    openThreadsMarkdown: formatReviewThreadsForPrompt(openThreads, {
+      includeBody: false,
+    }),
+    warnings,
+  };
+}
+
+export function formatReviewFixThreadPromptSection(
+  context: ReviewFixThreadContext,
+): string {
+  const parts: string[] = [
+    "### Open review threads (reply + resolve when fixed)",
+    "",
+    "Thread ids only — the comment bodies are in the review line-comments section above. For each thread you address in code, call `replyToReviewComment` with the **root** `rootCommentId` from the thread header, then `resolveReviewThreads` with the GraphQL `thread id` when the fix is clear (including **outdated** threads).",
+    "",
+    context.openThreadsMarkdown,
+  ];
+
+  if (context.warnings.length > 0) {
+    parts.push(
+      "",
+      "Warnings:",
+      ...context.warnings.map((warning) => `- ${warning}`),
+    );
+  }
+
+  return parts.join("\n");
+}

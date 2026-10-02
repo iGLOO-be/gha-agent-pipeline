@@ -34,6 +34,7 @@ export const AGENT_COMMENT_MARKERS = {
   askFailed: "agent-ask-failed",
   codeReview: "agent-code-review",
   codeReviewFailed: "agent-code-review-failed",
+  reviewFixReply: "agent-review-fix-reply",
 } as const;
 
 /** Lifecycle label applied while an agent phase is running. */
@@ -527,6 +528,87 @@ export async function getPullRequestReviewComment(
     comment_id: commentId,
   });
   return data;
+}
+
+export async function createReplyForReviewComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commentId: number,
+  body: string,
+) {
+  const markedBody = prependAgentMarker(
+    body,
+    AGENT_COMMENT_MARKERS.reviewFixReply,
+  );
+  const { data } = await octokit.pulls.createReplyForReviewComment({
+    owner,
+    repo,
+    pull_number: prNumber,
+    comment_id: commentId,
+    body: markedBody,
+  });
+  return data;
+}
+
+export type DispatchAgentPhaseWorkflowInput = {
+  phase: string;
+  commentId: string | number;
+  issueNumber: number;
+  prNumber: number;
+  headRef: string;
+  workflowFile?: string;
+  ref?: string;
+  reviewFeedback?: string;
+  reactionTarget?: string;
+  reviewInstructions?: string;
+};
+
+/** Dispatch the consumer `agent-phase.yml` workflow (requires `actions: write` on the token). */
+export async function dispatchAgentPhaseWorkflow(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  input: DispatchAgentPhaseWorkflowInput,
+): Promise<void> {
+  const workflowFile = input.workflowFile ?? "agent-phase.yml";
+
+  let ref = input.ref;
+  if (!ref) {
+    const { data: repoMeta } = await octokit.repos.get({ owner, repo });
+    ref = repoMeta.default_branch;
+  }
+
+  const workflowPath = workflowFile.includes("/")
+    ? workflowFile
+    : `.github/workflows/${workflowFile}`;
+
+  const inputs: Record<string, string> = {
+    phase: input.phase,
+    comment_id: String(input.commentId),
+    issue_number: String(input.issueNumber),
+    pr_number: String(input.prNumber),
+    head_ref: input.headRef,
+  };
+
+  if (input.reviewFeedback != null && input.reviewFeedback !== "") {
+    inputs.review_feedback = input.reviewFeedback;
+  }
+  if (input.reactionTarget) {
+    inputs.reaction_target = input.reactionTarget;
+  }
+  if (input.reviewInstructions != null && input.reviewInstructions !== "") {
+    inputs.review_instructions = input.reviewInstructions;
+  }
+
+  await octokit.actions.createWorkflowDispatch({
+    owner,
+    repo,
+    workflow_id: workflowPath,
+    ref,
+    inputs,
+  });
 }
 
 export async function listReviewCommentsForReview(
@@ -1476,19 +1558,23 @@ export async function resolvePullRequestReviewThread(
 
 export function formatReviewThreadsForPrompt(
   threads: PullRequestReviewThread[],
+  options?: { includeBody?: boolean },
 ): string {
   if (threads.length === 0) {
     return "(no open review threads in scope)";
   }
+  const includeBody = options?.includeBody ?? true;
   return threads
     .map((thread) => {
       const root = thread.comments[0];
       const path = root?.path ?? "(no path)";
       const line = root?.line != null ? ` line ${root.line}` : "";
       const author = root?.authorLogin ?? "unknown";
-      const body = (root?.body ?? "").trim();
+      const body = includeBody ? `\n${(root?.body ?? "").trim()}` : "";
       const outdated = thread.isOutdated ? " outdated" : "";
-      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated}) ---\n${body}`;
+      const rootId =
+        root?.id != null && root.id > 0 ? ` rootCommentId=${root.id}` : "";
+      return `--- Thread id=${thread.id} on ${path}${line} (${author}${outdated})${rootId} ---${body}`;
     })
     .join("\n\n");
 }

@@ -65,6 +65,14 @@ code_review:
     merge_risk:
       enabled: true
 
+review_fix:
+  follow_up:
+    code_review: true
+
+implement:
+  follow_up:
+    code_review: true
+
 commands:
   config-audit:
     extends: ask

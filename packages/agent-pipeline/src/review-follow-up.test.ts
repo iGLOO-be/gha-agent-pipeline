@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import type { Octokit } from "@octokit/rest";
+import { describe, expect, it, vi } from "vitest";
 import { loadAgentConfig } from "./config.js";
+import * as github from "./tools/github.js";
 import {
+  buildReviewFixThreadContext,
   formatFollowUpPromptSection,
   getCodeReviewFollowUpMode,
   threadMatchesCodeReviewFollowUpMode,
@@ -57,6 +60,82 @@ describe("review-follow-up", () => {
       expect(threadMatchesCodeReviewFollowUpMode(thread, "agent_only")).toBe(
         false,
       );
+    });
+  });
+
+  describe("buildReviewFixThreadContext", () => {
+    it("omits resolved threads and filters bots unless bare fix", async () => {
+      const octokit = {} as Octokit;
+      vi.spyOn(github, "listPullRequestReviewThreads").mockResolvedValue([
+        {
+          id: "PRRT_resolved",
+          isResolved: true,
+          isOutdated: false,
+          comments: [
+            {
+              id: 1,
+              body: "done",
+              path: "a.ts",
+              line: 1,
+              authorLogin: "human",
+            },
+          ],
+        },
+        {
+          id: "PRRT_human",
+          isResolved: false,
+          isOutdated: false,
+          comments: [
+            {
+              id: 2,
+              body: "fix this",
+              path: "b.ts",
+              line: 2,
+              authorLogin: "human",
+            },
+          ],
+        },
+        {
+          id: "PRRT_bot",
+          isResolved: false,
+          isOutdated: false,
+          comments: [
+            {
+              id: 3,
+              body: "nit",
+              path: "c.ts",
+              line: 3,
+              authorLogin: "dependabot[bot]",
+            },
+          ],
+        },
+      ]);
+
+      const scoped = await buildReviewFixThreadContext(
+        octokit,
+        "owner",
+        "repo",
+        9,
+        false,
+      );
+      expect(scoped.openThreadsMarkdown).toContain("PRRT_human");
+      expect(scoped.openThreadsMarkdown).not.toContain("PRRT_resolved");
+      expect(scoped.openThreadsMarkdown).not.toContain("PRRT_bot");
+      // Bodies live in the line-comments section, so the thread section only
+      // carries ids/rootCommentId to avoid duplicating review text.
+      expect(scoped.openThreadsMarkdown).not.toContain("fix this");
+      expect(scoped.openThreadsMarkdown).toContain("rootCommentId=2");
+
+      const bare = await buildReviewFixThreadContext(
+        octokit,
+        "owner",
+        "repo",
+        9,
+        true,
+      );
+      expect(bare.openThreadsMarkdown).toContain("PRRT_bot");
+
+      vi.restoreAllMocks();
     });
   });
 

@@ -371,6 +371,42 @@
       },
       "default": {}
     },
+    "review_fix": {
+      "type": "object",
+      "description": "Optional behavior for the /agent fix (review-fix) phase.",
+      "properties": {
+        "follow_up": {
+          "type": "object",
+          "properties": {
+            "code_review": {
+              "type": "boolean",
+              "description": "When true, dispatch /agent code-review after a successful review-fix run.",
+              "default": false
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
+    "implement": {
+      "type": "object",
+      "description": "Optional behavior for the /agent implement phase.",
+      "properties": {
+        "follow_up": {
+          "type": "object",
+          "properties": {
+            "code_review": {
+              "type": "boolean",
+              "description": "When true, dispatch /agent code-review after a successful implement run (PR opened).",
+              "default": false
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
     "commands": {
       "type": "object",
       "description": "Optional custom slash commands and partial overrides of built-in commands. Each key is a command id; custom ids must declare extends.",
