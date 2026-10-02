@@ -239,7 +239,7 @@ After the consumer workflows are on **`main`**, comment on an issue or PR:
 - `/agent plan` — explore and post a plan
 - `/agent implement` — implement from the plan and open a PR
 - `/agent yolo` — implement directly from the issue
-- `/agent fix` — on an agent PR (comment or submitted review). One fix session covers merge conflicts, **failing CI checks** (preloaded + `readCheckRuns` / `readCheckLogs`), and review feedback. A bare `/agent fix` prioritizes open CI failures when checks are red, otherwise loads PR review bodies and inline comments (human and bot).
+- `/agent fix` — on an agent PR (comment or submitted review). One fix session covers merge conflicts, **failing CI checks** (preloaded when Checks read is granted + `readCheckRuns` / `readCheckLogs`), and review feedback. A bare `/agent fix` prioritizes open CI failures when checks are red, otherwise loads PR review bodies and inline comments (human and bot). If check preload fails (missing Checks permission), the slash fix still runs and the agent can call `readCheckRuns` when permitted. A PR comment containing `<!-- agent-blocked -->` skips any fix run (slash or CI auto-fix).
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
 - `/agent ask` — read-only Q&A on an issue or PR
 

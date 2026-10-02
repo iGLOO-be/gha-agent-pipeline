@@ -5,7 +5,7 @@ import { runAgentPhase } from "./lifecycle.js";
 import { createOctokit } from "./tools/github.js";
 
 async function main() {
-  await runFixPhase("ci-fix");
+  await runFixPhase("ci-fix", env);
 }
 
 const env = loadCiFixEnv();

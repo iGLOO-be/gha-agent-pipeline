@@ -535,13 +535,20 @@ export const IMPLEMENT_MODEL = agentConfig.models.implement;
 export const YOLO_MODEL = IMPLEMENT_MODEL;
 export type FixPhaseEntry = "ci-fix" | "review-fix";
 
-export function resolveFixModel(config: AgentConfig): string {
-  return config.models.fix ?? config.models["review-fix"];
+export function resolveFixModel(
+  config: AgentConfig,
+  entry: FixPhaseEntry,
+): string {
+  if (config.models.fix) {
+    return config.models.fix;
+  }
+  return entry === "ci-fix"
+    ? config.models["ci-fix"]
+    : config.models["review-fix"];
 }
 
-export const FIX_MODEL = resolveFixModel(agentConfig);
-export const CI_FIX_MODEL = FIX_MODEL;
-export const REVIEW_FIX_MODEL = FIX_MODEL;
+export const CI_FIX_MODEL = resolveFixModel(agentConfig, "ci-fix");
+export const REVIEW_FIX_MODEL = resolveFixModel(agentConfig, "review-fix");
 export const ASK_MODEL = agentConfig.models.ask;
 export const CODE_REVIEW_MODEL = agentConfig.models["code-review"];
 export const DEFAULT_MERGE_STRATEGY = agentConfig.git.merge_strategy;
@@ -581,7 +588,7 @@ const fixEnvSchema = envSchema.extend({
   HEAD_SHA: optionalEnvString,
 });
 
-const ciFixEnvSchema = fixEnvSchema.extend({
+const fixEnvWithBranchSchema = fixEnvSchema.extend({
   AGENT_BRANCH: z.string().min(1),
 });
 
@@ -596,13 +603,10 @@ export function loadAgentEnv(): AgentEnv {
   return parsed.data;
 }
 
-const reviewFixEnvSchema = fixEnvSchema.extend({
-  AGENT_BRANCH: z.string().min(1),
-});
-
 export type FixEnv = z.infer<typeof fixEnvSchema>;
-export type CiFixEnv = z.infer<typeof ciFixEnvSchema>;
-export type ReviewFixEnv = z.infer<typeof reviewFixEnvSchema>;
+export type FixEnvWithBranch = z.infer<typeof fixEnvWithBranchSchema>;
+export type CiFixEnv = FixEnvWithBranch;
+export type ReviewFixEnv = FixEnvWithBranch;
 
 export function loadFixEnv(): FixEnv {
   const parsed = fixEnvSchema.safeParse(process.env);
@@ -633,7 +637,7 @@ export async function resolveFixHeadSha(
 }
 
 export function loadCiFixEnv(): CiFixEnv {
-  const parsed = ciFixEnvSchema.safeParse(process.env);
+  const parsed = fixEnvWithBranchSchema.safeParse(process.env);
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Missing or invalid ci-fix environment: ${missing}`);
@@ -642,7 +646,7 @@ export function loadCiFixEnv(): CiFixEnv {
 }
 
 export function loadReviewFixEnv(): ReviewFixEnv {
-  const parsed = reviewFixEnvSchema.safeParse(process.env);
+  const parsed = fixEnvWithBranchSchema.safeParse(process.env);
   if (!parsed.success) {
     const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Missing or invalid review-fix environment: ${missing}`);

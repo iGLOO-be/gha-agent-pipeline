@@ -5,7 +5,7 @@ import { runAgentPhase } from "./lifecycle.js";
 import { createOctokit } from "./tools/github.js";
 
 async function main() {
-  await runFixPhase("review-fix");
+  await runFixPhase("review-fix", env);
 }
 
 const env = loadReviewFixEnv();

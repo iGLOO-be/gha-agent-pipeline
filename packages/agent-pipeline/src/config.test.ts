@@ -17,6 +17,7 @@ import {
   loadReviewFixEnv,
   parseRepository,
   PLAN_MODEL,
+  resolveFixModel,
 } from "./config.js";
 import { FILE_EDIT_SYSTEM_HINT } from "./prompts/file-edits.js";
 import { RUN_FRICTION_SYSTEM_HINT } from "./prompts/run-friction.js";
@@ -114,6 +115,34 @@ describe("config", () => {
       expect(() => loadAgentEnv()).toThrow(
         "Missing or invalid agent environment: ISSUE_NUMBER",
       );
+    });
+  });
+
+  describe("resolveFixModel", () => {
+    it("uses models.fix when set", () => {
+      const config = loadAgentConfig(join(tempDir, "missing.yml"));
+      const withFix = {
+        ...config,
+        models: { ...config.models, fix: "vendor/unified" },
+      };
+      expect(resolveFixModel(withFix, "ci-fix")).toBe("vendor/unified");
+      expect(resolveFixModel(withFix, "review-fix")).toBe("vendor/unified");
+    });
+
+    it("falls back to entry-specific models when fix is unset", () => {
+      const configPath = join(tempDir, "agent.config.yml");
+      writeFileSync(
+        configPath,
+        [
+          "version: 1",
+          "models:",
+          "  ci-fix: model/ci",
+          "  review-fix: model/review",
+        ].join("\n"),
+      );
+      const config = loadAgentConfig(configPath);
+      expect(resolveFixModel(config, "ci-fix")).toBe("model/ci");
+      expect(resolveFixModel(config, "review-fix")).toBe("model/review");
     });
   });
 

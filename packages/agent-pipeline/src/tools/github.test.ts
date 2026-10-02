@@ -14,6 +14,7 @@ import {
   formatBareReviewFixReviewBodiesSection,
   formatReviewCommentsForPrompt,
   formatReviewThreadsForPrompt,
+  hasFailedCheckRuns,
   hasAgentMarkerInComments,
   isAgentInlineReviewCommentBody,
   isAutomatedReviewAuthor,
@@ -796,6 +797,39 @@ describe("tools/github", () => {
       );
       expect(result.id).toBe(12);
       expect(events).toEqual(["REQUEST_CHANGES", "COMMENT"]);
+    });
+  });
+
+  describe("hasFailedCheckRuns", () => {
+    it("detects failure and timed_out conclusions", () => {
+      expect(
+        hasFailedCheckRuns([
+          {
+            id: 1,
+            name: "lint",
+            status: "completed",
+            conclusion: "failure",
+            detailsUrl: null,
+            outputTitle: null,
+            outputSummary: null,
+            outputText: null,
+          },
+        ]),
+      ).toBe(true);
+      expect(
+        hasFailedCheckRuns([
+          {
+            id: 2,
+            name: "test",
+            status: "completed",
+            conclusion: "success",
+            detailsUrl: null,
+            outputTitle: null,
+            outputSummary: null,
+            outputText: null,
+          },
+        ]),
+      ).toBe(false);
     });
   });
 });

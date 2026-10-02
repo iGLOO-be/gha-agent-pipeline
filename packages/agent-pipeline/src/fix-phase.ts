@@ -1,10 +1,10 @@
 import {
-  FIX_MODEL,
+  resolveFixModel,
   buildPhaseSystemPrompt,
-  loadFixEnv,
   loadAgentConfig,
   parseRepository,
   resolveFixHeadSha,
+  type FixEnvWithBranch,
   type FixPhaseEntry,
 } from "./config.js";
 import { commitAndPushBranch } from "./git/pr.js";
@@ -29,6 +29,8 @@ import {
   assertPullRequestNotConflicting,
   formatFailedChecksForPrompt,
   hasAgentBlockedComment,
+  hasFailedCheckRuns,
+  isBareReviewFixFeedback,
   postComment,
   readCheckRuns,
   readComments,
@@ -44,16 +46,12 @@ import {
   resolveAgentCommitMessage,
 } from "./phase-report.js";
 
-function isBareFixFeedback(reviewFeedback: string): boolean {
-  return reviewFeedback.replace(/\/agent\s+fix/gi, "").trim().length === 0;
-}
-
-function buildConflictPriorityHint(
+export function buildConflictPriorityHint(
   prState: Awaited<ReturnType<typeof getPullRequestMergeState>>,
   reviewFeedback: string,
   baseBranchName: string,
 ): string {
-  const bareFix = isBareFixFeedback(reviewFeedback);
+  const bareFix = isBareReviewFixFeedback(reviewFeedback);
   if (!prState.conflicts || !bareFix) {
     return "";
   }
@@ -62,9 +60,10 @@ function buildConflictPriorityHint(
 PRIORITY: GitHub reports this PR cannot merge into ${baseBranchName} (mergeable_state=${prState.mergeable_state}). Your first job is to resolve merge conflicts with ${baseBranchName} using the conflicting files in the merge context. Do not re-implement the feature from scratch.`;
 }
 
-function buildBareFixWorkOrderHint(
+export function buildBareFixWorkOrderHint(
   bareFix: boolean,
   hasFailedChecks: boolean,
+  entry: FixPhaseEntry,
 ): string {
   if (!bareFix) {
     return "";
@@ -73,8 +72,40 @@ function buildBareFixWorkOrderHint(
     return `
 The fix trigger did not include explicit feedback. Failed CI checks are listed below — investigate with readCheckLogs and fix them first. Also address PR review bodies and line comments (including prior /agent code-review output) when they require changes for merge.`;
   }
+  if (entry === "ci-fix") {
+    return `
+No failed checks were preloaded on this SHA. Use readCheckRuns and readCheckLogs if needed to find CI failures.`;
+  }
   return `
 The fix trigger did not include explicit feedback. Treat the PR review bodies and line comments below (including prior /agent code-review output) as the work order. Apply suggested fixes where appropriate; skip judgement-call nits that are not required for merge.`;
+}
+
+async function preloadFailedChecksSummary(
+  octokit: ReturnType<typeof createOctokit>,
+  owner: string,
+  repo: string,
+  headSha: string,
+  entry: FixPhaseEntry,
+): Promise<{ summary: string; hasFailedChecks: boolean }> {
+  try {
+    const checkRuns = await readCheckRuns(octokit, owner, repo, headSha);
+    return {
+      summary: formatFailedChecksForPrompt(checkRuns),
+      hasFailedChecks: hasFailedCheckRuns(checkRuns),
+    };
+  } catch (error) {
+    if (entry === "ci-fix") {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `Could not preload check runs for review-fix (${message}); continuing without failed-check context.`,
+    );
+    return {
+      summary: `(could not preload check runs: ${message}. Grant Checks read on the App installation, or call readCheckRuns during the session.)`,
+      hasFailedChecks: false,
+    };
+  }
 }
 
 function fixCommentMarker(entry: FixPhaseEntry): string {
@@ -99,8 +130,10 @@ function pushedStatusLine(
   return `Pushed review fixes for PR #${prNumber}.`;
 }
 
-export async function runFixPhase(entry: FixPhaseEntry): Promise<void> {
-  const env = loadFixEnv();
+export async function runFixPhase(
+  entry: FixPhaseEntry,
+  env: FixEnvWithBranch,
+): Promise<void> {
   const config = loadAgentConfig();
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
@@ -129,9 +162,8 @@ export async function runFixPhase(entry: FixPhaseEntry): Promise<void> {
       env.ISSUE_NUMBER,
     );
     const plan = findPlanComment(issueComments);
-    const checkRuns = await readCheckRuns(octokit, owner, repo, headSha);
-    const failedSummary = formatFailedChecksForPrompt(checkRuns);
-    const hasFailedChecks = !failedSummary.startsWith("(no failed check runs");
+    const { summary: failedSummary, hasFailedChecks } =
+      await preloadFailedChecksSummary(octokit, owner, repo, headSha, entry);
 
     const prComments = await readPullRequestComments(
       octokit,
@@ -202,9 +234,13 @@ export async function runFixPhase(entry: FixPhaseEntry): Promise<void> {
       config.git.base_branch,
     );
 
+    const bareFixForHints =
+      entry === "review-fix" && reviewCommentContext.bareFixTrigger;
+
     const bareFixHint = buildBareFixWorkOrderHint(
-      reviewCommentContext.bareFixTrigger,
+      bareFixForHints,
       hasFailedChecks,
+      entry,
     );
 
     const runFriction = createRunFrictionCollector();
@@ -222,9 +258,11 @@ export async function runFixPhase(entry: FixPhaseEntry): Promise<void> {
       runFriction,
     );
 
+    const modelId = resolveFixModel(config, entry);
+
     const session = await runAgentSession({
       phase: entry,
-      modelId: FIX_MODEL,
+      modelId,
       systemPrompt: buildPhaseSystemPrompt(entry, config),
       tools,
       runFriction,
@@ -271,7 +309,7 @@ PR discussion:
 ${prThread}
 
 Repository: ${env.GITHUB_REPOSITORY}
-Branch: ${env.AGENT_BRANCH ?? "(set by runner)"}`,
+Branch: ${env.AGENT_BRANCH}`,
     });
 
     appendRunFrictionStepSummary(runFriction, entry);
@@ -297,13 +335,8 @@ Branch: ${env.AGENT_BRANCH ?? "(set by runner)"}`,
 
     await prepareResolvedMergeForCommit();
 
-    const branch = env.AGENT_BRANCH;
-    if (!branch) {
-      throw new Error("AGENT_BRANCH is required to push fixes.");
-    }
-
     const pushResult = await commitAndPushBranch(
-      branch,
+      env.AGENT_BRANCH,
       resolveAgentCommitMessage(
         phaseReport,
         defaultCommitSubject(entry, env.PR_NUMBER),
@@ -321,7 +354,7 @@ Branch: ${env.AGENT_BRANCH ?? "(set by runner)"}`,
         ),
       );
       console.log(
-        `\nFix (${entry}) completed with no changes on branch ${branch}`,
+        `\nFix (${entry}) completed with no changes on branch ${env.AGENT_BRANCH}`,
       );
       await clearAgentResumeLabels(octokit, owner, repo, {
         issueNumber: env.ISSUE_NUMBER,
@@ -347,7 +380,7 @@ Branch: ${env.AGENT_BRANCH ?? "(set by runner)"}`,
       prNumber: env.PR_NUMBER,
     });
 
-    console.log(`\nFix (${entry}) pushed on branch ${branch}`);
+    console.log(`\nFix (${entry}) pushed on branch ${env.AGENT_BRANCH}`);
   } catch (error) {
     await reportPhaseFailure(
       octokit,

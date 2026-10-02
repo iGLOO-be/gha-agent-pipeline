@@ -70,19 +70,18 @@
         "fix": {
           "type": "string",
           "minLength": 1,
-          "description": "Model used for /agent fix and CI auto-fix (overrides ci-fix and review-fix when set).",
-          "default": "moonshotai/kimi-k2.7-code"
+          "description": "Model used for both /agent fix and CI auto-fix when set; overrides entry-specific keys below."
         },
         "ci-fix": {
           "type": "string",
           "minLength": 1,
-          "description": "Deprecated alias for models.fix — used when fix is unset.",
+          "description": "Model for CI auto-fix when models.fix is unset.",
           "default": "moonshotai/kimi-k2.7-code"
         },
         "review-fix": {
           "type": "string",
           "minLength": 1,
-          "description": "Deprecated alias for models.fix — used when fix is unset (review-fix takes precedence over ci-fix).",
+          "description": "Model for /agent fix when models.fix is unset.",
           "default": "moonshotai/kimi-k2.7-code"
         },
         "ask": {

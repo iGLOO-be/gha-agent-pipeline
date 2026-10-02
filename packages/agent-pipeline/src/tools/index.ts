@@ -269,26 +269,6 @@ export async function createFixTools(
   return [...reviewTools, ...extra];
 }
 
-export async function createCiFixTools(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  issueNumber: number,
-  prNumber: number,
-  headSha: string,
-  tracker?: PhaseReportTracker,
-) {
-  return createFixTools(
-    octokit,
-    owner,
-    repo,
-    issueNumber,
-    prNumber,
-    headSha,
-    tracker,
-  );
-}
-
 export async function createReviewFixTools(
   octokit: Octokit,
   owner: string,
