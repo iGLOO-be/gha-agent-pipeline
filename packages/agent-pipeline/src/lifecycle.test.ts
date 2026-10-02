@@ -118,8 +118,8 @@ describe("lifecycle", () => {
       ["plan", "Plan"],
       ["implement", "Implement"],
       ["yolo", "Yolo"],
-      ["review-fix", "Review Fix"],
-      ["ci-fix", "CI Fix"],
+      ["review-fix", "Fix"],
+      ["ci-fix", "Fix"],
       ["ask", "Ask"],
       ["code-review", "Code Review"],
     ] as Array<[AgentPhase, string]>)(

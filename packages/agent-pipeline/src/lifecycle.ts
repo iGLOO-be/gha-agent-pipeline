@@ -19,8 +19,8 @@ export const PHASE_LABELS: Record<AgentPhase, string> = {
   plan: "Plan",
   implement: "Implement",
   yolo: "Yolo",
-  "ci-fix": "CI Fix",
-  "review-fix": "Review Fix",
+  "ci-fix": "Fix",
+  "review-fix": "Fix",
   ask: "Ask",
   "code-review": "Code Review",
 };

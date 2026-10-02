@@ -124,6 +124,7 @@ describe("config", () => {
       process.env.GITHUB_REPOSITORY = "owner/repo";
       process.env.ISSUE_NUMBER = "88";
       process.env.PR_NUMBER = "123";
+      process.env.AGENT_BRANCH = "agent/88-fix";
       process.env.HEAD_SHA = "abc123";
 
       expect(loadCiFixEnv()).toEqual({
@@ -132,6 +133,8 @@ describe("config", () => {
         GITHUB_REPOSITORY: "owner/repo",
         ISSUE_NUMBER: 88,
         PR_NUMBER: 123,
+        AGENT_BRANCH: "agent/88-fix",
+        REVIEW_FEEDBACK: "",
         HEAD_SHA: "abc123",
       });
     });
@@ -143,7 +146,7 @@ describe("config", () => {
       process.env.ISSUE_NUMBER = "88";
 
       expect(() => loadCiFixEnv()).toThrow(
-        "Missing or invalid ci-fix environment: PR_NUMBER, HEAD_SHA",
+        "Missing or invalid ci-fix environment: AGENT_BRANCH, PR_NUMBER",
       );
     });
   });
@@ -176,8 +179,19 @@ describe("config", () => {
       process.env.ISSUE_NUMBER = "88";
 
       expect(() => loadReviewFixEnv()).toThrow(
-        "Missing or invalid review-fix environment: AGENT_BRANCH, PR_NUMBER, REVIEW_FEEDBACK",
+        "Missing or invalid review-fix environment: AGENT_BRANCH, PR_NUMBER",
       );
+    });
+
+    it("allows empty review feedback for bare /agent fix", () => {
+      process.env.OPENROUTER_API_KEY = "or-key";
+      process.env.GITHUB_TOKEN = "gh-token";
+      process.env.GITHUB_REPOSITORY = "owner/repo";
+      process.env.ISSUE_NUMBER = "88";
+      process.env.PR_NUMBER = "123";
+      process.env.AGENT_BRANCH = "agent/88-fix";
+
+      expect(loadReviewFixEnv().REVIEW_FEEDBACK).toBe("");
     });
   });
 
@@ -460,7 +474,10 @@ describe("config", () => {
         RUN_FRICTION_SYSTEM_HINT,
       );
       expect(buildPhaseSystemPrompt("ci-fix", config)).toContain(
-        "The pull request failed CI.",
+        "readCheckRuns",
+      );
+      expect(buildPhaseSystemPrompt("review-fix", config)).toContain(
+        "readCheckLogs",
       );
       expect(buildPhaseSystemPrompt("yolo", config)).toContain("riskLevel");
       expect(buildPhaseSystemPrompt("plan", config)).toContain(

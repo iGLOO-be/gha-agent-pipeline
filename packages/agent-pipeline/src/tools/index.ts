@@ -175,7 +175,7 @@ export async function createImplementTools(
   return withoutPost;
 }
 
-export async function createCiFixTools(
+export async function createFixTools(
   octokit: Octokit,
   owner: string,
   repo: string,
@@ -185,32 +185,16 @@ export async function createCiFixTools(
   tracker?: PhaseReportTracker,
 ) {
   const { createTool } = await loadClineSdk();
-  const baseTools = await createAgentTools(octokit, owner, repo, issueNumber);
+  const reviewTools = await createReviewFixTools(
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    prNumber,
+    tracker,
+  );
 
-  const postPrCommentTool = createTool({
-    name: "postComment",
-    description: "Post a comment on the pull request.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        body: {
-          type: "string",
-          description: "Markdown body for the PR comment",
-        },
-      },
-      required: ["body"],
-    },
-    async execute(input: { body: string }) {
-      const comment = await postComment(
-        octokit,
-        owner,
-        repo,
-        prNumber,
-        input.body,
-      );
-      return { id: comment.id, url: comment.html_url };
-    },
-  });
+  const existing = new Set(reviewTools.map((tool) => tool.name));
 
   const readCheckRunsTool = createTool({
     name: "readCheckRuns",
@@ -275,23 +259,34 @@ export async function createCiFixTools(
     },
   });
 
-  const withoutPost = baseTools.filter((tool) => tool.name !== "postComment");
-
-  const tools = [
-    ...withoutPost,
-    postPrCommentTool,
+  const extra = [
     readCheckRunsTool,
     readCheckLogsTool,
     getCacheTool,
     setCacheTool,
-  ];
+  ].filter((tool) => !existing.has(tool.name));
 
-  if (tracker) {
-    return appendSubmitPhaseReportTool(tools, tracker, {
-      allowCommitMessage: true,
-    });
-  }
-  return tools;
+  return [...reviewTools, ...extra];
+}
+
+export async function createCiFixTools(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  prNumber: number,
+  headSha: string,
+  tracker?: PhaseReportTracker,
+) {
+  return createFixTools(
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    prNumber,
+    headSha,
+    tracker,
+  );
 }
 
 export async function createReviewFixTools(
