@@ -364,8 +364,7 @@
                   "minLength": 1,
                   "default": "agent-risk-high"
                 }
-              },
-              "default": {}
+              }
             }
           }
         }

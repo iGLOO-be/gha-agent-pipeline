@@ -4,15 +4,14 @@ import type { ReviewTracker } from "./tools/index.js";
 import {
   manageExclusiveLabels,
   parseMergeRiskLevel,
+  removeLabelsFromIssue,
   riskLabelEnsureOptions,
   type PullRequestReviewEvent,
-  type RiskLevel,
 } from "./tools/github.js";
 
 export type CodeReviewLabelsApplyTo = "pr" | "issue" | "both";
 
 export type ResolvedCodeReviewMergeRiskLabels = {
-  enabled: true;
   low: string;
   medium: string;
   high: string;
@@ -38,10 +37,6 @@ export function resolveCodeReviewLabelsConfig(
   const mergeRiskBlock = labels.merge_risk;
   const mergeRiskEnabled = mergeRiskBlock?.enabled ?? true;
 
-  if (!statusOk && !statusPending && !mergeRiskBlock) {
-    return null;
-  }
-
   const resolved: ResolvedCodeReviewLabelsConfig = {
     applyTo: labels.apply_to ?? "pr",
     statusOk,
@@ -50,7 +45,6 @@ export function resolveCodeReviewLabelsConfig(
 
   if (mergeRiskBlock && mergeRiskEnabled) {
     resolved.mergeRisk = {
-      enabled: true,
       low: mergeRiskBlock.low ?? "agent-risk-low",
       medium: mergeRiskBlock.medium ?? "agent-risk-medium",
       high: mergeRiskBlock.high ?? "agent-risk-high",
@@ -89,13 +83,6 @@ function statusLabelForEvent(
   return config.statusOk ?? null;
 }
 
-function mergeRiskLabelName(
-  level: RiskLevel,
-  mergeRisk: ResolvedCodeReviewMergeRiskLabels,
-): string {
-  return mergeRisk[level];
-}
-
 export async function applyCodeReviewLabels(params: {
   octokit: Octokit;
   owner: string;
@@ -117,9 +104,13 @@ export async function applyCodeReviewLabels(params: {
     prNumber,
     issueNumber,
   );
-  const event = review.event ?? "COMMENT";
   const reviewBody = review.body ?? "";
-  const statusLabel = statusLabelForEvent(event, labelsConfig);
+  // Fail safe: an unknown review event must not be labelled as `status.ok`
+  // (a possibly-blocking review would look approved). Both writers set
+  // `event`, so this only guards against future regressions.
+  const statusLabel = review.event
+    ? statusLabelForEvent(review.event, labelsConfig)
+    : null;
   const statusSiblingLabels = [
     labelsConfig.statusOk,
     labelsConfig.statusPending,
@@ -130,7 +121,7 @@ export async function applyCodeReviewLabels(params: {
     : null;
 
   for (const targetNumber of targets) {
-    if (statusLabel && statusSiblingLabels.length > 0) {
+    if (statusLabel) {
       await manageExclusiveLabels(
         octokit,
         owner,
@@ -139,14 +130,16 @@ export async function applyCodeReviewLabels(params: {
         statusSiblingLabels,
         statusLabel,
       );
-    } else if (statusLabel) {
-      await manageExclusiveLabels(
+    } else if (statusSiblingLabels.length > 0) {
+      // No status label for this event (only one side configured, or an
+      // unknown event): clear any stale status label instead of leaving the
+      // target looking approved by a previous review.
+      await removeLabelsFromIssue(
         octokit,
         owner,
         repo,
         targetNumber,
-        [statusLabel],
-        statusLabel,
+        statusSiblingLabels,
       );
     }
 
@@ -156,16 +149,23 @@ export async function applyCodeReviewLabels(params: {
         labelsConfig.mergeRisk.medium,
         labelsConfig.mergeRisk.high,
       ];
-      const active = mergeRiskLabelName(mergeLevel, labelsConfig.mergeRisk);
       await manageExclusiveLabels(
         octokit,
         owner,
         repo,
         targetNumber,
         names,
-        active,
+        labelsConfig.mergeRisk[mergeLevel],
         riskLabelEnsureOptions,
       );
+    } else if (labelsConfig.mergeRisk) {
+      // No parseable risk level this round: drop any stale risk label rather
+      // than letting an old `agent-risk-*` contradict the latest review.
+      await removeLabelsFromIssue(octokit, owner, repo, targetNumber, [
+        labelsConfig.mergeRisk.low,
+        labelsConfig.mergeRisk.medium,
+        labelsConfig.mergeRisk.high,
+      ]);
     }
   }
 }

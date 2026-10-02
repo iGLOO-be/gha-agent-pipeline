@@ -893,6 +893,31 @@ export async function removeLabelFromIssue(
   return data;
 }
 
+/**
+ * Removes several labels from an issue/PR, tolerating missing labels (404).
+ * Other failures are logged and swallowed so labelling never fails a phase.
+ */
+export async function removeLabelsFromIssue(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labelNames: readonly string[],
+): Promise<void> {
+  await Promise.all(
+    labelNames.map((name) =>
+      removeLabelFromIssue(octokit, owner, repo, issueNumber, name).catch(
+        (error) => {
+          const status = (error as { status?: number }).status;
+          if (status !== 404) {
+            console.warn(`Failed to remove label ${name}:`, error);
+          }
+        },
+      ),
+    ),
+  );
+}
+
 export type ReactionContent =
   "+1" | "-1" | "laugh" | "confused" | "heart" | "hooray" | "rocket" | "eyes";
 
@@ -1024,10 +1049,13 @@ export function parseRiskLevel(text: string): RiskLevel | null {
   return null;
 }
 
-const MERGE_RISK_LEVEL_WORDS: { word: RegExp; level: RiskLevel }[] = [
-  { word: /\bminimal\b/i, level: "low" },
-  { word: /\bmoderate\b/i, level: "medium" },
-  { word: /\bhigh\b/i, level: "high" },
+// Anchored to the start of the (bold-stripped) line so justification words
+// such as "minimal blast radius" cannot win over the actual level. An optional
+// short `level:` / `risk:` prefix is tolerated.
+const MERGE_RISK_LEVEL_WORDS: { line: RegExp; level: RiskLevel }[] = [
+  { line: /^(?:level|risk)?[:\s-]*minimal\b/i, level: "low" },
+  { line: /^(?:level|risk)?[:\s-]*moderate\b/i, level: "medium" },
+  { line: /^(?:level|risk)?[:\s-]*high\b/i, level: "high" },
 ];
 
 /** Parses ## Merge risk (Minimal / Moderate / High) from a code-review body. */
@@ -1045,9 +1073,9 @@ export function parseMergeRiskLevel(body: string): RiskLevel | null {
   if (!firstLine) {
     return null;
   }
-  const stripped = firstLine.replace(/\*\*/g, "");
-  for (const { word, level } of MERGE_RISK_LEVEL_WORDS) {
-    if (word.test(stripped)) {
+  const candidate = firstLine.replace(/\*\*/g, "").replace(/^[-*:]?\s*/, "");
+  for (const { line, level } of MERGE_RISK_LEVEL_WORDS) {
+    if (line.test(candidate)) {
       return level;
     }
   }
@@ -1084,19 +1112,12 @@ export async function manageExclusiveLabels(
     ),
   );
 
-  await Promise.all(
-    labelNames
-      .filter((name) => name !== activeLabel)
-      .map((name) =>
-        removeLabelFromIssue(octokit, owner, repo, issueNumber, name).catch(
-          (error) => {
-            const status = (error as { status?: number }).status;
-            if (status !== 404) {
-              console.warn(`Failed to remove label ${name}:`, error);
-            }
-          },
-        ),
-      ),
+  await removeLabelsFromIssue(
+    octokit,
+    owner,
+    repo,
+    issueNumber,
+    labelNames.filter((name) => name !== activeLabel),
   );
 
   await addLabelToIssue(octokit, owner, repo, issueNumber, activeLabel);
