@@ -37,11 +37,22 @@ import {
 } from "./run-friction.js";
 import {
   AgentSessionError,
+  getSessionContinueMaxAttempts,
   getSessionMaxAttempts,
   getSessionRetryBaseDelayMs,
+  isRetriableSessionFinishReason,
+  isSessionTurnFailure,
   resolvePhaseModel,
+  SESSION_CONTINUE_USER_PROMPT,
   sleep,
 } from "./session-retry.js";
+
+type SessionTurnResult = {
+  finishReason?: string;
+  text?: string;
+  iterations?: number;
+  toolCalls?: unknown[];
+};
 
 function sessionMode(phase: AgentPhase): "plan" | "act" {
   return phase === "plan" ? "plan" : "act";
@@ -49,11 +60,11 @@ function sessionMode(phase: AgentPhase): "plan" | "act" {
 
 function formatSessionFailureMessage(
   finishReason: string,
-  session: { result?: { text?: string } | null },
+  session: { result?: { text?: string } | null; text?: string },
   sessionId?: string,
   attempt?: number,
 ): string {
-  const detail = session.result?.text?.trim();
+  const detail = (session.result?.text ?? session.text)?.trim();
   let message = `Agent session failed (${finishReason})`;
   if (detail) {
     message += `: ${detail}`;
@@ -180,8 +191,7 @@ async function runAgentSessionAttempt(
       timeoutMs: getRunCommandsTimeoutMs(config),
     });
 
-    const session = await cline.start({
-      prompt: input.prompt,
+    const startSessionConfig = {
       config: {
         providerId: OPENROUTER_PROVIDER_ID,
         modelId: requestModelId,
@@ -216,6 +226,11 @@ async function runAgentSessionAttempt(
         sessionMaxAttempts: input.maxAttempts,
       },
       toolPolicies,
+    };
+
+    const session = await cline.start({
+      prompt: input.prompt,
+      ...startSessionConfig,
     });
 
     sessionId = session.sessionId;
@@ -224,8 +239,42 @@ async function runAgentSessionAttempt(
       console.log(`[session] manifest=${session.manifestPath}`);
     }
 
-    const finishReason = session.result?.finishReason ?? "unknown";
-    console.log(`[session] finishReason=${finishReason}`);
+    let turnResult: SessionTurnResult | null | undefined = session.result;
+    let continueCount = 0;
+    const maxContinues = getSessionContinueMaxAttempts();
+    const continueBaseDelayMs = getSessionRetryBaseDelayMs();
+
+    while (
+      sessionId &&
+      isSessionTurnFailure(turnResult) &&
+      isRetriableSessionFinishReason(turnResult?.finishReason ?? "unknown") &&
+      continueCount < maxContinues
+    ) {
+      const failedReason = turnResult?.finishReason ?? "unknown";
+      continueCount += 1;
+      const delayMs = continueBaseDelayMs * 2 ** (continueCount - 1);
+      console.warn(
+        `[session] continuing same session in ${delayMs}ms (continue ${continueCount}/${maxContinues}, finishReason=${failedReason})`,
+      );
+      await sleep(delayMs);
+
+      const continued = await cline.send(sessionId, {
+        prompt: SESSION_CONTINUE_USER_PROMPT,
+        mode: sessionMode(input.phase),
+      });
+      turnResult = continued ?? null;
+      const continuedReason = turnResult?.finishReason ?? "unknown";
+      console.log(`[session] finishReason=${continuedReason}`);
+    }
+
+    const finishReason = turnResult?.finishReason ?? "unknown";
+    if (continueCount === 0) {
+      console.log(`[session] finishReason=${finishReason}`);
+    } else if (!isSessionTurnFailure(turnResult)) {
+      console.log(
+        `[session] succeeded after ${continueCount} in-session continue(s)`,
+      );
+    }
 
     if (sessionId) {
       try {
@@ -250,8 +299,8 @@ async function runAgentSessionAttempt(
           const { stdout, stepSummary } = formatUsageBlock(
             usage,
             sessionId,
-            session.result?.iterations,
-            session.result?.toolCalls?.length,
+            turnResult?.iterations,
+            turnResult?.toolCalls?.length,
             {
               modelId: requestModelId,
               servedModelIds,
@@ -267,15 +316,11 @@ async function runAgentSessionAttempt(
       }
     }
 
-    if (
-      !session.result ||
-      session.result.finishReason === "error" ||
-      session.result.finishReason === "aborted"
-    ) {
+    if (isSessionTurnFailure(turnResult)) {
       throw new AgentSessionError(
         formatSessionFailureMessage(
           finishReason,
-          session,
+          { result: turnResult ?? null },
           sessionId,
           input.attempt,
         ),
@@ -290,7 +335,7 @@ async function runAgentSessionAttempt(
 
     return {
       sessionId: sessionId!,
-      outputText: session.result.text,
+      outputText: turnResult?.text ?? "",
       finishReason,
       usage,
       modelId: requestModelId,
@@ -303,8 +348,8 @@ async function runAgentSessionAttempt(
           ? openRouterCostUsd
           : undefined,
       attempts: input.attempt,
-      iterations: session.result?.iterations,
-      toolCallsCount: session.result?.toolCalls?.length,
+      iterations: turnResult?.iterations,
+      toolCallsCount: turnResult?.toolCalls?.length,
     };
   } finally {
     sessionLogger?.closeAllGroups();
@@ -353,7 +398,7 @@ export async function runAgentSession(
       if (attempt > 1) {
         const delayMs = baseDelayMs * 2 ** (attempt - 2);
         console.warn(
-          `[session] retrying in ${delayMs}ms (attempt ${attempt}/${maxAttempts}, previous finishReason=${lastError?.finishReason})`,
+          `[session] starting new session in ${delayMs}ms (attempt ${attempt}/${maxAttempts}, previous finishReason=${lastError?.finishReason})`,
         );
         await sleep(delayMs);
       }
