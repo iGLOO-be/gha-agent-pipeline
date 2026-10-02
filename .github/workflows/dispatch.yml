@@ -421,7 +421,7 @@ jobs:
 
                 if (isFix) {
                   const feedback = body.replace(/\/agent\s+fix/gi, '').trim() || body
-                  const reviewFeedback = await appendHumanPrReviewComments(
+                  const reviewFeedback = await appendPrReviewComments(
                     resolved.prNumber,
                     feedback
                   )
