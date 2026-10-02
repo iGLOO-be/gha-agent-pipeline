@@ -1,8 +1,73 @@
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
+import { validateCommandRegistry } from "./commands/resolve.js";
+import type { CommandOverrideConfig } from "./commands/types.js";
 import { parse as parseYaml } from "yaml";
 import { FILE_EDIT_SYSTEM_HINT } from "./prompts/file-edits.js";
 import { RUN_FRICTION_SYSTEM_HINT } from "./prompts/run-friction.js";
+
+const agentPhaseSchema = z.enum([
+  "plan",
+  "implement",
+  "yolo",
+  "ci-fix",
+  "review-fix",
+  "ask",
+  "code-review",
+]);
+
+export type AgentPhase = z.infer<typeof agentPhaseSchema>;
+
+const commandTargetSchema = z.enum(["issue", "pr"]);
+
+const commandOverrideSchema = z.object({
+  enabled: z.boolean().optional(),
+  extends: agentPhaseSchema.optional(),
+  slash: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
+  models: z.object({ model: z.string().min(1).optional() }).optional(),
+  prompts: z
+    .object({
+      role_description: z.string().min(1).optional(),
+      instructions: z.string().min(1).optional(),
+      append_instructions: z.string().min(1).optional(),
+    })
+    .optional(),
+  tools: z
+    .object({
+      write: z.boolean().optional(),
+      github: z
+        .union([z.literal("inherit"), z.array(z.string().min(1))])
+        .optional(),
+      builtin: z
+        .object({
+          include: z.array(z.string().min(1)).optional(),
+          exclude: z.array(z.string().min(1)).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  context: z
+    .object({
+      targets: z.array(commandTargetSchema).min(1).optional(),
+      require_plan: z.boolean().optional(),
+    })
+    .optional(),
+  access: z
+    .object({
+      author_associations: z.array(z.string().min(1)).optional(),
+    })
+    .optional(),
+  output: z.object({ marker: z.string().min(1).optional() }).optional(),
+  git: z
+    .object({
+      commit_subject: z.string().min(1).optional(),
+      skip_pr: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+export type AgentCommandOverride = z.infer<typeof commandOverrideSchema>;
 
 export const agentConfigSchema = z
   .object({
@@ -228,6 +293,7 @@ export const agentConfigSchema = z
           .default(() => ({ code_review: false })),
       })
       .optional(),
+    commands: z.record(z.string().min(1), commandOverrideSchema).optional(),
   })
   .transform((data) => ({
     version: data.version,
@@ -244,19 +310,12 @@ export const agentConfigSchema = z
     code_review: data.code_review,
     review_fix: data.review_fix,
     implement: data.implement,
+    commands: data.commands as
+      Record<string, CommandOverrideConfig> | undefined,
   }));
 
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type MergeStrategy = AgentConfig["git"]["merge_strategy"];
-
-export type AgentPhase =
-  | "plan"
-  | "implement"
-  | "yolo"
-  | "ci-fix"
-  | "review-fix"
-  | "ask"
-  | "code-review";
 
 function applyAgentConfigEnvOverrides(config: AgentConfig): AgentConfig {
   const baseBranchOverride = process.env.AGENT_BASE_BRANCH?.trim();
@@ -294,7 +353,9 @@ export function loadAgentConfig(
     throw new Error(`Invalid ${configPath}: ${issues}`);
   }
 
-  return applyAgentConfigEnvOverrides(parsed.data);
+  const config = applyAgentConfigEnvOverrides(parsed.data);
+  validateCommandRegistry(config);
+  return config;
 }
 
 export function getRunCommandsTimeoutMs(config?: AgentConfig): number {
@@ -556,6 +617,13 @@ export function getAppName(config?: AgentConfig): string {
   return "gha-agent";
 }
 
+export function getPhasePromptBody(
+  phase: AgentPhase,
+  config: AgentConfig,
+): string {
+  return PHASE_PROMPT_BODY[phase](config);
+}
+
 export function buildPhaseSystemPrompt(
   phase: AgentPhase,
   config?: AgentConfig,
@@ -727,17 +795,25 @@ function approvedPolicies(toolNames: readonly string[]) {
 export function buildToolPolicies(
   phase: AgentPhase,
   customToolNames: string[],
+  overrides?: { write?: boolean; disabledBuiltin?: string[] },
 ) {
-  const writeTools =
-    phase === "implement" ||
-    phase === "yolo" ||
-    phase === "ci-fix" ||
-    phase === "review-fix"
-      ? BUILTIN_WRITE_TOOLS
-      : [];
+  const write =
+    overrides?.write ??
+    (phase === "implement" ||
+      phase === "yolo" ||
+      phase === "ci-fix" ||
+      phase === "review-fix");
+  const disabledBuiltin = new Set(overrides?.disabledBuiltin ?? []);
+
+  const readTools = BUILTIN_READ_TOOLS.filter(
+    (name) => !disabledBuiltin.has(name),
+  );
+  const writeTools = write
+    ? BUILTIN_WRITE_TOOLS.filter((name) => !disabledBuiltin.has(name))
+    : [];
 
   return {
-    ...approvedPolicies(BUILTIN_READ_TOOLS),
+    ...approvedPolicies(readTools),
     ...approvedPolicies(writeTools),
     ...approvedPolicies(customToolNames),
     ...disabledPolicies(DISABLED_BUILTIN_TOOLS),

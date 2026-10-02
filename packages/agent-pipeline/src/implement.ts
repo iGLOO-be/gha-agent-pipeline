@@ -1,10 +1,13 @@
 import {
   IMPLEMENT_MODEL,
-  buildPhaseSystemPrompt,
   loadAgentConfig,
   loadAgentEnv,
   parseRepository,
 } from "./config.js";
+import {
+  applyCommandGithubTools,
+  prepareCommandRuntime,
+} from "./command-runtime.js";
 import { branchName, createAndCheckoutBranch } from "./git/branch.js";
 import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
@@ -41,6 +44,7 @@ import { chainCodeReviewAfterImplement } from "./code-review-chain.js";
 async function main() {
   const env = loadAgentEnv();
   const config = loadAgentConfig();
+  const cmd = prepareCommandRuntime("implement", IMPLEMENT_MODEL, config);
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -48,7 +52,7 @@ async function main() {
     const issue = await readIssue(octokit, owner, repo, env.ISSUE_NUMBER);
     const comments = await readComments(octokit, owner, repo, env.ISSUE_NUMBER);
     const plan = findPlanComment(comments);
-    if (!plan) {
+    if (!plan && cmd.resolved.context.require_plan !== false) {
       throw new Error(
         `No plan comment found on issue #${env.ISSUE_NUMBER}. Run /agent plan first.`,
       );
@@ -63,7 +67,7 @@ async function main() {
 
     const runFriction = createRunFrictionCollector();
     const phaseReportTracker = createPhaseReportTracker();
-    const tools = await withReportRunFrictionTool(
+    let tools = await withReportRunFrictionTool(
       await createImplementTools(
         octokit,
         owner,
@@ -73,15 +77,22 @@ async function main() {
       ),
       runFriction,
     );
+    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
+
+    const userArgs = process.env.AGENT_COMMAND_ARGS?.trim();
+    const extraArgsBlock = userArgs
+      ? `\n\nAdditional instructions:\n${userArgs}`
+      : "";
 
     const session = await runAgentSession({
-      phase: "implement",
-      modelId: IMPLEMENT_MODEL,
-      systemPrompt: buildPhaseSystemPrompt("implement", config),
+      phase: cmd.runtimePhase,
+      modelId: cmd.modelId,
+      systemPrompt: cmd.systemPrompt,
       tools,
       runFriction,
       sessionMetadata: {
-        phase: "implement",
+        phase: cmd.runtimePhase,
+        commandId: cmd.commandId,
         issueNumber: env.ISSUE_NUMBER,
         repository: env.GITHUB_REPOSITORY,
         branch,
@@ -92,10 +103,10 @@ Issue body:
 ${issue.body ?? "(empty)"}
 
 Approved plan:
-${plan}
+${plan ?? "(no plan comment — proceed from issue only)"}
 
 Repository: ${env.GITHUB_REPOSITORY}
-Branch: ${branch}`,
+Branch: ${branch}${extraArgsBlock}`,
     });
 
     appendRunFrictionStepSummary(runFriction, "implement");
@@ -105,14 +116,21 @@ Branch: ${branch}`,
       ? formatPhaseReportForPr(phaseReport)
       : undefined;
 
-    const committed = await commitAll(
-      `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`,
-    );
+    const commitSubject =
+      cmd.resolved.git?.commit_subject ??
+      `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
+
+    const committed = await commitAll(commitSubject);
     if (!committed) {
       throw new Error("No changes were made by the implement agent.");
     }
 
     await pushBranch(branch);
+
+    if (cmd.resolved.git?.skip_pr) {
+      console.log("\nSkipping PR creation (commands.git.skip_pr).");
+      return;
+    }
 
     const usageSection = safeFormatUsageMarkdown(session.usage, {
       heading: "### Usage (implement run)",
@@ -219,10 +237,16 @@ Branch: ${branch}`,
 const env = loadAgentEnv();
 const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
 const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootCmd = prepareCommandRuntime(
+  "implement",
+  IMPLEMENT_MODEL,
+  loadAgentConfig(),
+);
 
 runAgentMain(() =>
   runAgentPhase({
-    phase: "implement",
+    phase: bootCmd.runtimePhase,
+    displayLabel: bootCmd.displayLabel,
     octokit,
     owner,
     repo,

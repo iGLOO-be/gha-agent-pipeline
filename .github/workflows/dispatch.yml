@@ -37,7 +37,8 @@ jobs:
           contains(github.event.comment.body || '', '/agent implement') ||
           contains(github.event.comment.body || '', '/agent yolo') ||
           contains(github.event.comment.body || '', '/agent fix') ||
-          contains(github.event.comment.body || '', '/agent code-review')
+          contains(github.event.comment.body || '', '/agent code-review') ||
+          contains(github.event.comment.body || '', '/agent ')
         )
       )
     runs-on: ${{ inputs.runner }}
@@ -50,6 +51,13 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
+      - name: Checkout agent config
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+          sparse-checkout-cone-mode: false
+
       - name: Parse slash command and dispatch workflow
         uses: actions/github-script@v7
         env:
@@ -57,10 +65,49 @@ jobs:
         with:
           github-token: ${{ steps.app_token.outputs.token }}
           script: |
+            const {
+              parseAgentCommandsFromYaml,
+              resolveSlashCommand
+            } = require('./.github/scripts/parse-agent-commands.cjs')
             const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR']
             const owner = context.repo.owner
             const repo = context.repo.repo
             const consumerRef = context.payload.repository.default_branch
+
+            async function loadAgentCommands() {
+              try {
+                const { data } = await github.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path: '.github/agent.config.yml'
+                })
+                const content = Buffer.from(data.content, 'base64').toString('utf8')
+                return parseAgentCommandsFromYaml(content)
+              } catch (error) {
+                core.warning(`Could not load agent.config.yml: ${error.message}`)
+                return parseAgentCommandsFromYaml('version: 1\n')
+              }
+            }
+
+            async function dispatchAgentPhase(inputs) {
+              const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
+              const res = await fetch(dispatchUrl, {
+                method: 'POST',
+                headers: {
+                  authorization: `token ${process.env.ACTIONS_TOKEN}`,
+                  accept: 'application/vnd.github.v3+json',
+                  'content-type': 'application/json'
+                },
+                body: JSON.stringify({
+                  ref: consumerRef,
+                  inputs
+                })
+              })
+              if (!res.ok) {
+                const text = await res.text()
+                throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
+              }
+            }
 
             async function dispatchCodeReview({
               commentId,
@@ -83,6 +130,7 @@ jobs:
                     ref: consumerRef,
                     inputs: {
                       phase: 'code-review',
+                      runtime_phase: 'code-review',
                       comment_id: String(commentId),
                       pr_number: String(prNumber),
                       issue_number: String(issueNumber),
@@ -335,6 +383,7 @@ jobs:
               const body = (context.payload.comment.body || '').trim()
               const isPullRequest = Boolean(context.payload.issue.pull_request)
               const authorAssociation = context.payload.comment.author_association
+              const agentCommands = await loadAgentCommands()
 
               if (!allowed.includes(authorAssociation)) {
                 core.info(`Skipping workflow: author association ${authorAssociation} not allowed`)
@@ -342,12 +391,11 @@ jobs:
               }
 
               if (isPullRequest) {
-                const isAsk = body.includes('/agent ask')
                 const isFix = body.includes('/agent fix')
                 const isCodeReview = body.includes('/agent code-review')
 
-                if (!isAsk && !isFix && !isCodeReview) {
-                  core.info('No /agent ask, /agent fix, or /agent code-review on PR comment')
+                if (!isFix && !isCodeReview && !body.toLowerCase().includes('/agent ')) {
+                  core.info('No /agent command on PR comment')
                   return
                 }
 
@@ -356,7 +404,7 @@ jobs:
 
                 const busy = await isAgentBusy(resolved.issueNumber)
                 if (busy.busy) {
-                  core.info(`Agent already working on issue #${resolved.issueNumber}; skipping /agent fix dispatch`)
+                  core.info(`Agent already working on issue #${resolved.issueNumber}; skipping dispatch`)
                   const busyBody = busy.runUrl
                     ? `🚫 **An agent is already working on this issue (#${resolved.issueNumber}).**\n\n🔗 [Follow current execution](${busy.runUrl})`
                     : `🚫 **An agent is already working on this issue (#${resolved.issueNumber}).**`
@@ -379,7 +427,7 @@ jobs:
                 })
 
                 if (isCodeReview) {
-                  const reviewInstructions = body.replace('/agent code-review', '').trim()
+                  const reviewInstructions = body.replace(/\/agent\s+code-review/i, '').trim()
                   await dispatchCodeReview({
                     commentId,
                     prNumber: resolved.prNumber,
@@ -391,51 +439,54 @@ jobs:
                   return
                 }
 
-                if (isAsk) {
-                  const question = body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.'
-                  const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
-                  const res = await fetch(dispatchUrl, {
-                    method: 'POST',
-                    headers: {
-                      authorization: `token ${process.env.ACTIONS_TOKEN}`,
-                      accept: 'application/vnd.github.v3+json',
-                      'content-type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                      ref: consumerRef,
-                      inputs: {
-                        phase: 'ask',
-                        comment_id: String(commentId),
-                        issue_number: String(resolved.issueNumber),
-                        pr_number: String(resolved.prNumber),
-                        question,
-                        author_association: authorAssociation
-                      }
-                    })
+                if (isFix) {
+                  const rawFeedback = body.replace(/\/agent\s+fix/gi, '').trim() || body
+                  const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
+                  const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
+                  const reviewFeedback = await appendPrReviewComments(
+                    resolved.prNumber,
+                    feedback
+                  )
+
+                  await dispatchReviewFix({
+                    commentId,
+                    prNumber: resolved.prNumber,
+                    issueNumber: resolved.issueNumber,
+                    headRef: resolved.headRef,
+                    reviewFeedback,
+                    reactionTarget: 'issue_comment',
+                    chainCodeReview
                   })
-                  if (!res.ok) {
-                    const text = await res.text()
-                    throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
-                  }
                   return
                 }
 
-                const rawFeedback = body.replace('/agent fix', '').trim() || body
-                const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
-                const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
-                const reviewFeedback = await appendPrReviewComments(
-                  resolved.prNumber,
-                  feedback
-                )
+                const slashMatch = resolveSlashCommand(body, agentCommands)
+                if (!slashMatch) {
+                  core.info('Unrecognized /agent command on PR comment')
+                  return
+                }
+                const { command, args } = slashMatch
+                if (!command.targets.includes('pr')) {
+                  core.info(`Command ${command.id} is not enabled on pull request comments`)
+                  return
+                }
 
-                await dispatchReviewFix({
-                  commentId,
-                  prNumber: resolved.prNumber,
-                  issueNumber: resolved.issueNumber,
-                  headRef: resolved.headRef,
-                  reviewFeedback,
-                  reactionTarget: 'issue_comment',
-                  chainCodeReview
+                const runtimePhase = command.extends
+                const question =
+                  runtimePhase === 'ask'
+                    ? args || 'Summarize the context and current agent status.'
+                    : ''
+
+                await dispatchAgentPhase({
+                  phase: command.id,
+                  runtime_phase: runtimePhase,
+                  command_args: args,
+                  comment_id: String(commentId),
+                  issue_number: String(resolved.issueNumber),
+                  pr_number: String(resolved.prNumber),
+                  head_ref: resolved.headRef,
+                  author_association: authorAssociation,
+                  ...(runtimePhase === 'ask' ? { question } : {})
                 })
                 return
               }
@@ -450,19 +501,15 @@ jobs:
                 return
               }
 
-              let phase = null
-              if (body.includes('/agent ask')) {
-                phase = 'ask'
-              } else if (body.includes('/agent plan')) {
-                phase = 'plan'
-              } else if (body.includes('/agent implement')) {
-                phase = 'implement'
-              } else if (body.includes('/agent yolo')) {
-                phase = 'yolo'
+              const slashMatch = resolveSlashCommand(body, agentCommands)
+              if (!slashMatch) {
+                core.info('No /agent slash command detected')
+                return
               }
 
-              if (!phase) {
-                core.info('No /agent slash command detected')
+              const { command, args } = slashMatch
+              if (!command.targets.includes('issue')) {
+                core.info(`Command ${command.id} is not enabled on issue comments`)
                 return
               }
 
@@ -491,36 +538,25 @@ jobs:
                 content: 'eyes'
               })
 
-              const question = phase === 'ask' ? body.replace('/agent ask', '').trim() || 'Summarize the context and current agent status.' : undefined
+              const runtimePhase = command.extends
+              const question =
+                runtimePhase === 'ask'
+                  ? args || 'Summarize the context and current agent status.'
+                  : ''
               const chainCodeReview =
-                phase === 'implement' &&
+                runtimePhase === 'implement' &&
                 wantsChainCodeReviewFromSlash(body, 'implement')
 
-              const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`
-              const res = await fetch(dispatchUrl, {
-                method: 'POST',
-                headers: {
-                  authorization: `token ${process.env.ACTIONS_TOKEN}`,
-                  accept: 'application/vnd.github.v3+json',
-                  'content-type': 'application/json'
-                },
-                body: JSON.stringify({
-                  ref: consumerRef,
-                  inputs: {
-                    phase,
-                    comment_id: commentId,
-                    issue_number: issueNumber,
-                    author_association: authorAssociation,
-                    ...(question != null ? { question } : {}),
-                    ...(chainCodeReview ? { chain_code_review: 'true' } : {})
-                  }
-                })
+              await dispatchAgentPhase({
+                phase: command.id,
+                runtime_phase: runtimePhase,
+                command_args: args,
+                comment_id: commentId,
+                issue_number: issueNumber,
+                author_association: authorAssociation,
+                ...(runtimePhase === 'ask' ? { question } : {}),
+                ...(chainCodeReview ? { chain_code_review: 'true' } : {})
               })
-
-              if (!res.ok) {
-                const text = await res.text()
-                throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
-              }
               return
             }
 
