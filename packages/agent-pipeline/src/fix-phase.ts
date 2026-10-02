@@ -50,6 +50,11 @@ import {
 } from "./phase-report.js";
 import { chainCodeReviewAfterReviewFix } from "./code-review-chain.js";
 import {
+  afterReviewFixPushInReviewLoop,
+  isReviewLoopActiveFromEnv,
+  onReviewFixNoChangesInReviewLoop,
+} from "./review-loop.js";
+import {
   formatMergeStillBlockedStatusLine,
   getUpstreamDriftMaxPasses,
   PullRequestStillConflictingError,
@@ -428,6 +433,14 @@ Branch: ${env.AGENT_BRANCH}`,
         console.log(
           `\nFix (${entry}) completed with no changes on branch ${env.AGENT_BRANCH}`,
         );
+        if (entry === "review-fix") {
+          await onReviewFixNoChangesInReviewLoop(
+            octokit,
+            owner,
+            repo,
+            env.PR_NUMBER,
+          );
+        }
         await clearAgentResumeLabels(octokit, owner, repo, {
           issueNumber: env.ISSUE_NUMBER,
           prNumber: env.PR_NUMBER,
@@ -462,11 +475,19 @@ Branch: ${env.AGENT_BRANCH}`,
         });
 
         if (entry === "review-fix") {
-          await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
-            issueNumber: env.ISSUE_NUMBER,
-            prNumber: env.PR_NUMBER,
-            agentBranch: env.AGENT_BRANCH,
-          });
+          if (isReviewLoopActiveFromEnv()) {
+            await afterReviewFixPushInReviewLoop(octokit, owner, repo, config, {
+              issueNumber: env.ISSUE_NUMBER,
+              prNumber: env.PR_NUMBER,
+              agentBranch: env.AGENT_BRANCH,
+            });
+          } else {
+            await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
+              issueNumber: env.ISSUE_NUMBER,
+              prNumber: env.PR_NUMBER,
+              agentBranch: env.AGENT_BRANCH,
+            });
+          }
         }
 
         console.log(`\nFix (${entry}) pushed on branch ${env.AGENT_BRANCH}`);

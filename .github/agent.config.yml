@@ -73,6 +73,11 @@ implement:
   follow_up:
     code_review: true
 
+# Full implement → code-review ↔ review-fix loop (dogfood); off until validated on a test issue.
+# review_loop:
+#   enabled: true
+#   max_rounds: 3
+
 commands:
   config-audit:
     extends: ask

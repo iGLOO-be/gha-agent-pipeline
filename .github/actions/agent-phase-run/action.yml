@@ -62,6 +62,14 @@ inputs:
   chain_code_review:
     description: When true, implement or review-fix may dispatch a follow-up code-review after success.
     required: false
+  review_loop_active:
+    description: When true, this run is part of an implement-started review loop.
+    required: false
+    default: ""
+  review_loop_round:
+    description: Code-review round index within the review loop (0-based).
+    required: false
+    default: "0"
   pipeline_ref:
     description: >
       Git ref of the pipeline library runtime to install. Defaults to the ref of
@@ -116,6 +124,8 @@ runs:
         AGENT_COMMAND_ARGS: ${{ inputs.command_args }}
         REVIEW_FIX_CHAIN_CODE_REVIEW: ${{ steps.effective.outputs.phase == 'review-fix' && inputs.chain_code_review == 'true' && 'true' || '' }}
         IMPLEMENT_CHAIN_CODE_REVIEW: ${{ steps.effective.outputs.phase == 'implement' && inputs.chain_code_review == 'true' && 'true' || '' }}
+        REVIEW_LOOP_ACTIVE: ${{ inputs.review_loop_active == 'true' && 'true' || '' }}
+        REVIEW_LOOP_ROUND: ${{ inputs.review_loop_round }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
         SUCCESS_REACTION: ${{ steps.effective.outputs.phase == 'plan' && '+1' || steps.effective.outputs.phase == 'ask' && 'rocket' || 'rocket' }}

@@ -412,6 +412,24 @@
       },
       "default": {}
     },
+    "review_loop": {
+      "type": "object",
+      "description": "Optional implement-started loop: code-review → review-fix → code-review until clean or max_rounds.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, /agent implement starts an automated review loop on the new PR (not manual /agent code-review).",
+          "default": false
+        },
+        "max_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum code-review round index before the loop stops dispatching review-fix (safety cap).",
+          "default": 3
+        }
+      },
+      "default": {}
+    },
     "commands": {
       "type": "object",
       "description": "Optional custom slash commands and partial overrides of built-in commands. Each key is a command id; custom ids must declare extends.",

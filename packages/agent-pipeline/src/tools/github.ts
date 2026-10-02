@@ -614,6 +614,9 @@ export type DispatchAgentPhaseWorkflowInput = {
   reviewFeedback?: string;
   reactionTarget?: string;
   reviewInstructions?: string;
+  chainCodeReview?: boolean;
+  reviewLoopActive?: boolean;
+  reviewLoopRound?: number;
 };
 
 /** Dispatch the consumer `agent-phase.yml` workflow (requires `actions: write` on the token). */
@@ -651,6 +654,15 @@ export async function dispatchAgentPhaseWorkflow(
   }
   if (input.reviewInstructions != null && input.reviewInstructions !== "") {
     inputs.review_instructions = input.reviewInstructions;
+  }
+  if (input.chainCodeReview) {
+    inputs.chain_code_review = "true";
+  }
+  if (input.reviewLoopActive) {
+    inputs.review_loop_active = "true";
+  }
+  if (input.reviewLoopRound !== undefined) {
+    inputs.review_loop_round = String(input.reviewLoopRound);
   }
 
   await octokit.actions.createWorkflowDispatch({

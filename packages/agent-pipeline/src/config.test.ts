@@ -399,6 +399,24 @@ describe("config", () => {
       expect(config.ci.max_rounds).toBe(5);
     });
 
+    it("loads review_loop settings", () => {
+      const configPath = join(tempDir, "agent.config.yml");
+      writeFileSync(
+        configPath,
+        [
+          "version: 1",
+          "review_loop:",
+          "  enabled: true",
+          "  max_rounds: 4",
+        ].join("\n"),
+      );
+
+      const config = loadAgentConfig(configPath);
+
+      expect(config.review_loop.enabled).toBe(true);
+      expect(config.review_loop.max_rounds).toBe(4);
+    });
+
     it("defaults pr_target to base_branch when omitted", () => {
       const configPath = join(tempDir, "agent.config.yml");
       writeFileSync(
