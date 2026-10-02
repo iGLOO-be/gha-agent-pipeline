@@ -319,6 +319,95 @@
             }
           },
           "default": {}
+        },
+        "labels": {
+          "type": "object",
+          "description": "Optional PR/issue labels applied after a successful code-review run. Omitted or empty means no labels.",
+          "properties": {
+            "apply_to": {
+              "type": "string",
+              "enum": ["pr", "issue", "both"],
+              "description": "Where to apply status and merge-risk labels.",
+              "default": "pr"
+            },
+            "status": {
+              "type": "object",
+              "properties": {
+                "ok": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Label when submitReview event is COMMENT (no hard findings)."
+                },
+                "pending": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Label when submitReview event is REQUEST_CHANGES."
+                }
+              },
+              "default": {}
+            },
+            "merge_risk": {
+              "type": "object",
+              "description": "Mutually exclusive merge-risk labels parsed from ## Merge risk in the review body.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "low": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "agent-risk-low"
+                },
+                "medium": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "agent-risk-medium"
+                },
+                "high": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "agent-risk-high"
+                }
+              }
+            }
+          }
+        }
+      },
+      "default": {}
+    },
+    "review_fix": {
+      "type": "object",
+      "description": "Optional behavior for the /agent fix (review-fix) phase.",
+      "properties": {
+        "follow_up": {
+          "type": "object",
+          "properties": {
+            "code_review": {
+              "type": "boolean",
+              "description": "When true, dispatch /agent code-review after a successful review-fix run.",
+              "default": false
+            }
+          },
+          "default": {}
+        }
+      },
+      "default": {}
+    },
+    "implement": {
+      "type": "object",
+      "description": "Optional behavior for the /agent implement phase.",
+      "properties": {
+        "follow_up": {
+          "type": "object",
+          "properties": {
+            "code_review": {
+              "type": "boolean",
+              "description": "When true, dispatch /agent code-review after a successful implement run (PR opened).",
+              "default": false
+            }
+          },
+          "default": {}
         }
       },
       "default": {}

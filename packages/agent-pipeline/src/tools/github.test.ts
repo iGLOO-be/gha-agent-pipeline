@@ -1,11 +1,16 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import type { Octokit } from "@octokit/rest";
 import {
   addReactionToIssueComment,
   addReactionToPullRequestReview,
   AGENT_COMMENT_MARKERS,
+  assertPullRequestNotConflicting,
   buildRunUrl,
   clearAgentResumeLabels,
   createPullRequestReview,
+  createReplyForReviewComment,
+  dispatchAgentPhaseWorkflow,
+  PullRequestStillConflictingError,
   extractAgentPlan,
   findPlanComment,
   findPlanCommentUrl,
@@ -24,6 +29,7 @@ import {
   normalizeAgentPlanBody,
   parseReviewCommentIdsFromText,
   appendRiskScoreSection,
+  parseMergeRiskLevel,
   parseRiskLevel,
   stripRiskScoreSection,
   prependAgentMarker,
@@ -502,6 +508,29 @@ describe("tools/github", () => {
       expect(out).toContain("PRRT_abc");
       expect(out).toContain("src/a.ts line 3");
       expect(out).toContain("Use const");
+
+      const withoutBody = formatReviewThreadsForPrompt(
+        [
+          {
+            id: "PRRT_abc",
+            isResolved: false,
+            isOutdated: false,
+            comments: [
+              {
+                id: 42,
+                body: "Use const",
+                path: "src/a.ts",
+                line: 3,
+                authorLogin: "github-actions[bot]",
+              },
+            ],
+          },
+        ],
+        { includeBody: false },
+      );
+      expect(withoutBody).toContain("PRRT_abc");
+      expect(withoutBody).toContain("rootCommentId=42");
+      expect(withoutBody).not.toContain("Use const");
     });
   });
 
@@ -669,6 +698,51 @@ describe("tools/github", () => {
     });
   });
 
+  describe("parseMergeRiskLevel", () => {
+    it("parses Minimal, Moderate, and High from ## Merge risk", () => {
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\n**Minimal** — safe tweak."),
+      ).toBe("low");
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\nModerate — auth path touched."),
+      ).toBe("medium");
+      expect(parseMergeRiskLevel("## Merge risk\n\nHigh — breaking API.")).toBe(
+        "high",
+      );
+    });
+
+    it("returns null when section is missing", () => {
+      expect(
+        parseMergeRiskLevel("## Walkthrough\n\nonly walkthrough"),
+      ).toBeNull();
+    });
+
+    it("anchors the level so justification words cannot win", () => {
+      expect(
+        parseMergeRiskLevel(
+          "## Merge risk\n\n**Moderate** — minimal blast radius.",
+        ),
+      ).toBe("medium");
+      expect(
+        parseMergeRiskLevel(
+          "## Merge risk\n\n**High** — minimal blast radius, low chance of breakage.",
+        ),
+      ).toBe("high");
+    });
+
+    it("tolerates bullets and a short level/risk prefix", () => {
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\n- **High** — breaking API."),
+      ).toBe("high");
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\nLevel: **High** — breaking API."),
+      ).toBe("high");
+      expect(
+        parseMergeRiskLevel("## Merge risk\n\nRisk: Minimal — safe tweak."),
+      ).toBe("low");
+    });
+  });
+
   describe("appendRiskScoreSection", () => {
     it("appends a risk section and strips any legacy duplicate", () => {
       const body =
@@ -830,6 +904,101 @@ describe("tools/github", () => {
           },
         ]),
       ).toBe(false);
+    });
+  });
+
+  describe("assertPullRequestNotConflicting", () => {
+    it("throws PullRequestStillConflictingError when dirty and behind base", async () => {
+      const octokit = {
+        pulls: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              mergeable: false,
+              mergeable_state: "dirty",
+              base: { label: "owner:main" },
+              head: { label: "owner:branch" },
+            },
+          }),
+        },
+        repos: {
+          compareCommits: vi.fn().mockResolvedValue({
+            data: { behind_by: 5 },
+          }),
+        },
+      } as unknown as Octokit;
+
+      await expect(
+        assertPullRequestNotConflicting(octokit, "o", "r", 1, {
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).rejects.toBeInstanceOf(PullRequestStillConflictingError);
+    });
+  });
+
+  describe("createReplyForReviewComment", () => {
+    it("posts a marked reply on a review comment thread", async () => {
+      const octokit = {
+        pulls: {
+          createReplyForReviewComment: async (args: {
+            comment_id: number;
+            body: string;
+          }) => {
+            expect(args.comment_id).toBe(55);
+            expect(args.body).toContain(AGENT_COMMENT_MARKERS.reviewFixReply);
+            expect(args.body).toContain("Fixed in latest commit");
+            return {
+              data: { id: 99, html_url: "https://example/reply/99" },
+            };
+          },
+        },
+      } as unknown as Parameters<typeof createReplyForReviewComment>[0];
+
+      const reply = await createReplyForReviewComment(
+        octokit,
+        "owner",
+        "repo",
+        42,
+        55,
+        "Fixed in latest commit",
+      );
+      expect(reply.id).toBe(99);
+    });
+  });
+
+  describe("dispatchAgentPhaseWorkflow", () => {
+    it("dispatches agent-phase with default branch ref", async () => {
+      let dispatched: Record<string, unknown> | undefined;
+      const octokit = {
+        repos: {
+          get: async () => ({ data: { default_branch: "main" } }),
+        },
+        actions: {
+          createWorkflowDispatch: async (args: Record<string, unknown>) => {
+            dispatched = args;
+          },
+        },
+      } as unknown as Parameters<typeof dispatchAgentPhaseWorkflow>[0];
+
+      await dispatchAgentPhaseWorkflow(octokit, "owner", "repo", {
+        phase: "code-review",
+        commentId: 1,
+        issueNumber: 2,
+        prNumber: 3,
+        headRef: "agent/2-slug",
+        reviewInstructions: "recheck",
+      });
+
+      expect(dispatched?.workflow_id).toBe(".github/workflows/agent-phase.yml");
+      expect(dispatched?.ref).toBe("main");
+      expect(dispatched?.inputs).toMatchObject({
+        phase: "code-review",
+        comment_id: "1",
+        issue_number: "2",
+        pr_number: "3",
+        head_ref: "agent/2-slug",
+        review_instructions: "recheck",
+      });
     });
   });
 });

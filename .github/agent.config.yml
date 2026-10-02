@@ -57,6 +57,21 @@ code_review:
   path_filters:
     - "!graphify-out/**"
     - "!pnpm-lock.yaml"
+  labels:
+    apply_to: pr
+    status:
+      ok: "ai-review:ok"
+      pending: "ai-review:pending"
+    merge_risk:
+      enabled: true
+
+review_fix:
+  follow_up:
+    code_review: true
+
+implement:
+  follow_up:
+    code_review: true
 
 commands:
   config-audit:

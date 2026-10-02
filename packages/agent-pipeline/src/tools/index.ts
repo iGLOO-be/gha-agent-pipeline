@@ -5,6 +5,7 @@ import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
   createPullRequestReview,
+  createReplyForReviewComment,
   getPullRequestMergeState,
   postComment,
   prependAgentMarker,
@@ -269,6 +270,47 @@ export async function createFixTools(
   return [...reviewTools, ...extra];
 }
 
+async function createResolveReviewThreadsTool(octokit: Octokit) {
+  const { createTool } = await loadClineSdk();
+  return createTool({
+    name: "resolveReviewThreads",
+    description:
+      "Resolve GitHub pull request review threads after verifying the feedback is addressed in the current code.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        threadIds: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "GraphQL thread ids from the follow-up context (e.g. PRRT_...).",
+        },
+      },
+      required: ["threadIds"],
+    },
+    async execute(input: { threadIds: string[] }) {
+      const results: {
+        threadId: string;
+        ok: boolean;
+        error?: string;
+      }[] = [];
+      for (const threadId of input.threadIds) {
+        try {
+          await resolvePullRequestReviewThread(octokit, threadId);
+          results.push({ threadId, ok: true });
+        } catch (error) {
+          results.push({
+            threadId,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return { results };
+    },
+  });
+}
+
 export async function createReviewFixTools(
   octokit: Octokit,
   owner: string,
@@ -376,12 +418,48 @@ export async function createReviewFixTools(
     },
   });
 
+  const replyToReviewCommentTool = createTool({
+    name: "replyToReviewComment",
+    description:
+      "Reply in the thread of a pull request review comment (use the root comment id from the thread context).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        commentId: {
+          type: "number",
+          description: "Database id of the root review comment to reply to",
+        },
+        body: {
+          type: "string",
+          description:
+            "Short markdown: what changed, or why the feedback was not applied",
+        },
+      },
+      required: ["commentId", "body"],
+    },
+    async execute(input: { commentId: number; body: string }) {
+      const reply = await createReplyForReviewComment(
+        octokit,
+        owner,
+        repo,
+        prNumber,
+        input.commentId,
+        input.body,
+      );
+      return { id: reply.id, url: reply.html_url };
+    },
+  });
+
+  const resolveReviewThreads = await createResolveReviewThreadsTool(octokit);
+
   const withoutPost = baseTools.filter((tool) => tool.name !== "postComment");
 
   const tools = [
     ...withoutPost,
     postPrCommentTool,
     readPullRequestReviewCommentsTool,
+    replyToReviewCommentTool,
+    resolveReviewThreads,
     getMergeStatusTool,
   ];
 
@@ -478,6 +556,7 @@ export type ReviewTracker = {
   id?: number;
   body?: string;
   htmlUrl?: string;
+  event?: PullRequestReviewEvent;
 };
 
 export type CodeReviewToolsOptions = {
@@ -575,6 +654,7 @@ export async function createCodeReviewTools(
       review.id = posted.id;
       review.body = markedBody;
       review.htmlUrl = posted.html_url;
+      review.event = input.event;
       return { id: posted.id, url: posted.html_url, event: posted.state };
     },
   });
@@ -649,43 +729,7 @@ export async function createCodeReviewTools(
       },
     });
 
-    const resolveReviewThreads = createTool({
-      name: "resolveReviewThreads",
-      description:
-        "Resolve GitHub pull request review threads after verifying the feedback is addressed in the current code.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          threadIds: {
-            type: "array",
-            items: { type: "string" },
-            description:
-              "GraphQL thread ids from the follow-up context (e.g. PRRT_...).",
-          },
-        },
-        required: ["threadIds"],
-      },
-      async execute(input: { threadIds: string[] }) {
-        const results: {
-          threadId: string;
-          ok: boolean;
-          error?: string;
-        }[] = [];
-        for (const threadId of input.threadIds) {
-          try {
-            await resolvePullRequestReviewThread(octokit, threadId);
-            results.push({ threadId, ok: true });
-          } catch (error) {
-            results.push({
-              threadId,
-              ok: false,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-        return { results };
-      },
-    });
+    const resolveReviewThreads = await createResolveReviewThreadsTool(octokit);
 
     tools.push(readPullRequestReviewCommentsTool, resolveReviewThreads);
   }
