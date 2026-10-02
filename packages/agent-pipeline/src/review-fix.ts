@@ -8,6 +8,12 @@ import {
   applyCommandGithubTools,
   prepareCommandRuntime,
 } from "./command-runtime.js";
+import {
+  formatMergeStillBlockedStatusLine,
+  getUpstreamDriftMaxPasses,
+  PullRequestStillConflictingError,
+  shouldRetryUpstreamDriftAfterPush,
+} from "./fix-post-push.js";
 import { commitAndPushBranch } from "./git/pr.js";
 import {
   assertLocalMergeResolved,
@@ -20,15 +26,19 @@ import {
   appendRunFrictionStepSummary,
   createRunFrictionCollector,
 } from "./run-friction.js";
-import { runAgentMain, runAgentSession } from "./runtime.js";
+import {
+  runAgentMain,
+  runAgentSession,
+  type AgentSessionResult,
+} from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
+  assertPullRequestNotConflicting,
   clearAgentResumeLabels,
   createOctokit,
   findPlanComment,
   formatPrCommentsForPrompt,
   buildReviewFixReviewCommentContext,
-  assertPullRequestNotConflicting,
   postComment,
   readComments,
   readIssue,
@@ -41,6 +51,7 @@ import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
   resolveAgentCommitMessage,
+  type PhaseReport,
 } from "./phase-report.js";
 import { chainCodeReviewAfterReviewFix } from "./code-review-chain.js";
 import {
@@ -61,6 +72,64 @@ function buildConflictPriorityHint(
   return `
 
 PRIORITY: GitHub reports this PR cannot merge into ${baseBranchName} (mergeable_state=${prState.mergeable_state}). Your first job is to resolve merge conflicts with ${baseBranchName} using the conflicting files in the merge context. Do not re-implement the feature from scratch.`;
+}
+
+async function buildMergeContextBlock(
+  baseBranch: string,
+  prNumber: number,
+  octokit: ReturnType<typeof createOctokit>,
+  owner: string,
+  repo: string,
+  syncMessage: string,
+  forceMerge: boolean,
+): Promise<string> {
+  const prMergeState = await getPullRequestMergeState(
+    octokit,
+    owner,
+    repo,
+    prNumber,
+  );
+  const syncResult = await syncWithBaseBranch(baseBranch, syncMessage, {
+    force: forceMerge,
+  });
+  return [
+    syncResult,
+    "",
+    "GitHub PR merge state:",
+    `- mergeable: ${prMergeState.mergeable ?? "unknown"}`,
+    `- mergeable_state: ${prMergeState.mergeable_state}`,
+    `- conflicts: ${prMergeState.conflicts}`,
+    prMergeState.conflicts && !forceMerge
+      ? `- note: GitHub reports conflicts but the local branch already includes ${baseBranch}; no merge was started.`
+      : "",
+    prMergeState.behind_by != null
+      ? `- behind_by: ${prMergeState.behind_by}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildReviewFixComment(
+  body: string,
+  phaseReport: PhaseReport | undefined,
+  session: AgentSessionResult,
+  runFriction: ReturnType<typeof createRunFrictionCollector>,
+): string {
+  const completion = formatPhaseCompletionMarkdown({
+    phase: "review-fix",
+    statusLine: body,
+    phaseReport,
+    sessionUsage: session.usage,
+    sessionId: session.sessionId,
+    modelId: session.modelId,
+    servedModelIds: session.servedModelIds,
+    openRouterCostUsd: session.openRouterCostUsd,
+    iterations: session.iterations,
+    toolCallsCount: session.toolCallsCount,
+    runFriction,
+  });
+  return `<!-- agent-review-fix -->\n${completion}`;
 }
 
 async function main() {
@@ -108,41 +177,30 @@ async function main() {
       reviewCommentContext.warnings.length > 0
         ? `\n\nWarnings:\n${reviewCommentContext.warnings.map((w) => `- ${w}`).join("\n")}`
         : "";
-    const prMergeState = await getPullRequestMergeState(
+
+    const initialPrMergeState = await getPullRequestMergeState(
       octokit,
       owner,
       repo,
       env.PR_NUMBER,
     );
-
-    const forceMerge = await shouldForceMergeFromGitHub(
+    const initialForceMerge = await shouldForceMergeFromGitHub(
       config.git.base_branch,
-      prMergeState.conflicts,
+      initialPrMergeState.conflicts,
     );
 
-    const mergeContext = [
-      await syncWithBaseBranch(
-        config.git.base_branch,
-        "Resolve these conflicts first, then address the review feedback.",
-        { force: forceMerge },
-      ),
-      "",
-      "GitHub PR merge state:",
-      `- mergeable: ${prMergeState.mergeable ?? "unknown"}`,
-      `- mergeable_state: ${prMergeState.mergeable_state}`,
-      `- conflicts: ${prMergeState.conflicts}`,
-      prMergeState.conflicts && !forceMerge
-        ? `- note: GitHub reports conflicts but the local branch already includes ${config.git.base_branch}; no merge was started.`
-        : "",
-      prMergeState.behind_by != null
-        ? `- behind_by: ${prMergeState.behind_by}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    let mergeContext = await buildMergeContextBlock(
+      config.git.base_branch,
+      env.PR_NUMBER,
+      octokit,
+      owner,
+      repo,
+      "Resolve these conflicts first, then address the review feedback.",
+      initialForceMerge,
+    );
 
     const conflictPriority = buildConflictPriorityHint(
-      { ...prMergeState, conflicts: forceMerge },
+      { ...initialPrMergeState, conflicts: initialForceMerge },
       env.REVIEW_FEEDBACK,
       config.git.base_branch,
     );
@@ -159,34 +217,72 @@ async function main() {
     );
 
     const runFriction = createRunFrictionCollector();
-    const phaseReportTracker = createPhaseReportTracker();
-    let tools = await withReportRunFrictionTool(
-      await createReviewFixTools(
-        octokit,
-        owner,
-        repo,
-        env.ISSUE_NUMBER,
-        env.PR_NUMBER,
-        phaseReportTracker,
-      ),
-      runFriction,
-    );
-    tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
+    const maxPasses = getUpstreamDriftMaxPasses();
 
-    const session = await runAgentSession({
-      phase: cmd.runtimePhase,
-      modelId: cmd.modelId,
-      systemPrompt: cmd.systemPrompt,
-      tools,
-      runFriction,
-      sessionMetadata: {
+    for (let pass = 0; pass < maxPasses; pass++) {
+      if (pass > 0) {
+        console.warn(
+          `Upstream drift detected after push; starting review-fix pass ${pass + 1}/${maxPasses}.`,
+        );
+        const driftState = await getPullRequestMergeState(
+          octokit,
+          owner,
+          repo,
+          env.PR_NUMBER,
+        );
+        const forceMerge = await shouldForceMergeFromGitHub(
+          config.git.base_branch,
+          driftState.conflicts,
+        );
+        mergeContext = await buildMergeContextBlock(
+          config.git.base_branch,
+          env.PR_NUMBER,
+          octokit,
+          owner,
+          repo,
+          "Resolve these conflicts with the latest base. Preserve review fixes from the previous pass.",
+          forceMerge,
+        );
+      }
+
+      const phaseReportTracker = createPhaseReportTracker();
+      let tools = await withReportRunFrictionTool(
+        await createReviewFixTools(
+          octokit,
+          owner,
+          repo,
+          env.ISSUE_NUMBER,
+          env.PR_NUMBER,
+          phaseReportTracker,
+        ),
+        runFriction,
+      );
+      tools = applyCommandGithubTools(tools, cmd.resolved.tools.github);
+
+      const driftRetryPrompt =
+        pass > 0
+          ? `PRIORITY: ${config.git.base_branch} advanced while the previous review-fix pass was running. Resolve merge conflicts with ${config.git.base_branch} using the merge context below. Preserve review fixes already made on this branch; do not revert unrelated work.
+
+`
+          : "";
+
+      const session = await runAgentSession({
         phase: cmd.runtimePhase,
-        commandId: cmd.commandId,
-        issueNumber: env.ISSUE_NUMBER,
-        prNumber: env.PR_NUMBER,
-        repository: env.GITHUB_REPOSITORY,
-      },
-      prompt: `Address review feedback on PR #${env.PR_NUMBER} (issue #${env.ISSUE_NUMBER}).
+        modelId: cmd.modelId,
+        systemPrompt: cmd.systemPrompt,
+        tools,
+        runFriction,
+        sessionMetadata: {
+          phase: cmd.runtimePhase,
+          commandId: cmd.commandId,
+          issueNumber: env.ISSUE_NUMBER,
+          prNumber: env.PR_NUMBER,
+          repository: env.GITHUB_REPOSITORY,
+          upstreamDriftPass: pass,
+        },
+        prompt:
+          pass === 0
+            ? `Address review feedback on PR #${env.PR_NUMBER} (issue #${env.ISSUE_NUMBER}).
 ${conflictPriority}
 ${
   reviewCommentContext.bareFixTrigger
@@ -210,10 +306,10 @@ Referenced review comments (from trigger / review submission):
 ${reviewCommentContext.referencedSection}${reviewContextWarnings}
 
 PR review comments (line comments on diff${
-        reviewCommentContext.bareFixTrigger
-          ? ", all authors"
-          : ", human authors"
-      }):
+                reviewCommentContext.bareFixTrigger
+                  ? ", all authors"
+                  : ", human authors"
+              }):
 ${reviewCommentContext.lineCommentsSection}
 
 Approved plan (context):
@@ -225,84 +321,126 @@ ${prThread}
 ${reviewFixThreadsSection}
 
 Repository: ${env.GITHUB_REPOSITORY}
+Branch: ${env.AGENT_BRANCH}`
+            : `${driftRetryPrompt}Address remaining merge issues on PR #${env.PR_NUMBER} (issue #${env.ISSUE_NUMBER}).
+
+Merge context:
+${mergeContext}
+
+Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
-    });
-
-    appendRunFrictionStepSummary(runFriction, "review-fix");
-
-    const phaseReport = phaseReportTracker.report;
-
-    const buildReviewFixComment = (body: string): string => {
-      const completion = formatPhaseCompletionMarkdown({
-        phase: "review-fix",
-        statusLine: body,
-        phaseReport,
-        sessionUsage: session.usage,
-        sessionId: session.sessionId,
-        modelId: session.modelId,
-        servedModelIds: session.servedModelIds,
-        openRouterCostUsd: session.openRouterCostUsd,
-        iterations: session.iterations,
-        toolCallsCount: session.toolCallsCount,
-        runFriction,
       });
-      return `<!-- agent-review-fix -->\n${completion}`;
-    };
 
-    await prepareResolvedMergeForCommit();
+      await prepareResolvedMergeForCommit();
 
-    const pushResult = await commitAndPushBranch(
-      env.AGENT_BRANCH,
-      resolveAgentCommitMessage(
-        phaseReport,
-        `fix(review): address feedback on PR #${env.PR_NUMBER}`,
-      ),
-    );
-
-    if (pushResult.status === "noChanges") {
-      await postComment(
-        octokit,
-        owner,
-        repo,
-        env.PR_NUMBER,
-        buildReviewFixComment(
-          `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
+      const pushResult = await commitAndPushBranch(
+        env.AGENT_BRANCH,
+        resolveAgentCommitMessage(
+          phaseReportTracker.report,
+          pass > 0
+            ? `fix(review): sync with ${config.git.base_branch} on PR #${env.PR_NUMBER}`
+            : `fix(review): address feedback on PR #${env.PR_NUMBER}`,
         ),
       );
-      console.log(
-        `\nReview fix completed with no changes on branch ${env.AGENT_BRANCH}`,
-      );
-      await clearAgentResumeLabels(octokit, owner, repo, {
-        issueNumber: env.ISSUE_NUMBER,
-        prNumber: env.PR_NUMBER,
-      });
-      return;
+
+      // Only the first pass can legitimately complete with "already synced".
+      // On a drift-retry pass the branch was already pushed, so we must still
+      // verify GitHub mergeability before reporting success.
+      if (pass === 0 && pushResult.status === "noChanges") {
+        await postComment(
+          octokit,
+          owner,
+          repo,
+          env.PR_NUMBER,
+          buildReviewFixComment(
+            `No commit was needed: the branch is already synced with \`${config.git.base_branch}\` and the agent made no code changes.`,
+            phaseReportTracker.report,
+            session,
+            runFriction,
+          ),
+        );
+        console.log(
+          `\nReview fix completed with no changes on branch ${env.AGENT_BRANCH}`,
+        );
+        await clearAgentResumeLabels(octokit, owner, repo, {
+          issueNumber: env.ISSUE_NUMBER,
+          prNumber: env.PR_NUMBER,
+        });
+        return;
+      }
+
+      await assertLocalMergeResolved();
+
+      try {
+        await assertPullRequestNotConflicting(
+          octokit,
+          owner,
+          repo,
+          env.PR_NUMBER,
+        );
+        await postComment(
+          octokit,
+          owner,
+          repo,
+          env.PR_NUMBER,
+          buildReviewFixComment(
+            `Pushed review fixes for PR #${env.PR_NUMBER}.`,
+            phaseReportTracker.report,
+            session,
+            runFriction,
+          ),
+        );
+        await clearAgentResumeLabels(octokit, owner, repo, {
+          issueNumber: env.ISSUE_NUMBER,
+          prNumber: env.PR_NUMBER,
+        });
+
+        await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
+          issueNumber: env.ISSUE_NUMBER,
+          prNumber: env.PR_NUMBER,
+          agentBranch: env.AGENT_BRANCH,
+        });
+
+        console.log(`\nReview fix pushed on branch ${env.AGENT_BRANCH}`);
+        appendRunFrictionStepSummary(runFriction, "review-fix");
+        return;
+      } catch (error) {
+        if (
+          error instanceof PullRequestStillConflictingError &&
+          shouldRetryUpstreamDriftAfterPush(error, pass, maxPasses)
+        ) {
+          continue;
+        }
+        if (error instanceof PullRequestStillConflictingError) {
+          await postComment(
+            octokit,
+            owner,
+            repo,
+            env.PR_NUMBER,
+            buildReviewFixComment(
+              formatMergeStillBlockedStatusLine(
+                `Pushed review fixes for PR #${env.PR_NUMBER}.`,
+                config.git.base_branch,
+                error,
+              ),
+              phaseReportTracker.report,
+              session,
+              runFriction,
+            ),
+          );
+          await clearAgentResumeLabels(octokit, owner, repo, {
+            issueNumber: env.ISSUE_NUMBER,
+            prNumber: env.PR_NUMBER,
+          });
+          console.warn(
+            `\nReview fix pushed on branch ${env.AGENT_BRANCH}, but PR is still not mergeable.`,
+          );
+          appendRunFrictionStepSummary(runFriction, "review-fix");
+          return;
+        }
+        throw error;
+      }
     }
-
-    await assertLocalMergeResolved();
-
-    await assertPullRequestNotConflicting(octokit, owner, repo, env.PR_NUMBER);
-
-    await postComment(
-      octokit,
-      owner,
-      repo,
-      env.PR_NUMBER,
-      buildReviewFixComment(`Pushed review fixes for PR #${env.PR_NUMBER}.`),
-    );
-
-    await clearAgentResumeLabels(octokit, owner, repo, {
-      issueNumber: env.ISSUE_NUMBER,
-      prNumber: env.PR_NUMBER,
-    });
-
-    await chainCodeReviewAfterReviewFix(octokit, owner, repo, config, {
-      issueNumber: env.ISSUE_NUMBER,
-      prNumber: env.PR_NUMBER,
-      agentBranch: env.AGENT_BRANCH,
-    });
-
-    console.log(`\nReview fix pushed on branch ${env.AGENT_BRANCH}`);
   } catch (error) {
     await reportPhaseFailure(
       octokit,

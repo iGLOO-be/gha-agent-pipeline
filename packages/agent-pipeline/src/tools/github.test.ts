@@ -1,13 +1,16 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import type { Octokit } from "@octokit/rest";
 import {
   addReactionToIssueComment,
   addReactionToPullRequestReview,
   AGENT_COMMENT_MARKERS,
+  assertPullRequestNotConflicting,
   buildRunUrl,
   clearAgentResumeLabels,
   createPullRequestReview,
   createReplyForReviewComment,
   dispatchAgentPhaseWorkflow,
+  PullRequestStillConflictingError,
   extractAgentPlan,
   findPlanComment,
   findPlanCommentUrl,
@@ -867,6 +870,35 @@ describe("tools/github", () => {
       );
       expect(result.id).toBe(12);
       expect(events).toEqual(["REQUEST_CHANGES", "COMMENT"]);
+    });
+  });
+
+  describe("assertPullRequestNotConflicting", () => {
+    it("throws PullRequestStillConflictingError when dirty and behind base", async () => {
+      const octokit = {
+        pulls: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              mergeable: false,
+              mergeable_state: "dirty",
+              base: { label: "owner:main" },
+              head: { label: "owner:branch" },
+            },
+          }),
+        },
+        repos: {
+          compareCommits: vi.fn().mockResolvedValue({
+            data: { behind_by: 5 },
+          }),
+        },
+      } as unknown as Octokit;
+
+      await expect(
+        assertPullRequestNotConflicting(octokit, "o", "r", 1, {
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+      ).rejects.toBeInstanceOf(PullRequestStillConflictingError);
     });
   });
 
