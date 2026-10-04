@@ -1,16 +1,12 @@
 import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "./config.js";
+import { dispatchPhaseFromEnv } from "./phase-dispatch.js";
 import type { ReviewTracker } from "./tools/index.js";
-import {
-  dispatchAgentPhaseWorkflow,
-  listReviewCommentsForReview,
-  postComment,
-} from "./tools/github.js";
+import { listReviewCommentsForReview, postComment } from "./tools/github.js";
 
 export type ReviewLoopDispatchOptions = {
   reviewLoopActive?: boolean;
   reviewLoopRound?: number;
-  chainCodeReview?: boolean;
 };
 
 export function isReviewLoopEnabled(config: AgentConfig): boolean {
@@ -34,17 +30,6 @@ export function parseReviewLoopRoundFromEnv(): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
-function requireCommentId(): string | null {
-  const commentId = process.env.COMMENT_ID;
-  if (!commentId) {
-    console.warn(
-      "Review loop dispatch skipped: COMMENT_ID is missing for workflow dispatch",
-    );
-    return null;
-  }
-  return commentId;
-}
-
 export async function dispatchReviewLoopPhase(
   octokit: Octokit,
   owner: string,
@@ -60,31 +45,17 @@ export async function dispatchReviewLoopPhase(
     chain?: ReviewLoopDispatchOptions;
   },
 ): Promise<void> {
-  const commentId = requireCommentId();
-  if (!commentId) {
-    return;
-  }
-
-  try {
-    await dispatchAgentPhaseWorkflow(octokit, owner, repo, {
-      phase: input.phase,
-      commentId,
-      issueNumber: input.issueNumber,
-      prNumber: input.prNumber,
-      headRef: input.headRef,
-      reviewInstructions: input.reviewInstructions,
-      reviewFeedback: input.reviewFeedback,
-      reactionTarget: input.reactionTarget ?? process.env.REACTION_TARGET,
-      chainCodeReview: input.chain?.chainCodeReview,
-      reviewLoopActive: input.chain?.reviewLoopActive,
-      reviewLoopRound: input.chain?.reviewLoopRound,
-    });
-    console.log(`Dispatched review-loop phase: ${input.phase}`);
-  } catch (error) {
-    console.warn(
-      `Could not dispatch review-loop phase ${input.phase}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  await dispatchPhaseFromEnv(octokit, owner, repo, {
+    phase: input.phase,
+    issueNumber: input.issueNumber,
+    prNumber: input.prNumber,
+    headRef: input.headRef,
+    reviewInstructions: input.reviewInstructions,
+    reviewFeedback: input.reviewFeedback,
+    reactionTarget: input.reactionTarget,
+    reviewLoopActive: input.chain?.reviewLoopActive,
+    reviewLoopRound: input.chain?.reviewLoopRound,
+  });
 }
 
 export async function startReviewLoopAfterImplement(
@@ -111,6 +82,22 @@ export async function startReviewLoopAfterImplement(
   });
 }
 
+/**
+ * `workflow_dispatch` inputs have a per-value size ceiling (64 KB in practice);
+ * the review body plus every inline comment easily exceeds it. Truncate before
+ * dispatch so a large review cannot make the loop end silently.
+ */
+export const REVIEW_FIX_FEEDBACK_MAX_CHARS = 60_000;
+const REVIEW_FIX_BODY_MAX_CHARS = 20_000;
+const REVIEW_FIX_INLINE_COMMENT_MAX_CHARS = 4_000;
+
+function truncateForFeedback(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `${text.slice(0, maxChars)}\n…(truncated)`;
+}
+
 export async function buildChainedReviewFixFeedback(
   octokit: Octokit,
   owner: string,
@@ -118,14 +105,20 @@ export async function buildChainedReviewFixFeedback(
   prNumber: number,
   review: ReviewTracker,
 ): Promise<string> {
-  const parts: string[] = [
+  const header: string[] = [
     "Automated review-fix from the review loop after agent code-review.",
     "",
     "Address hard findings from the latest agent review below.",
   ];
+  const parts: string[] = [...header];
 
   if (review.body) {
-    parts.push("", "### Review body", "", review.body);
+    parts.push(
+      "",
+      "### Review body",
+      "",
+      truncateForFeedback(review.body, REVIEW_FIX_BODY_MAX_CHARS),
+    );
   }
 
   if (review.id) {
@@ -143,7 +136,10 @@ export async function buildChainedReviewFixFeedback(
           parts.push(
             "",
             `- **${comment.path}:${comment.line ?? "?"}**`,
-            comment.body ?? "",
+            truncateForFeedback(
+              comment.body ?? "",
+              REVIEW_FIX_INLINE_COMMENT_MAX_CHARS,
+            ),
           );
         }
       }
@@ -155,9 +151,28 @@ export async function buildChainedReviewFixFeedback(
     }
   }
 
-  return parts.join("\n");
+  const feedback = parts.join("\n");
+  if (feedback.length <= REVIEW_FIX_FEEDBACK_MAX_CHARS) {
+    return feedback;
+  }
+
+  const reviewUrl = review.htmlUrl ? ` (${review.htmlUrl})` : "";
+  const note = `\n…(review feedback truncated to fit the workflow_dispatch input limit; read the posted review${reviewUrl} for the full text)`;
+  const head = `${header.join("\n")}\n`;
+  const budget = REVIEW_FIX_FEEDBACK_MAX_CHARS - head.length - note.length;
+  const rest = parts.slice(header.length).join("\n");
+  return `${head}${rest.slice(0, Math.max(0, budget))}${note}`;
 }
 
+/**
+ * Continue the review loop after a code-review run. `code-review.ts` always
+ * calls this (even when the review could not be posted), so the
+ * `review.posted` guard below is the single source of truth for the
+ * "review not posted" stop condition.
+ *
+ * `round` is a 0-based code-review round index: review-fix is dispatched while
+ * `round < max_rounds`, so `max_rounds: 3` allows fixes after rounds 0–2.
+ */
 export async function afterCodeReviewInReviewLoop(
   octokit: Octokit,
   owner: string,
@@ -227,7 +242,6 @@ export async function afterCodeReviewInReviewLoop(
     chain: {
       reviewLoopActive: true,
       reviewLoopRound: round,
-      chainCodeReview: true,
     },
   });
 }

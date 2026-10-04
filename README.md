@@ -100,7 +100,7 @@ Automated **implement → code-review ↔ review-fix** cycle on the new PR. Only
 
 1. Implement opens the PR and dispatches the first **code-review** (`review_loop_round=0`, `review_loop_active=true`).
 2. If the review is **`COMMENT`** (no hard findings) → loop ends; a PR comment `<!-- agent-review-loop -->` marks success.
-3. If the review is **`REQUEST_CHANGES`** and `round < review_loop.max_rounds` → dispatch **review-fix** with synthesized feedback (review body + inline comments).
+3. If the review is **`REQUEST_CHANGES`** and `round < review_loop.max_rounds` → dispatch **review-fix** with synthesized feedback (review body + inline comments, truncated when the payload would exceed the `workflow_dispatch` input size limit — the comment then links to the posted review).
 4. After review-fix **pushes** commits → dispatch the next **code-review** with `review_loop_round` incremented.
 5. Repeat from step 2 until a stop condition below.
 

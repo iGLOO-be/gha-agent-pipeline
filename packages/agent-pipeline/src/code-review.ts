@@ -276,14 +276,14 @@ ${reviewDiff.diff || "(empty diff)"}
           runFriction,
         }),
       );
-
-      await afterCodeReviewInReviewLoop(octokit, owner, repo, config, {
-        issueNumber: env.ISSUE_NUMBER,
-        prNumber: env.PR_NUMBER,
-        headRef: env.AGENT_BRANCH ?? pr.head.ref,
-        review,
-      });
     }
+
+    await afterCodeReviewInReviewLoop(octokit, owner, repo, config, {
+      issueNumber: env.ISSUE_NUMBER,
+      prNumber: env.PR_NUMBER,
+      headRef: env.AGENT_BRANCH ?? pr.head.ref,
+      review,
+    });
 
     console.log("\nCode-review agent completed.");
   } catch (error) {
