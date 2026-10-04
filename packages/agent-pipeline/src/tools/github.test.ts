@@ -11,7 +11,9 @@ import {
   createReplyForReviewComment,
   dispatchAgentPhaseWorkflow,
   PullRequestStillConflictingError,
+  extractAgentAnswer,
   extractAgentPlan,
+  normalizeAgentAnswerBody,
   findPlanComment,
   findPlanCommentUrl,
   formatCommentsForPrompt,
@@ -132,6 +134,43 @@ describe("tools/github", () => {
 
     it("returns null when no plan section is present", () => {
       expect(extractAgentPlan("no plan here")).toBeNull();
+    });
+  });
+
+  describe("extractAgentAnswer", () => {
+    it("extracts an Agent answer section", () => {
+      const text = "intro\n## Agent answer\n\n- bullet\n\n---";
+      expect(extractAgentAnswer(text)).toContain("## Agent answer");
+      expect(extractAgentAnswer(text)).toContain("- bullet");
+    });
+
+    it("normalizes heading casing", () => {
+      const text = "## agent answer\n\nYes.";
+      expect(extractAgentAnswer(text)).toBe("## Agent answer\nYes.");
+    });
+
+    it("wraps substantive output without a heading", () => {
+      const text = "x".repeat(50);
+      expect(extractAgentAnswer(text)).toBe(`## Agent answer\n\n${text}`);
+    });
+
+    it("returns null for empty or too-short output", () => {
+      expect(extractAgentAnswer("")).toBeNull();
+      expect(extractAgentAnswer("too short")).toBeNull();
+    });
+
+    it("strips trailing agent phase report from fallback section", () => {
+      const text =
+        "## Agent answer\n\nDone.\n\n## Agent phase report (Ask)\n\nmetrics";
+      expect(extractAgentAnswer(text)).toBe("## Agent answer\nDone.");
+    });
+  });
+
+  describe("normalizeAgentAnswerBody", () => {
+    it("prefixes body when heading is missing", () => {
+      expect(normalizeAgentAnswerBody("plain text")).toBe(
+        "## Agent answer\n\nplain text",
+      );
     });
   });
 
