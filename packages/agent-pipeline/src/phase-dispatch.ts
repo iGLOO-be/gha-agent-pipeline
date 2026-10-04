@@ -9,7 +9,6 @@ export type DispatchPhaseFromEnvInput = {
   reviewInstructions?: string;
   reviewFeedback?: string;
   reactionTarget?: string;
-  chainCodeReview?: boolean;
   reviewLoopActive?: boolean;
   reviewLoopRound?: number;
 };
@@ -47,7 +46,6 @@ export async function dispatchPhaseFromEnv(
       reviewInstructions: input.reviewInstructions,
       reviewFeedback: input.reviewFeedback,
       ...(reactionTarget ? { reactionTarget } : {}),
-      chainCodeReview: input.chainCodeReview,
       reviewLoopActive: input.reviewLoopActive,
       reviewLoopRound: input.reviewLoopRound,
     });
