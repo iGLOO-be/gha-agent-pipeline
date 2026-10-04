@@ -414,17 +414,17 @@
     },
     "review_loop": {
       "type": "object",
-      "description": "Optional implement-started loop: code-review → review-fix → code-review until clean or max_rounds.",
+      "description": "Optional automated loop after /agent implement only: code-review → review-fix (on REQUEST_CHANGES) → code-review until COMMENT, stall, or max_rounds. Requires consumer agent-phase.yml inputs review_loop_active and review_loop_round plus App actions:write. Mutually exclusive with implement.follow_up.code_review for the implement entrypoint.",
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "When true, /agent implement starts an automated review loop on the new PR (not manual /agent code-review).",
+          "description": "When true, a successful /agent implement dispatches the first chained code-review with review_loop_active (not triggered by manual /agent code-review alone).",
           "default": false
         },
         "max_rounds": {
           "type": "integer",
           "minimum": 1,
-          "description": "Maximum code-review round index before the loop stops dispatching review-fix (safety cap).",
+          "description": "Safety cap: 0-based code-review round index. Auto review-fix runs only when round < max_rounds after REQUEST_CHANGES (default 3 allows fix after rounds 0–2).",
           "default": 3
         }
       },

@@ -63,7 +63,7 @@ On **ci-fix** and **review-fix**, the agent may also pass an optional **`commitM
 
 On **review-fix**, after code changes the agent should call **`replyToReviewComment`** on each addressed inline review thread (root comment id from the injected thread context) and **`resolveReviewThreads`** when the feedback is clearly fixed (including outdated threads). The runner may optionally dispatch a follow-up **code-review** when configured or when the slash command includes `--recheck` / `+code-review`.
 
-After **implement** opens a PR, the runner may optionally dispatch **code-review** when `implement.follow_up.code_review` is enabled or the slash command includes `+code-review` / `--code-review`.
+After **implement** opens a PR, the runner either starts the **`review_loop`** (when `review_loop.enabled` in `agent.config.yml` — automated code-review ↔ review-fix until clean or `max_rounds`) or optionally dispatches a single **code-review** when `implement.follow_up.code_review` is enabled or the slash command includes `+code-review` / `--code-review`. See [README — Review loop](README.md#review-loop-review_loop-in-agentconfig).
 
 ### Report structure
 

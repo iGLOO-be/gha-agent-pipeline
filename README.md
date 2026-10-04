@@ -92,7 +92,54 @@ jobs:
 
 **Chained code-review:** forward the `chain_code_review` input in the consumer `agent-phase.yml` (as in the excerpt above) and grant the App **Actions read & write** (`permission-actions: write` on `create-github-app-token`) — the runtime dispatches the follow-up `agent-phase.yml` `code-review` with the App token, so a missing scope makes the chain silently no-op.
 
-**Review loop (after implement only):** set `review_loop.enabled: true` and `review_loop.max_rounds` in `.github/agent.config.yml`. After `/agent implement`, the runtime dispatches **code-review → review-fix → code-review** until the review is `COMMENT` (no hard findings), review-fix makes no changes, or the round cap is hit. Forward `review_loop_active` and `review_loop_round` on the consumer `agent-phase.yml` (dogfood template includes them). Manual `/agent code-review` does not start the loop unless those env vars are set by a prior chained run. Same **Actions write** requirement as chained code-review.
+### Review loop (`review_loop` in agent.config)
+
+Automated **implement → code-review ↔ review-fix** cycle on the new PR. Only starts when **`review_loop.enabled: true`** on a successful **`/agent implement`** (not from a manual `/agent code-review` on its own). When the loop is enabled, implement uses this path instead of `implement.follow_up.code_review` (you do not need both).
+
+**Flow**
+
+1. Implement opens the PR and dispatches the first **code-review** (`review_loop_round=0`, `review_loop_active=true`).
+2. If the review is **`COMMENT`** (no hard findings) → loop ends; a PR comment `<!-- agent-review-loop -->` marks success.
+3. If the review is **`REQUEST_CHANGES`** and `round < review_loop.max_rounds` → dispatch **review-fix** with synthesized feedback (review body + inline comments).
+4. After review-fix **pushes** commits → dispatch the next **code-review** with `review_loop_round` incremented.
+5. Repeat from step 2 until a stop condition below.
+
+**`review_loop.max_rounds` (default `3`)** — safety cap on the **code-review round index** (0-based). Review-fix runs only while `round < max_rounds` after a `REQUEST_CHANGES` review. Example with `max_rounds: 3`: rounds `0`, `1`, and `2` may each trigger a fix; at round `3`, another `REQUEST_CHANGES` stops the loop without auto-fix.
+
+**Stop conditions**
+
+| Outcome                                                     | What happens                          |
+| ----------------------------------------------------------- | ------------------------------------- |
+| Code-review `COMMENT`                                       | Success; loop ends                    |
+| `REQUEST_CHANGES` and `round >= max_rounds`                 | PR comment; no auto review-fix        |
+| Review-fix finishes with **no code changes**                | Stall comment; no further code-review |
+| Review not posted                                           | No chain (logged warning)             |
+| Next code-review would exceed `max_rounds` after a fix push | Cap comment; no dispatch              |
+
+**Consumer wiring** (in addition to chained code-review above):
+
+- `agent-phase.yml` `workflow_dispatch` inputs: `review_loop_active`, `review_loop_round` (see dogfood [`.github/workflows/agent-phase.yml`](./.github/workflows/agent-phase.yml)).
+- Pass them through `agent-phase-run` (excerpt above). Runtime sets `REVIEW_LOOP_ACTIVE` / `REVIEW_LOOP_ROUND` for the CLI.
+- App token needs **`actions: write`** (same as any runtime `workflow_dispatch` chain).
+
+**Config example**
+
+```yaml
+review_loop:
+  enabled: true
+  max_rounds: 3
+
+code_review:
+  labels:
+    apply_to: pr
+    status:
+      ok: "ai-review:ok"
+      pending: "ai-review:pending"
+```
+
+Optional `implement.follow_up.code_review` / `review_fix.follow_up.code_review` remain useful for **non-loop** runs (single chained code-review after implement or after `/agent fix`). They are not used for the implement entrypoint when `review_loop.enabled` is true.
+
+PR comments tagged `<!-- agent-review-loop -->` document loop completion, caps, and stalls.
 
 ### Agent runner tooling (`ripgrep`)
 
@@ -209,7 +256,7 @@ Consumers should also keep `packageManager` in `package.json` when using `pnpm/a
 
 When bumping `dispatch.yml` to a release that includes `/agent code-review`, add `code-review` to the `phase` choice options in the consumer's `agent-phase.yml`.
 
-For **chained code-review** after implement or review-fix, add optional `workflow_dispatch` input `chain_code_review` on the consumer `agent-phase.yml` and pass it through to `agent-phase-run` (see excerpt above). Slash flags (`+code-review`, `--code-review`, `--recheck` on fix) set that input from `dispatch.yml`; config flags (`implement.follow_up.code_review` / `review_fix.follow_up.code_review`) work without slash flags. The phase job also needs `permissions.actions: write` if the runtime dispatches follow-up workflows with the App token.
+For **chained code-review** after implement or review-fix, add optional `workflow_dispatch` input `chain_code_review` on the consumer `agent-phase.yml` and pass it through to `agent-phase-run` (see excerpt above). For the full **review loop**, also forward `review_loop_active` and `review_loop_round` ([Review loop](#review-loop-review_loop-in-agentconfig)). Slash flags (`+code-review`, `--code-review`, `--recheck` on fix) set `chain_code_review` from `dispatch.yml`; config flags (`implement.follow_up.code_review` / `review_fix.follow_up.code_review`) work without slash flags for single-shot chains. The phase job also needs `permissions.actions: write` if the runtime dispatches follow-up workflows with the App token.
 
 ### Code review scope (`code_review` in agent.config)
 
@@ -278,7 +325,7 @@ Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the trigg
 After the consumer workflows are on **`main`**, comment on an issue or PR:
 
 - `/agent plan` — explore and post a plan
-- `/agent implement` — implement from the plan and open a PR. Optional follow-up code-review: `implement.follow_up.code_review` in config, or `/agent implement +code-review` / `--code-review` on the slash command.
+- `/agent implement` — implement from the plan and open a PR. Optional **review loop** (`review_loop.enabled` in config) or single-shot follow-up code-review (`implement.follow_up.code_review`, or `/agent implement +code-review` / `--code-review` on the slash command). See [Review loop](#review-loop-review_loop-in-agentconfig).
 - `/agent yolo` — implement directly from the issue
 - `/agent fix` — on an agent PR (comment or submitted review). One fix session covers merge conflicts, **failing CI checks** (preloaded when Checks read is granted + `readCheckRuns` / `readCheckLogs`), and review feedback. A bare `/agent fix` prioritizes open CI failures when checks are red, otherwise loads PR review bodies and inline comments (human and bot). The agent replies on addressed review threads (`replyToReviewComment`) and resolves threads when the fix is clear. If check preload fails (missing Checks permission), the slash fix still runs and the agent can call `readCheckRuns` when permitted. A PR comment containing `<!-- agent-blocked -->` skips any fix run (slash or CI auto-fix). Optional follow-up: `/agent fix --recheck` or `/agent fix +code-review`, or `review_fix.follow_up.code_review: true` in `.github/agent.config.yml`, dispatches `/agent code-review` after a successful fix. Set `models.fix` to use one model for both `/agent fix` and CI auto-fix; without it, `models.review-fix` and `models.ci-fix` are used per entry.
 - `/agent code-review` — hybrid review (walkthrough, merge risk, Standards + Spec, inline comments) posted as a GitHub PR review
