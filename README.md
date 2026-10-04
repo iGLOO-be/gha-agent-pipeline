@@ -284,15 +284,13 @@ Dispatch runs phase workflows from the default branch (`main`), not from open PR
 
 ### Dogfood (v0.3.0)
 
-This repo dogfoods the consumer wiring to validate the **v0.3.0** line end-to-end ([tracking issue #107](https://github.com/iGLOO-be/gha-agent-pipeline/issues/107)). Validation thread on a real issue:
+This repo dogfoods the consumer wiring to validate the upcoming **v0.3.0** line end-to-end ([tracking issue #107](https://github.com/iGLOO-be/gha-agent-pipeline/issues/107)) — `v0.2.6` remains the latest release tag consumers should pin. Validation thread on a real issue:
 
-1. `/agent config-audit` — audit this repo's `.github/agent.config.yml` before implementation (custom command extending `ask`, see `commands` above).
-2. `/agent plan` — explore the codebase and post an implementation plan.
-3. `/agent implement` — implement from the plan and open an agent PR.
-4. `/agent code-review` — hybrid PR review (walkthrough, merge risk, Standards + Spec, inline comments).
-5. `/agent fix` — address review feedback and/or failing checks on the agent PR.
+`/agent config-audit` → `/agent plan` → `/agent implement` → `/agent code-review` → `/agent fix`
 
-This repo wires `dispatch.yml@main` (`.github/workflows/agent.yml`), unlike external consumers which pin a release tag — see the pinning guidance above.
+`config-audit` is this repo's custom `ask` command (see `commands` above); the other four are the built-ins documented in the bullets above.
+
+This repo wires `dispatch.yml@main` (`.github/workflows/agent.yml`), unlike external consumers which pin a release tag — see [Consumer contract](#consumer-contract-v01) for the pinning guidance.
 
 ### Secrets (repository)
 
