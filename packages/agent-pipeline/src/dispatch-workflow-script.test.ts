@@ -67,6 +67,20 @@ function collectAwaitCalls(script: string): string[] {
 }
 
 describe("dispatch workflow inline script", () => {
+  it("checks out slash-parser scripts from the reusable workflow repo", () => {
+    const yaml = readFileSync(dispatchWorkflowPath, "utf8");
+    expect(yaml).toContain("Checkout dispatch scripts (library)");
+    expect(yaml).toContain("repository: ${{ job.workflow_repository }}");
+    expect(yaml).toContain("ref: ${{ job.workflow_sha }}");
+    expect(yaml).toContain("path: _gha-agent-pipeline-dispatch");
+    expect(yaml).toContain(
+      "require('./_gha-agent-pipeline-dispatch/.github/scripts/parse-agent-commands.cjs')",
+    );
+    expect(yaml).not.toContain(
+      "require('./.github/scripts/parse-agent-commands.cjs')",
+    );
+  });
+
   it("only awaits functions defined in the same script (or github-script globals)", () => {
     const yaml = readFileSync(dispatchWorkflowPath, "utf8");
     const script = extractGithubScriptInlineScript(yaml);
