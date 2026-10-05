@@ -2,6 +2,38 @@ import type { AgentPhase } from "./config.js";
 
 const RETRIABLE_FINISH_REASONS = new Set(["aborted", "error"]);
 
+export type ProviderErrorInfo = {
+  code?: string;
+  message: string;
+};
+
+const NON_RETRIABLE_PROVIDER_ERROR_PATTERNS = [
+  /no model left by the jev-router/i,
+  /no model admitted/i,
+  /no models? (?:are )?available/i,
+  /no endpoints? found/i,
+  /model not found/i,
+  /not a valid model/i,
+  /invalid model/i,
+] as const;
+
+export type ProviderErrorClass = "non-retriable" | "transient";
+
+export function isNonRetriableProviderError(message?: string | null): boolean {
+  if (!message?.trim()) {
+    return false;
+  }
+  return NON_RETRIABLE_PROVIDER_ERROR_PATTERNS.some((pattern) =>
+    pattern.test(message),
+  );
+}
+
+export function classifyProviderError(
+  message?: string | null,
+): ProviderErrorClass {
+  return isNonRetriableProviderError(message) ? "non-retriable" : "transient";
+}
+
 /** User message sent on `cline.send` after a retriable in-session failure. */
 export const SESSION_CONTINUE_USER_PROMPT =
   "The previous model turn failed due to a transient provider error. Continue the assigned task from the current workspace state. Do not repeat work that is already complete unless verification requires it.";
@@ -74,19 +106,32 @@ export class AgentSessionError extends Error {
   readonly finishReason: string;
   readonly sessionId?: string;
   readonly attempt: number;
+  readonly providerError?: ProviderErrorInfo;
 
   constructor(
     message: string,
-    options: { finishReason: string; sessionId?: string; attempt: number },
+    options: {
+      finishReason: string;
+      sessionId?: string;
+      attempt: number;
+      providerError?: ProviderErrorInfo;
+    },
   ) {
     super(message);
     this.name = "AgentSessionError";
     this.finishReason = options.finishReason;
     this.sessionId = options.sessionId;
     this.attempt = options.attempt;
+    this.providerError = options.providerError;
   }
 
   get retriable(): boolean {
+    if (
+      this.providerError &&
+      isNonRetriableProviderError(this.providerError.message)
+    ) {
+      return false;
+    }
     return isRetriableSessionFinishReason(this.finishReason);
   }
 }

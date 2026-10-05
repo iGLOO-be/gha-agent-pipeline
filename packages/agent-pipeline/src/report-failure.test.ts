@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { AgentSessionError } from "./session-retry.js";
 import {
   buildBody,
   failureMarkerForPhase,
   formatError,
   redactSecrets,
+  resolveDisplayedFailureError,
   truncateDetails,
 } from "./report-failure.js";
 
@@ -177,6 +179,36 @@ describe("report-failure", () => {
     it("mentions that run URL is unavailable outside GitHub Actions", () => {
       const body = buildBody("yolo", "oops");
       expect(body).toContain("(not available outside GitHub Actions)");
+    });
+
+    it("surfaces Jev provider errors instead of session not found", () => {
+      const jevMessage =
+        "No model left by the jev-router model lists is admitted for this request";
+      const error = new AgentSessionError("session not found", {
+        finishReason: "error",
+        attempt: 1,
+        providerError: { code: "unknown_code", message: jevMessage },
+      });
+      const body = buildBody("implement", error);
+
+      expect(body).toContain(jevMessage);
+      expect(body).not.toMatch(/\*\*Error:\*\* session not found/);
+    });
+  });
+
+  describe("resolveDisplayedFailureError", () => {
+    it("prefers provider headline when session not found masked the cause", () => {
+      const { message } = resolveDisplayedFailureError(
+        new AgentSessionError("session not found", {
+          finishReason: "error",
+          attempt: 1,
+          providerError: {
+            message:
+              "No model left by the jev-router model lists is admitted for this request",
+          },
+        }),
+      );
+      expect(message).toContain("jev-router");
     });
   });
 });

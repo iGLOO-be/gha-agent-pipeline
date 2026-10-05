@@ -487,6 +487,41 @@ describe("gha-log", () => {
       ).toBe(true);
     });
 
+    it("records the last provider error from agent_event error payloads", () => {
+      const listeners: Array<(event: any) => void> = [];
+      const cline = {
+        subscribe: vi.fn((listener) => {
+          listeners.push(listener);
+          return () => {};
+        }),
+      };
+
+      const logger = createSessionLogger(cline, "implement", "test-model");
+      const listener = listeners[0]!;
+
+      expect(logger.getLastProviderError()).toBeUndefined();
+
+      listener({
+        type: "agent_event",
+        payload: {
+          event: {
+            type: "error",
+            error: {
+              code: "unknown_code",
+              message:
+                "No model left by the jev-router model lists is admitted for this request",
+            },
+          },
+        },
+      });
+
+      expect(logger.getLastProviderError()).toEqual({
+        code: "unknown_code",
+        message:
+          "No model left by the jev-router model lists is admitted for this request",
+      });
+    });
+
     it("appends a tool summary at session end in GHA mode", () => {
       process.env.GITHUB_ACTIONS = "true";
       process.env.GITHUB_STEP_SUMMARY = "/tmp/gha-log-summary-test.md";

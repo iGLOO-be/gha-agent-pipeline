@@ -1,5 +1,9 @@
 import type { Octokit } from "@octokit/rest";
 import {
+  AgentSessionError,
+  isNonRetriableProviderError,
+} from "./session-retry.js";
+import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
   type AgentCommentMarker,
@@ -53,6 +57,36 @@ type PrTarget = {
   sourceIssueNumber?: number;
 };
 export type FailureTarget = IssueTarget | PrTarget;
+
+export function resolveDisplayedFailureError(error: unknown): {
+  message: string;
+  details: string;
+} {
+  const base = formatError(error);
+  if (!(error instanceof AgentSessionError) || !error.providerError) {
+    return base;
+  }
+
+  const provider = error.providerError;
+  const providerHeadline = provider.code
+    ? `${provider.code}: ${provider.message}`
+    : provider.message;
+
+  if (
+    isNonRetriableProviderError(provider.message) &&
+    /session not found/i.test(base.message)
+  ) {
+    return {
+      message: provider.message.split("\n")[0],
+      details: `${providerHeadline}\n\n${base.details}`,
+    };
+  }
+
+  return {
+    message: base.message,
+    details: `${providerHeadline}\n\n${base.details}`,
+  };
+}
 
 export function formatError(error: unknown): {
   message: string;
@@ -122,7 +156,8 @@ export function failureMarkerForPhase(phase: FailurePhase): AgentCommentMarker {
 
 export function buildBody(phase: FailurePhase, error: unknown): string {
   const meta = PHASE_META[phase];
-  const { message: rawMessage, details: rawDetails } = formatError(error);
+  const { message: rawMessage, details: rawDetails } =
+    resolveDisplayedFailureError(error);
   const message = redactSecrets(rawMessage);
   const details = redactSecrets(truncateDetails(rawDetails));
   const runUrl = buildRunUrl();
@@ -208,7 +243,11 @@ export async function reportPhaseFailure(
     console.warn(`Failed to add ${WAITING_HUMAN_LABEL} label:`, labelError);
   }
 
-  if (target.kind === "pr" && target.sourceIssueNumber) {
+  if (
+    target.kind === "pr" &&
+    target.sourceIssueNumber &&
+    target.sourceIssueNumber !== target.number
+  ) {
     const runUrl = buildRunUrl() ?? "(run URL unavailable)";
     const reminderBody = `## ${PHASE_META[phase].title}
 

@@ -1,4 +1,5 @@
 import { appendFileSync } from "fs";
+import type { ProviderErrorInfo } from "./session-retry.js";
 import type { SessionAccumulatedUsage } from "./types/usage.js";
 
 /**
@@ -579,6 +580,7 @@ export function formatUsageBlock(
 export interface SessionLogger {
   unsubscribe: () => void;
   closeAllGroups: () => void;
+  getLastProviderError: () => ProviderErrorInfo | undefined;
 }
 
 export function createSessionLogger(
@@ -605,6 +607,7 @@ export function createSessionLogger(
     string,
     { toolName: string; inputSummary: string }
   >();
+  let lastProviderError: ProviderErrorInfo | undefined;
 
   const openGroup = (title: string) => {
     ghaGroup(title);
@@ -868,6 +871,7 @@ export function createSessionLogger(
               )
             : "unknown_code";
         const message = agentEvent.error?.message ?? "unknown error";
+        lastProviderError = { code, message };
         if (isGitHubActions()) {
           ghaNotice(`Agent error (${code}): ${message}`);
         } else {
@@ -951,5 +955,6 @@ export function createSessionLogger(
   return {
     unsubscribe,
     closeAllGroups,
+    getLastProviderError: () => lastProviderError,
   };
 }
