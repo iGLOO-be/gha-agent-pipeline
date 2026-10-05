@@ -111,7 +111,7 @@ function findSuggestedSlash(slash, available) {
  *   target: CommandTarget | string,
  *   commands?: DispatchCommand[],
  *   reservedSlashTokens?: string[],
- *   reason?: 'unknown' | 'wrong-target'
+ *   reason?: 'unknown' | 'disabled' | 'wrong-target'
  * }} input
  * @returns {string}
  */
@@ -129,13 +129,20 @@ function formatUnknownAgentCommandReply({
     commands,
     reservedSlashTokens,
   });
-  const token = slash ? String(slash) : "?";
+  // The token comes from an untrusted comment body: strip backticks and angle
+  // brackets so it cannot break out of the inline code span, render as HTML, or
+  // become a live mention in the reply.
+  const token = slash ? String(slash).replace(/[`<>]/g, "") : "?";
 
   /** @type {string[]} */
   const lines = [];
   if (reason === "wrong-target") {
     lines.push(
       `⚠️ **\`/agent ${token}\` was not executed** — this command is not available on ${label} comments.`,
+    );
+  } else if (reason === "disabled") {
+    lines.push(
+      `⚠️ **\`/agent ${token}\` was not executed** — this command is disabled in \`agent.config.yml\`.`,
     );
   } else {
     lines.push(
@@ -162,8 +169,27 @@ function formatUnknownAgentCommandReply({
   return lines.join("\n");
 }
 
+/**
+ * Why a syntactically valid `/agent <slash>` could not be dispatched, when the
+ * slash is neither resolvable nor explicitly flagged by the caller.
+ *
+ * Returns `'disabled'` when the slash is declared in `commands` but disabled,
+ * `undefined` when it does not exist at all (reported as `unknown`).
+ *
+ * @param {{ slash: string, commands?: DispatchCommand[] }} input
+ * @returns {'disabled' | undefined}
+ */
+function unknownCommandReason({ slash, commands }) {
+  if (!slash) return undefined;
+  const disabled = (commands || []).some(
+    (command) => command && command.slash === slash && !command.enabled,
+  );
+  return disabled ? "disabled" : undefined;
+}
+
 module.exports = {
   collectAvailableSlashTokens,
   findSuggestedSlash,
   formatUnknownAgentCommandReply,
+  unknownCommandReason,
 };

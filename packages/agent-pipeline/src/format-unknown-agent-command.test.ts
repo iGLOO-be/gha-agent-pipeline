@@ -6,6 +6,7 @@ const {
   collectAvailableSlashTokens,
   findSuggestedSlash,
   formatUnknownAgentCommandReply,
+  unknownCommandReason,
 } = require("../../../.github/scripts/format-unknown-agent-command.cjs");
 const {
   parseAgentCommandsFromYaml,
@@ -125,12 +126,41 @@ describe("formatUnknownAgentCommandReply", () => {
     expect(body).not.toContain("`/agent fix`");
   });
 
-  it("never reacts twice in a single reply", () => {
+  it("renders a single 'was not executed' line", () => {
     const body = formatUnknownAgentCommandReply({
       slash: "nope",
       target: "issue",
       commands: loadCommands(),
     });
     expect(body.match(/was not executed/g)).toHaveLength(1);
+  });
+
+  it("explains a command that is declared but disabled", () => {
+    const commands = [
+      ...loadCommands(),
+      { slash: "audit", enabled: false, targets: ["issue"] },
+    ];
+    expect(unknownCommandReason({ slash: "audit", commands })).toBe("disabled");
+    expect(unknownCommandReason({ slash: "nope", commands })).toBeUndefined();
+
+    const body = formatUnknownAgentCommandReply({
+      slash: "audit",
+      target: "issue",
+      commands,
+      reason: unknownCommandReason({ slash: "audit", commands }),
+    });
+    expect(body).toContain("`/agent audit` was not executed");
+    expect(body).toContain("disabled in `agent.config.yml`");
+    expect(body).not.toContain("unknown command");
+  });
+
+  it("keeps an echoed token from breaking out of the code span", () => {
+    const body = formatUnknownAgentCommandReply({
+      slash: "`@everyone`",
+      target: "issue",
+      commands: loadCommands(),
+    });
+    expect(body).not.toContain("`@everyone`");
+    expect(body).toContain("`/agent @everyone` was not executed");
   });
 });

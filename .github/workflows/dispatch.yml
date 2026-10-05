@@ -71,7 +71,8 @@ jobs:
               resolveSlashCommand
             } = require('./.github/scripts/parse-agent-commands.cjs')
             const {
-              formatUnknownAgentCommandReply
+              formatUnknownAgentCommandReply,
+              unknownCommandReason
             } = require('./.github/scripts/format-unknown-agent-command.cjs')
             const { RESERVED } = require('./.github/scripts/command-constants.cjs')
             const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR']
@@ -384,6 +385,13 @@ jobs:
               return { busy: true, runUrl }
             }
 
+            // Reserved slash tokens are wired directly in this workflow rather
+            // than declared in `commands`, so they are not visible to
+            // `loadAgentCommands()`.
+            function reservedSlashTokensFor(target) {
+              return target === 'pr' ? [...RESERVED] : []
+            }
+
             // Posts a single explanatory comment when a syntactically valid
             // `/agent <slash>` invocation could not be dispatched. No eyes
             // reaction and no agent-phase run happen in that case.
@@ -394,12 +402,14 @@ jobs:
               commands,
               reason
             }) {
+              const resolvedReason =
+                reason || unknownCommandReason({ slash, commands })
               const body = formatUnknownAgentCommandReply({
                 slash,
                 target,
                 commands,
-                reservedSlashTokens: target === 'pr' ? ['fix'] : [],
-                ...(reason ? { reason } : {})
+                reservedSlashTokens: reservedSlashTokensFor(target),
+                ...(resolvedReason ? { reason: resolvedReason } : {})
               })
               await github.rest.issues.createComment({
                 owner,
@@ -551,11 +561,12 @@ jobs:
               }
 
               if (body.includes('/agent code-review')) {
-                await github.rest.issues.createComment({
-                  owner,
-                  repo,
-                  issue_number: context.payload.issue.number,
-                  body: '`/agent code-review` only works on a pull request comment.'
+                await replyUnknownAgentCommand({
+                  issueNumber: context.payload.issue.number,
+                  slash: 'code-review',
+                  target: 'issue',
+                  commands: agentCommands,
+                  reason: 'wrong-target'
                 })
                 return
               }
