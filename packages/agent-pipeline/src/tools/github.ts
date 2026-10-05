@@ -530,6 +530,61 @@ export function isAgentInlineReviewCommentBody(body: string): boolean {
   return AGENT_INLINE_REVIEW_COMMENT_TAG.test(body.trim());
 }
 
+export type InlineReviewSeverity = "minor" | "major" | "critical";
+
+const INLINE_REVIEW_SEVERITY_RANK: Record<InlineReviewSeverity, number> = {
+  minor: 1,
+  major: 2,
+  critical: 3,
+};
+
+const INLINE_REVIEW_SEVERITY_CAPTURE =
+  /^_[^|\n]+_\s*\|\s*_([^|\n]+)_\s*\|\s*_/m;
+
+/** Parses the Severity column from an agent inline review comment tag line. */
+export function parseInlineReviewCommentSeverity(
+  body: string,
+): InlineReviewSeverity | null {
+  const trimmed = body.trim();
+  if (!isAgentInlineReviewCommentBody(trimmed)) {
+    return null;
+  }
+  const match = trimmed.match(INLINE_REVIEW_SEVERITY_CAPTURE);
+  if (!match) {
+    return null;
+  }
+  const word = match[1].trim().toLowerCase();
+  if (word === "minor") {
+    return "minor";
+  }
+  if (word === "major") {
+    return "major";
+  }
+  if (word === "critical") {
+    return "critical";
+  }
+  return null;
+}
+
+export function maxInlineReviewSeverity(
+  bodies: string[],
+): InlineReviewSeverity | null {
+  let best: InlineReviewSeverity | null = null;
+  let bestRank = 0;
+  for (const body of bodies) {
+    const level = parseInlineReviewCommentSeverity(body);
+    if (!level) {
+      continue;
+    }
+    const rank = INLINE_REVIEW_SEVERITY_RANK[level];
+    if (rank > bestRank) {
+      bestRank = rank;
+      best = level;
+    }
+  }
+  return best;
+}
+
 export function formatReviewCommentsForPrompt(
   comments: PullRequestReviewCommentForPrompt[],
   options?: { maxDiffHunkChars?: number },
@@ -670,6 +725,11 @@ export async function dispatchAgentPhaseWorkflow(
   });
 }
 
+/**
+ * Inline comments attached to a single review. Paginated: callers (notably the
+ * severity label) treat the result as the complete set, and the REST endpoint
+ * defaults to `per_page: 30`.
+ */
 export async function listReviewCommentsForReview(
   octokit: Octokit,
   owner: string,
@@ -677,13 +737,36 @@ export async function listReviewCommentsForReview(
   prNumber: number,
   reviewId: number,
 ) {
-  const { data } = await octokit.pulls.listCommentsForReview({
+  return octokit.paginate(octokit.rest.pulls.listCommentsForReview, {
     owner,
     repo,
     pull_number: prNumber,
     review_id: reviewId,
+    per_page: 100,
   });
-  return data;
+}
+
+/**
+ * Bodies of the inline comments attached to a single review, ignoring empty
+ * bodies. Review-scoped wrapper used to derive the review's severity label.
+ */
+export async function listReviewCommentBodiesForReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+): Promise<string[]> {
+  const comments = await listReviewCommentsForReview(
+    octokit,
+    owner,
+    repo,
+    prNumber,
+    reviewId,
+  );
+  return comments
+    .map((comment) => comment.body ?? "")
+    .filter((body) => body.length > 0);
 }
 
 export async function buildReviewFixReviewCommentContext(

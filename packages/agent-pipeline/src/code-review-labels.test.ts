@@ -49,12 +49,43 @@ describe("resolveCodeReviewLabelsConfig", () => {
       high: "agent-risk-high",
     });
   });
+
+  it("resolves severity with defaults", () => {
+    const resolved = resolveCodeReviewLabelsConfig(
+      configWithLabels({ severity: {} }),
+    );
+    expect(resolved?.severity).toEqual({
+      minor: "ai-review:minor",
+      major: "ai-review:major",
+      critical: "ai-review:critical",
+    });
+  });
 });
 
 describe("applyCodeReviewLabels", () => {
-  function makeOctokit() {
+  function makeOctokit(
+    reviewComments: Array<{
+      pull_request_review_id: number;
+      body: string;
+    }> = [],
+  ) {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     const octokit = {
+      // `listReviewCommentsForReview` paginates the review-scoped endpoint.
+      paginate: async (route: unknown, params: { review_id: number }) => {
+        calls.push({
+          method: "pulls.listCommentsForReview",
+          args: [route, params],
+        });
+        return reviewComments.filter(
+          (comment) => comment.pull_request_review_id === params.review_id,
+        );
+      },
+      rest: {
+        pulls: {
+          listCommentsForReview: async () => ({ data: [] }),
+        },
+      },
       issues: {
         getLabel: async (...args: unknown[]) => {
           calls.push({ method: "issues.getLabel", args });
@@ -272,5 +303,134 @@ describe("applyCodeReviewLabels", () => {
     expect(
       added.map((c) => (c.args[0] as { issue_number: number }).issue_number),
     ).toEqual([42, 42]);
+  });
+
+  const severityConfig = {
+    minor: "ai-review:minor",
+    major: "ai-review:major",
+    critical: "ai-review:critical",
+  };
+
+  it("applies the highest severity label from inline comments", async () => {
+    const { calls, octokit } = makeOctokit([
+      {
+        pull_request_review_id: 99,
+        body: "_Docs_ | _Minor_ | _Quick win_\n\na",
+      },
+      {
+        pull_request_review_id: 99,
+        body: "_Docs_ | _Major_ | _Quick win_\n\nb",
+      },
+      {
+        pull_request_review_id: 1,
+        body: "_Docs_ | _Critical_ | _Quick win_\n\nold",
+      },
+    ]);
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: {
+        posted: true,
+        id: 99,
+        event: "REQUEST_CHANGES",
+        body: "review",
+      },
+      labelsConfig: {
+        applyTo: "pr",
+        statusOk: "ai-review:ok",
+        statusPending: "ai-review:pending",
+        severity: severityConfig,
+      },
+    });
+
+    const added = calls
+      .filter((c) => c.method === "issues.addLabels")
+      .map((c) => (c.args[0] as { labels: string[] }).labels)
+      .flat();
+    expect(added).toContain("ai-review:major");
+    expect(added).toContain("ai-review:pending");
+    expect(added).not.toContain("ai-review:minor");
+    expect(added).not.toContain("ai-review:ok");
+  });
+
+  it("applies status ok and clears severity when there are no inline severities", async () => {
+    const { calls, octokit } = makeOctokit([]);
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: {
+        posted: true,
+        id: 99,
+        event: "COMMENT",
+        body: "clean",
+      },
+      labelsConfig: {
+        applyTo: "pr",
+        statusOk: "ai-review:ok",
+        statusPending: "ai-review:pending",
+        severity: severityConfig,
+      },
+    });
+
+    const added = calls
+      .filter((c) => c.method === "issues.addLabels")
+      .map((c) => (c.args[0] as { labels: string[] }).labels)
+      .flat();
+    expect(added).toContain("ai-review:ok");
+    expect(added).not.toContain("ai-review:minor");
+
+    const removed = calls
+      .filter((c) => c.method === "issues.removeLabel")
+      .map((c) => (c.args[0] as { name: string }).name);
+    expect(removed).toEqual(
+      expect.arrayContaining([
+        "ai-review:minor",
+        "ai-review:major",
+        "ai-review:critical",
+      ]),
+    );
+  });
+
+  it("skips status ok when COMMENT has minor inline findings", async () => {
+    const { calls, octokit } = makeOctokit([
+      {
+        pull_request_review_id: 5,
+        body: "_Docs_ | _Minor_ | _Quick win_\n\nnits",
+      },
+    ]);
+
+    await applyCodeReviewLabels({
+      octokit: octokit as never,
+      owner: "o",
+      repo: "r",
+      prNumber: 42,
+      issueNumber: 7,
+      review: {
+        posted: true,
+        id: 5,
+        event: "COMMENT",
+        body: "nits only",
+      },
+      labelsConfig: {
+        applyTo: "pr",
+        statusOk: "ai-review:ok",
+        severity: severityConfig,
+      },
+    });
+
+    const added = calls
+      .filter((c) => c.method === "issues.addLabels")
+      .map((c) => (c.args[0] as { labels: string[] }).labels)
+      .flat();
+    expect(added).toEqual(["ai-review:minor"]);
+    expect(added).not.toContain("ai-review:ok");
   });
 });

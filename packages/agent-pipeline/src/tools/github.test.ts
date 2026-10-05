@@ -24,8 +24,11 @@ import {
   hasFailedCheckRuns,
   hasAgentMarkerInComments,
   isAgentInlineReviewCommentBody,
+  maxInlineReviewSeverity,
+  parseInlineReviewCommentSeverity,
   isAutomatedReviewAuthor,
   isBareReviewFixFeedback,
+  listReviewCommentBodiesForReview,
   markerFor,
   pickLatestAgentCodeReview,
   normalizeAgentPlanBody,
@@ -454,10 +457,13 @@ describe("tools/github", () => {
     it("adds a reaction to the first review comment", async () => {
       const calls: Array<{ method: string; args: unknown }> = [];
       const octokit = {
-        pulls: {
-          listCommentsForReview: async (args: unknown) => {
-            calls.push({ method: "listCommentsForReview", args });
-            return { data: [{ id: 1001 }, { id: 1002 }] };
+        paginate: async (route: unknown, params: unknown) => {
+          calls.push({ method: "listCommentsForReview", args: params });
+          return [{ id: 1001 }, { id: 1002 }];
+        },
+        rest: {
+          pulls: {
+            listCommentsForReview: async () => ({ data: [] }),
           },
         },
         reactions: {
@@ -486,6 +492,7 @@ describe("tools/github", () => {
         repo: "repo",
         pull_number: 42,
         review_id: 456,
+        per_page: 100,
       });
       expect(calls[1]?.args).toEqual({
         owner: "owner",
@@ -497,8 +504,11 @@ describe("tools/github", () => {
 
     it("returns null when the review has no comments", async () => {
       const octokit = {
-        pulls: {
-          listCommentsForReview: async () => ({ data: [] }),
+        paginate: async () => [],
+        rest: {
+          pulls: {
+            listCommentsForReview: async () => ({ data: [] }),
+          },
         },
         reactions: {
           createForPullRequestReviewComment: async () => ({ data: { id: 3 } }),
@@ -609,6 +619,82 @@ describe("tools/github", () => {
         ),
       ).toBe(true);
       expect(isAgentInlineReviewCommentBody("Please fix.")).toBe(false);
+    });
+  });
+
+  describe("parseInlineReviewCommentSeverity", () => {
+    it("parses Minor, Major, and Critical from the tag line", () => {
+      expect(
+        parseInlineReviewCommentSeverity(
+          "_Docs_ | _Minor_ | _Quick win_\n\nPlease fix.",
+        ),
+      ).toBe("minor");
+      expect(
+        parseInlineReviewCommentSeverity(
+          "_Security & Privacy_ | _Major_ | _Needs discussion_\n\nx",
+        ),
+      ).toBe("major");
+      expect(
+        parseInlineReviewCommentSeverity(
+          "_Functional Correctness_ | _Critical_ | _Quick win_\n\nx",
+        ),
+      ).toBe("critical");
+    });
+
+    it("returns null for non-agent comments", () => {
+      expect(parseInlineReviewCommentSeverity("Please fix.")).toBeNull();
+    });
+  });
+
+  describe("maxInlineReviewSeverity", () => {
+    it("returns the highest severity", () => {
+      expect(
+        maxInlineReviewSeverity([
+          "_Docs_ | _Minor_ | _Quick win_\n\na",
+          "_Docs_ | _Major_ | _Quick win_\n\nb",
+        ]),
+      ).toBe("major");
+      expect(
+        maxInlineReviewSeverity([
+          "_Docs_ | _Major_ | _Quick win_\n\nb",
+          "_Docs_ | _Critical_ | _Quick win_\n\nc",
+        ]),
+      ).toBe("critical");
+    });
+  });
+
+  describe("listReviewCommentBodiesForReview", () => {
+    it("paginates the review-scoped endpoint and drops empty bodies", async () => {
+      const route = vi.fn();
+      const paginate = vi.fn().mockResolvedValue([
+        { id: 1, body: "_Docs_ | _Critical_ | _Quick win_\n\nx" },
+        { id: 2, body: "" },
+        { id: 3, body: "plain" },
+      ]);
+      const octokit = {
+        paginate,
+        rest: { pulls: { listCommentsForReview: route } },
+      } as never;
+
+      const bodies = await listReviewCommentBodiesForReview(
+        octokit,
+        "owner",
+        "repo",
+        42,
+        99,
+      );
+
+      expect(bodies).toEqual([
+        "_Docs_ | _Critical_ | _Quick win_\n\nx",
+        "plain",
+      ]);
+      expect(paginate).toHaveBeenCalledWith(route, {
+        owner: "owner",
+        repo: "repo",
+        pull_number: 42,
+        review_id: 99,
+        per_page: 100,
+      });
     });
   });
 

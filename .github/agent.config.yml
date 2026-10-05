@@ -64,6 +64,8 @@ code_review:
       pending: "ai-review:pending"
     merge_risk:
       enabled: true
+    severity:
+      enabled: true
 
 review_fix:
   follow_up:

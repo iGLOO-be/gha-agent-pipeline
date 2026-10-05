@@ -32,8 +32,11 @@ type MockOctokit = {
     createForIssueComment: (...args: unknown[]) => Promise<unknown>;
     createForPullRequestReviewComment: (...args: unknown[]) => Promise<unknown>;
   };
-  pulls: {
-    listCommentsForReview: (...args: unknown[]) => Promise<unknown>;
+  paginate: (...args: unknown[]) => Promise<unknown>;
+  rest: {
+    pulls: {
+      listCommentsForReview: unknown;
+    };
   };
 };
 
@@ -75,10 +78,13 @@ function makeOctokit(): MockOctokit {
         return { data: {} };
       },
     },
-    pulls: {
-      listCommentsForReview: async (...args) => {
-        calls.push({ method: "pulls.listCommentsForReview", args });
-        return { data: [{ id: 1001 }] };
+    paginate: async (...args) => {
+      calls.push({ method: "pulls.listCommentsForReview", args });
+      return [{ id: 1001 }];
+    },
+    rest: {
+      pulls: {
+        listCommentsForReview: async () => ({ data: [] }),
       },
     },
     _calls: calls,

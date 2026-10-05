@@ -2,10 +2,13 @@ import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "./config.js";
 import type { ReviewTracker } from "./tools/index.js";
 import {
+  listReviewCommentBodiesForReview,
   manageExclusiveLabels,
+  maxInlineReviewSeverity,
   parseMergeRiskLevel,
   removeLabelsFromIssue,
   riskLabelEnsureOptions,
+  type InlineReviewSeverity,
   type PullRequestReviewEvent,
 } from "./tools/github.js";
 
@@ -17,11 +20,18 @@ export type ResolvedCodeReviewMergeRiskLabels = {
   high: string;
 };
 
+export type ResolvedCodeReviewSeverityLabels = {
+  minor: string;
+  major: string;
+  critical: string;
+};
+
 export type ResolvedCodeReviewLabelsConfig = {
   applyTo: CodeReviewLabelsApplyTo;
   statusOk?: string;
   statusPending?: string;
   mergeRisk?: ResolvedCodeReviewMergeRiskLabels;
+  severity?: ResolvedCodeReviewSeverityLabels;
 };
 
 export function resolveCodeReviewLabelsConfig(
@@ -36,6 +46,8 @@ export function resolveCodeReviewLabelsConfig(
   const statusPending = labels.status?.pending;
   const mergeRiskBlock = labels.merge_risk;
   const mergeRiskEnabled = mergeRiskBlock?.enabled ?? true;
+  const severityBlock = labels.severity;
+  const severityEnabled = severityBlock?.enabled ?? true;
 
   const resolved: ResolvedCodeReviewLabelsConfig = {
     applyTo: labels.apply_to ?? "pr",
@@ -51,7 +63,20 @@ export function resolveCodeReviewLabelsConfig(
     };
   }
 
-  if (!resolved.statusOk && !resolved.statusPending && !resolved.mergeRisk) {
+  if (severityBlock && severityEnabled) {
+    resolved.severity = {
+      minor: severityBlock.minor ?? "ai-review:minor",
+      major: severityBlock.major ?? "ai-review:major",
+      critical: severityBlock.critical ?? "ai-review:critical",
+    };
+  }
+
+  if (
+    !resolved.statusOk &&
+    !resolved.statusPending &&
+    !resolved.mergeRisk &&
+    !resolved.severity
+  ) {
     return null;
   }
 
@@ -83,6 +108,12 @@ function statusLabelForEvent(
   return config.statusOk ?? null;
 }
 
+function severityLabelNames(
+  severity: ResolvedCodeReviewSeverityLabels,
+): string[] {
+  return [severity.minor, severity.major, severity.critical];
+}
+
 export async function applyCodeReviewLabels(params: {
   octokit: Octokit;
   owner: string;
@@ -105,12 +136,34 @@ export async function applyCodeReviewLabels(params: {
     issueNumber,
   );
   const reviewBody = review.body ?? "";
+
+  let maxSeverity: InlineReviewSeverity | null = null;
+  if (labelsConfig.severity && review.id != null) {
+    const bodies = await listReviewCommentBodiesForReview(
+      octokit,
+      owner,
+      repo,
+      prNumber,
+      review.id,
+    );
+    maxSeverity = maxInlineReviewSeverity(bodies);
+  }
+
   // Fail safe: an unknown review event must not be labelled as `status.ok`
   // (a possibly-blocking review would look approved). Both writers set
   // `event`, so this only guards against future regressions.
-  const statusLabel = review.event
+  let statusLabel = review.event
     ? statusLabelForEvent(review.event, labelsConfig)
     : null;
+  if (
+    statusLabel &&
+    labelsConfig.statusOk &&
+    statusLabel === labelsConfig.statusOk &&
+    maxSeverity
+  ) {
+    statusLabel = null;
+  }
+
   const statusSiblingLabels = [
     labelsConfig.statusOk,
     labelsConfig.statusPending,
@@ -131,9 +184,8 @@ export async function applyCodeReviewLabels(params: {
         statusLabel,
       );
     } else if (statusSiblingLabels.length > 0) {
-      // No status label for this event (only one side configured, or an
-      // unknown event): clear any stale status label instead of leaving the
-      // target looking approved by a previous review.
+      // No status label for this event (only one side configured, an unknown
+      // event, or COMMENT with inline severity): clear stale status labels.
       await removeLabelsFromIssue(
         octokit,
         owner,
@@ -166,6 +218,22 @@ export async function applyCodeReviewLabels(params: {
         labelsConfig.mergeRisk.medium,
         labelsConfig.mergeRisk.high,
       ]);
+    }
+
+    if (labelsConfig.severity) {
+      const names = severityLabelNames(labelsConfig.severity);
+      if (maxSeverity) {
+        await manageExclusiveLabels(
+          octokit,
+          owner,
+          repo,
+          targetNumber,
+          names,
+          labelsConfig.severity[maxSeverity],
+        );
+      } else {
+        await removeLabelsFromIssue(octokit, owner, repo, targetNumber, names);
+      }
     }
   }
 }

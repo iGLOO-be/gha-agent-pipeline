@@ -292,6 +292,14 @@ export const agentConfigSchema = z
                 high: z.string().min(1).default("agent-risk-high"),
               })
               .optional(),
+            severity: z
+              .object({
+                enabled: z.boolean().default(true),
+                minor: z.string().min(1).default("ai-review:minor"),
+                major: z.string().min(1).default("ai-review:major"),
+                critical: z.string().min(1).default("ai-review:critical"),
+              })
+              .optional(),
           })
           .optional(),
       })
