@@ -412,6 +412,24 @@
       },
       "default": {}
     },
+    "review_loop": {
+      "type": "object",
+      "description": "Optional automated loop after /agent implement only: code-review → review-fix (on REQUEST_CHANGES) → code-review until COMMENT, stall, or max_rounds. Requires consumer agent-phase.yml inputs review_loop_active and review_loop_round plus App actions:write. Mutually exclusive with implement.follow_up.code_review for the implement entrypoint.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "When true, a successful /agent implement dispatches the first chained code-review with review_loop_active (not triggered by manual /agent code-review alone).",
+          "default": false
+        },
+        "max_rounds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Safety cap: 0-based code-review round index. Auto review-fix runs only when round < max_rounds after REQUEST_CHANGES (default 3 allows fix after rounds 0–2).",
+          "default": 3
+        }
+      },
+      "default": {}
+    },
     "commands": {
       "type": "object",
       "description": "Optional custom slash commands and partial overrides of built-in commands. Each key is a command id; custom ids must declare extends.",

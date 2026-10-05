@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "./config.js";
-import { dispatchAgentPhaseWorkflow } from "./tools/github.js";
+import { dispatchPhaseFromEnv } from "./phase-dispatch.js";
 
 /**
  * Slash flags (`--recheck` / `+code-review` / `--code-review`) are detected and
@@ -49,32 +49,13 @@ async function dispatchFollowUpCodeReview(
     reviewInstructions: string;
   },
 ): Promise<void> {
-  const commentId = process.env.COMMENT_ID;
-  if (!commentId) {
-    console.warn(
-      "Follow-up code-review skipped: COMMENT_ID is missing for workflow dispatch",
-    );
-    return;
-  }
-
-  const reactionTarget = process.env.REACTION_TARGET;
-
-  try {
-    await dispatchAgentPhaseWorkflow(octokit, owner, repo, {
-      phase: "code-review",
-      commentId,
-      issueNumber: params.issueNumber,
-      prNumber: params.prNumber,
-      headRef: params.headRef,
-      reviewInstructions: params.reviewInstructions,
-      ...(reactionTarget ? { reactionTarget } : {}),
-    });
-    console.log("Dispatched follow-up code-review workflow");
-  } catch (error) {
-    console.warn(
-      `Could not dispatch follow-up code-review: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  await dispatchPhaseFromEnv(octokit, owner, repo, {
+    phase: "code-review",
+    issueNumber: params.issueNumber,
+    prNumber: params.prNumber,
+    headRef: params.headRef,
+    reviewInstructions: params.reviewInstructions,
+  });
 }
 
 export async function chainCodeReviewAfterReviewFix(
