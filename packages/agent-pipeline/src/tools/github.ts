@@ -614,6 +614,11 @@ export type DispatchAgentPhaseWorkflowInput = {
   reviewFeedback?: string;
   reactionTarget?: string;
   reviewInstructions?: string;
+  /**
+   * Consumer-facing plumbing for the documented `chain_code_review` workflow
+   * input. Only `dispatch.yml` (the next run reads it from its own env) sets it
+   * in production; keep the mapping and its unit test in sync.
+   */
   chainCodeReview?: boolean;
   reviewLoopActive?: boolean;
   reviewLoopRound?: number;

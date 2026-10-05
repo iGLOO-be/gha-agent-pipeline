@@ -202,6 +202,51 @@ describe("review loop state machine", () => {
         expect.stringContaining("review_loop.max_rounds"),
       );
     });
+
+    it("posts a stop comment when the review-fix dispatch fails", async () => {
+      process.env.REVIEW_LOOP_ACTIVE = "true";
+      process.env.REVIEW_LOOP_ROUND = "0";
+      mocks.dispatchAgentPhaseWorkflow.mockRejectedValueOnce(
+        new Error("Resource not accessible by integration"),
+      );
+
+      await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
+        issueNumber: 1,
+        prNumber: 2,
+        headRef: "agent/1",
+        review,
+      });
+
+      expect(mocks.postComment).toHaveBeenCalledWith(
+        octokit,
+        "o",
+        "r",
+        2,
+        expect.stringContaining("could not dispatch"),
+      );
+    });
+
+    it("posts a stop comment when COMMENT_ID is missing", async () => {
+      process.env.REVIEW_LOOP_ACTIVE = "true";
+      process.env.REVIEW_LOOP_ROUND = "0";
+      delete process.env.COMMENT_ID;
+
+      await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
+        issueNumber: 1,
+        prNumber: 2,
+        headRef: "agent/1",
+        review,
+      });
+
+      expect(mocks.dispatchAgentPhaseWorkflow).not.toHaveBeenCalled();
+      expect(mocks.postComment).toHaveBeenCalledWith(
+        octokit,
+        "o",
+        "r",
+        2,
+        expect.stringContaining("could not dispatch"),
+      );
+    });
   });
 });
 
@@ -271,6 +316,26 @@ describe("review-fix review loop hooks", () => {
 
     expect(mocks.dispatchAgentPhaseWorkflow).not.toHaveBeenCalled();
     expect(mocks.postComment).not.toHaveBeenCalled();
+  });
+
+  it("posts a stop comment when the code-review dispatch fails", async () => {
+    process.env.REVIEW_LOOP_ACTIVE = "true";
+    process.env.REVIEW_LOOP_ROUND = "0";
+    mocks.dispatchAgentPhaseWorkflow.mockRejectedValueOnce(new Error("422"));
+
+    await afterReviewFixPushInReviewLoop(octokit, "o", "r", loopConfig, {
+      issueNumber: 1,
+      prNumber: 2,
+      agentBranch: "agent/1",
+    });
+
+    expect(mocks.postComment).toHaveBeenCalledWith(
+      octokit,
+      "o",
+      "r",
+      2,
+      expect.stringContaining("could not dispatch code-review round 1"),
+    );
   });
 
   it("reports a stall when review-fix made no changes", async () => {

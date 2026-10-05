@@ -114,6 +114,7 @@ Automated **implement → code-review ↔ review-fix** cycle on the new PR. Only
 | `REQUEST_CHANGES` and `round >= max_rounds`                 | PR comment; no auto review-fix        |
 | Review-fix finishes with **no code changes**                | Stall comment; no further code-review |
 | Review not posted                                           | No chain (logged warning)             |
+| Follow-up dispatch rejected (missing `actions: write`, 422) | Stop comment; loop ends               |
 | Next code-review would exceed `max_rounds` after a fix push | Cap comment; no dispatch              |
 
 **Consumer wiring** (in addition to chained code-review above):
