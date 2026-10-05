@@ -109,7 +109,7 @@ When the agent runs in the ask phase (`/agent ask`), it answers questions from h
 
 ## Agent code-review
 
-When the agent runs in the code-review phase (`/agent code-review` on a pull request), it posts a GitHub review of the PR diff.
+When the agent runs in the code-review phase (`/agent code-review` on a pull request), it posts a GitHub review of the PR diff. The runner appends **Run metrics** (collapsible) and **Run friction** to the review body after the session; it does not post a separate PR timeline comment for those sections.
 
 ### Tone and scope
 
@@ -125,5 +125,5 @@ When the agent runs in the code-review phase (`/agent code-review` on a pull req
 
 - Do not modify repository files (the code-review phase has no editor); resolving review threads on GitHub is allowed via `resolveReviewThreads`.
 - Do not merge the two axes or pick a single overall winner.
-- Do not emit `### Run metrics` or `### Run friction`; the runner injects those.
+- Do not emit `### Run metrics` or `### Run friction`; the runner injects those at the end of the review body.
 - Do not promise future agent work; humans can follow up with `/agent fix` on the PR.

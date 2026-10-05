@@ -9,7 +9,7 @@ import {
   applyCommandGithubTools,
   prepareCommandRuntime,
 } from "./command-runtime.js";
-import { safeFormatUsageMarkdown } from "./gha-log.js";
+import { formatRunMetricsMarkdown } from "./phase-report.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
@@ -293,14 +293,8 @@ ${conversation}${extraArgsBlock}`,
       planComment,
     );
 
-    const usageSection = safeFormatUsageMarkdown(session.usage, {
-      heading: "### Usage (plan run)",
-      sessionId: session.sessionId,
-      modelId: session.modelId,
-      servedModelIds: session.servedModelIds,
-      openRouterCostUsd: session.openRouterCostUsd,
-      iterations: session.iterations,
-      toolCallsCount: session.toolCallsCount,
+    const usageSection = formatRunMetricsMarkdown(session, {
+      collapsible: true,
     });
     if (usageSection && planComment.id && planComment.body) {
       try {

@@ -18,7 +18,6 @@ import {
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
-import { safeFormatUsageMarkdown } from "./gha-log.js";
 import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
@@ -38,6 +37,7 @@ import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
+  formatRunMetricsMarkdown,
 } from "./phase-report.js";
 import { chainCodeReviewAfterImplement } from "./code-review-chain.js";
 import {
@@ -136,14 +136,8 @@ Branch: ${branch}${extraArgsBlock}`,
       return;
     }
 
-    const usageSection = safeFormatUsageMarkdown(session.usage, {
-      heading: "### Usage (implement run)",
-      sessionId: session.sessionId,
-      modelId: session.modelId,
-      servedModelIds: session.servedModelIds,
-      openRouterCostUsd: session.openRouterCostUsd,
-      iterations: session.iterations,
-      toolCallsCount: session.toolCallsCount,
+    const usageSection = formatRunMetricsMarkdown(session, {
+      collapsible: true,
     });
 
     const pr = await createPullRequest(

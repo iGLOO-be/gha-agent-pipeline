@@ -26,7 +26,6 @@ import {
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
-import { safeFormatUsageMarkdown } from "./gha-log.js";
 import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
@@ -49,6 +48,7 @@ import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
+  formatRunMetricsMarkdown,
   type PhaseReport,
 } from "./phase-report.js";
 import type { AgentSessionResult } from "./runtime.js";
@@ -246,14 +246,8 @@ Branch: ${branch}${extraArgsBlock}`,
 
     const comments = await readComments(octokit, owner, repo, env.ISSUE_NUMBER);
 
-    const usageSection = safeFormatUsageMarkdown(session.usage, {
-      heading: "### Usage (yolo run)",
-      sessionId: session.sessionId,
-      modelId: session.modelId,
-      servedModelIds: session.servedModelIds,
-      openRouterCostUsd: session.openRouterCostUsd,
-      iterations: session.iterations,
-      toolCallsCount: session.toolCallsCount,
+    const usageSection = formatRunMetricsMarkdown(session, {
+      collapsible: true,
     });
 
     const pr = await createPullRequest(

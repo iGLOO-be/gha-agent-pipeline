@@ -41,13 +41,12 @@ import {
   applyCodeReviewLabels,
   resolveCodeReviewLabelsConfig,
 } from "./code-review-labels.js";
-import { buildCodeReviewPhaseComment } from "./code-review-completion.js";
+import { appendRunnerFooterToPostedReview } from "./code-review-completion.js";
 import {
   AGENT_COMMENT_MARKERS,
   createOctokit,
   createPullRequestReview,
   formatCommentsForPrompt,
-  postComment,
   prependAgentMarker,
   readComments,
   readIssue,
@@ -259,13 +258,13 @@ ${reviewDiff.diff || "(empty diff)"}
         }
       }
 
-      await postComment(
+      await appendRunnerFooterToPostedReview(
         octokit,
         owner,
         repo,
         env.PR_NUMBER,
-        buildCodeReviewPhaseComment({
-          reviewHtmlUrl: review.htmlUrl,
+        review,
+        {
           sessionUsage: session.usage,
           sessionId: session.sessionId,
           modelId: session.modelId,
@@ -274,7 +273,7 @@ ${reviewDiff.diff || "(empty diff)"}
           iterations: session.iterations,
           toolCallsCount: session.toolCallsCount,
           runFriction,
-        }),
+        },
       );
     }
 
