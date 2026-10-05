@@ -725,6 +725,11 @@ export async function dispatchAgentPhaseWorkflow(
   });
 }
 
+/**
+ * Inline comments attached to a single review. Paginated: callers (notably the
+ * severity label) treat the result as the complete set, and the REST endpoint
+ * defaults to `per_page: 30`.
+ */
 export async function listReviewCommentsForReview(
   octokit: Octokit,
   owner: string,
@@ -732,13 +737,13 @@ export async function listReviewCommentsForReview(
   prNumber: number,
   reviewId: number,
 ) {
-  const { data } = await octokit.pulls.listCommentsForReview({
+  return octokit.paginate(octokit.rest.pulls.listCommentsForReview, {
     owner,
     repo,
     pull_number: prNumber,
     review_id: reviewId,
+    per_page: 100,
   });
-  return data;
 }
 
 /**

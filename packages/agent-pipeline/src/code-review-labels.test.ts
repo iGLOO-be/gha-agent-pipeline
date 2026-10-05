@@ -71,15 +71,19 @@ describe("applyCodeReviewLabels", () => {
   ) {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     const octokit = {
-      pulls: {
-        listCommentsForReview: async (...args: unknown[]) => {
-          calls.push({ method: "pulls.listCommentsForReview", args });
-          const request = args[0] as { review_id: number };
-          return {
-            data: reviewComments.filter(
-              (comment) => comment.pull_request_review_id === request.review_id,
-            ),
-          };
+      // `listReviewCommentsForReview` paginates the review-scoped endpoint.
+      paginate: async (route: unknown, params: { review_id: number }) => {
+        calls.push({
+          method: "pulls.listCommentsForReview",
+          args: [route, params],
+        });
+        return reviewComments.filter(
+          (comment) => comment.pull_request_review_id === params.review_id,
+        );
+      },
+      rest: {
+        pulls: {
+          listCommentsForReview: async () => ({ data: [] }),
         },
       },
       issues: {
