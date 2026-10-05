@@ -48,7 +48,7 @@ on:
     types: [submitted]
 jobs:
   dispatch:
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.2.6
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/dispatch.yml@v0.3.0
     secrets: inherit
     # Optional (v0.2.2+): run dispatch on another runner pool, e.g. Blacksmith
     # with:
@@ -70,7 +70,7 @@ jobs:
           ref: ${{ inputs.checkout_ref || inputs.head_ref || github.ref_name }}
           app_id: ${{ secrets.APP_ID }}
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.6
+      - uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.3.0
         with:
           phase: ${{ inputs.phase }}
           app_token: ${{ steps.setup.outputs.app_token }}
@@ -183,7 +183,7 @@ concurrency:
 jobs:
   ci-fix:
     if: github.event.workflow_run.conclusion == 'failure'
-    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.2.6
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-ci-fix.yml@v0.3.0
     secrets: inherit
 ```
 
@@ -207,7 +207,7 @@ jobs:
 
       - name: Resolve agent PR
         id: pr
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/get-pr-from-workflow-run@v0.2.6
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/get-pr-from-workflow-run@v0.3.0
 
       - if: steps.pr.outputs.skip == 'true'
         run: echo "Skipping agent CI fix"
@@ -221,7 +221,7 @@ jobs:
           app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Run agent CI fix
-        uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-ci-fix-run@v0.2.6
+        uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-ci-fix-run@v0.3.0
         with:
           app_token: ${{ steps.setup.outputs.app_token }}
           issue_number: ${{ steps.pr.outputs.issue_number }}
@@ -232,9 +232,9 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.2.6` when `conclusion == 'success'`.)
+(Same pattern: `agent-on-ci-success.yml` → `agent-ci-success.yml@v0.3.0` when `conclusion == 'success'`.)
 
-**Runs and `github.repository` are always the consumer.** Pin `@v0.2.6` (or another release tag) on pipeline actions/workflows — do not rely on `@main` for consumers.
+**Runs and `github.repository` are always the consumer.** Pin `@v0.3.0` (or another release tag) on pipeline actions/workflows — do not rely on `@main` for consumers.
 
 ## Consumer contract (v0.1)
 
@@ -243,7 +243,7 @@ jobs:
 | Path                                        | Role                                            |
 | ------------------------------------------- | ----------------------------------------------- |
 | `.github/agent.config.yml`                  | Agent config (schema v1)                        |
-| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.2.6`          |
+| `.github/workflows/agent.yml`               | Slash triggers → `dispatch.yml@v0.3.0`          |
 | `.github/workflows/agent-phase.yml`         | **Fixed filename** — target of library dispatch |
 | `.github/workflows/agent-on-ci-failure.yml` | `workflow_run` on failed **`CI`** workflow      |
 | `.github/workflows/agent-on-ci-success.yml` | `workflow_run` on successful **`CI`** workflow  |
@@ -320,7 +320,7 @@ code_review:
 
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.
 
-**Pin these library refs at `@v0.2.6`** (or latest release)
+**Pin these library refs at `@v0.3.0`** (or latest release)
 
 - `dispatch.yml` (optional `runner` input since v0.2.2)
 - `agent-phase-run`
@@ -401,7 +401,7 @@ Example consumer `agent-phase.yml` for Model B:
     app_id: ${{ secrets.APP_ID }}
     app_private_key: ${{ secrets.APP_PRIVATE_KEY }}
     pipeline_repo: gha-agent-pipeline # include if pipeline is private
-- uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.2.6
+- uses: iGLOO-be/gha-agent-pipeline/.github/actions/agent-phase-run@v0.3.0
   with:
     phase: ${{ inputs.phase }}
     app_token: ${{ steps.setup.outputs.app_token }}
