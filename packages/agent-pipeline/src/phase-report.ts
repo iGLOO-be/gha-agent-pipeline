@@ -306,7 +306,7 @@ export interface FormatRunMetricsOptions {
   /**
    * When true, wraps the `### Run metrics` section in a
    * `<details><summary>Run metrics</summary>…</details>` block (heading demoted
-   * to `#### Run metrics`) so GitHub collapses it by default. Defaults to false.
+   * to `#### Run metrics`) so GitHub collapses it by default. Defaults to true.
    */
   collapsible?: boolean;
 }
@@ -333,7 +333,8 @@ export function formatRunMetricsMarkdown(
     return null;
   }
 
-  if (!opts.collapsible) {
+  const collapsible = opts.collapsible ?? true;
+  if (!collapsible) {
     return usageMd;
   }
 

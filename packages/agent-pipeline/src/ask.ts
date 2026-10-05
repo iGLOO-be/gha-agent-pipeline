@@ -145,7 +145,6 @@ Question: ${question}${retryNote}`,
       iterations: session.iterations,
       toolCallsCount: session.toolCallsCount,
       runFriction,
-      collapsibleMetrics: true,
       skipEmptyPhaseReportPlaceholder: true,
     });
 
