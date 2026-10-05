@@ -58,6 +58,17 @@ jobs:
             .github
           sparse-checkout-cone-mode: false
 
+      # Slash parsing scripts ship with the library release, not the consumer repo.
+      - name: Checkout dispatch scripts (library)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          sparse-checkout: |
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          path: _gha-agent-pipeline-dispatch
+
       - name: Parse slash command and dispatch workflow
         uses: actions/github-script@v7
         env:
@@ -69,12 +80,12 @@ jobs:
               parseAgentCommandsFromYaml,
               parseAgentSlashInvocation,
               resolveSlashCommand
-            } = require('./.github/scripts/parse-agent-commands.cjs')
+            } = require('./_gha-agent-pipeline-dispatch/.github/scripts/parse-agent-commands.cjs')
             const {
               formatUnknownAgentCommandReply,
               unknownCommandReason
-            } = require('./.github/scripts/format-unknown-agent-command.cjs')
-            const { RESERVED } = require('./.github/scripts/command-constants.cjs')
+            } = require('./_gha-agent-pipeline-dispatch/.github/scripts/format-unknown-agent-command.cjs')
+            const { RESERVED } = require('./_gha-agent-pipeline-dispatch/.github/scripts/command-constants.cjs')
             const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR']
             const owner = context.repo.owner
             const repo = context.repo.repo
