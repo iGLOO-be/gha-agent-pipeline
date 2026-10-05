@@ -49,13 +49,13 @@ const loopConfig = {
 } as AgentConfig;
 
 const octokit = {} as Octokit;
-const envSnapshot = { ...process.env };
 
 function resetEnv() {
-  process.env = { ...envSnapshot };
+  vi.unstubAllEnvs();
   delete process.env.REVIEW_LOOP_ACTIVE;
   delete process.env.REVIEW_LOOP_ROUND;
   delete process.env.REACTION_TARGET;
+  delete process.env.COMMENT_ID;
 }
 
 describe("review-loop helpers", () => {
@@ -75,11 +75,11 @@ describe("review-loop helpers", () => {
 
   it("parses env", () => {
     expect(isReviewLoopActiveFromEnv()).toBe(false);
-    process.env.REVIEW_LOOP_ACTIVE = "true";
+    vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
     expect(isReviewLoopActiveFromEnv()).toBe(true);
-    process.env.REVIEW_LOOP_ROUND = "2";
+    vi.stubEnv("REVIEW_LOOP_ROUND", "2");
     expect(parseReviewLoopRoundFromEnv()).toBe(2);
-    process.env.REVIEW_LOOP_ROUND = "bad";
+    vi.stubEnv("REVIEW_LOOP_ROUND", "bad");
     expect(parseReviewLoopRoundFromEnv()).toBe(0);
   });
 });
@@ -101,7 +101,7 @@ describe("review loop state machine", () => {
     mocks.listReviewCommentsForReview.mockResolvedValue([
       { path: "src/a.ts", line: 3, body: "fix this" },
     ]);
-    process.env.COMMENT_ID = "42";
+    vi.stubEnv("COMMENT_ID", "42");
   });
 
   afterEach(() => {
@@ -122,7 +122,7 @@ describe("review loop state machine", () => {
     });
 
     it("stops without dispatch when the review was not posted", async () => {
-      process.env.REVIEW_LOOP_ACTIVE = "true";
+      vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
 
       await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
         issueNumber: 1,
@@ -136,8 +136,8 @@ describe("review loop state machine", () => {
     });
 
     it("completes the loop on COMMENT", async () => {
-      process.env.REVIEW_LOOP_ACTIVE = "true";
-      process.env.REVIEW_LOOP_ROUND = "0";
+      vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+      vi.stubEnv("REVIEW_LOOP_ROUND", "0");
 
       await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
         issueNumber: 1,
@@ -157,8 +157,8 @@ describe("review loop state machine", () => {
     });
 
     it("dispatches review-fix below the round cap", async () => {
-      process.env.REVIEW_LOOP_ACTIVE = "true";
-      process.env.REVIEW_LOOP_ROUND = "0";
+      vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+      vi.stubEnv("REVIEW_LOOP_ROUND", "0");
 
       await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
         issueNumber: 1,
@@ -184,8 +184,8 @@ describe("review loop state machine", () => {
     });
 
     it("stops at the round cap", async () => {
-      process.env.REVIEW_LOOP_ACTIVE = "true";
-      process.env.REVIEW_LOOP_ROUND = "3";
+      vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+      vi.stubEnv("REVIEW_LOOP_ROUND", "3");
 
       await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
         issueNumber: 1,
@@ -205,8 +205,8 @@ describe("review loop state machine", () => {
     });
 
     it("posts a stop comment when the review-fix dispatch fails", async () => {
-      process.env.REVIEW_LOOP_ACTIVE = "true";
-      process.env.REVIEW_LOOP_ROUND = "0";
+      vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+      vi.stubEnv("REVIEW_LOOP_ROUND", "0");
       mocks.dispatchAgentPhaseWorkflow.mockRejectedValueOnce(
         new Error("Resource not accessible by integration"),
       );
@@ -225,11 +225,18 @@ describe("review loop state machine", () => {
         2,
         expect.stringContaining("could not dispatch"),
       );
+      expect(mocks.postComment).toHaveBeenCalledWith(
+        octokit,
+        "o",
+        "r",
+        2,
+        expect.stringContaining("Check the App token `actions: write` scope"),
+      );
     });
 
     it("posts a stop comment when COMMENT_ID is missing", async () => {
-      process.env.REVIEW_LOOP_ACTIVE = "true";
-      process.env.REVIEW_LOOP_ROUND = "0";
+      vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+      vi.stubEnv("REVIEW_LOOP_ROUND", "0");
       delete process.env.COMMENT_ID;
 
       await afterCodeReviewInReviewLoop(octokit, "o", "r", loopConfig, {
@@ -247,6 +254,22 @@ describe("review loop state machine", () => {
         2,
         expect.stringContaining("could not dispatch"),
       );
+      expect(mocks.postComment).toHaveBeenCalledWith(
+        octokit,
+        "o",
+        "r",
+        2,
+        expect.stringContaining(
+          "`COMMENT_ID` is missing from the run environment",
+        ),
+      );
+      expect(mocks.postComment).not.toHaveBeenCalledWith(
+        octokit,
+        "o",
+        "r",
+        2,
+        expect.stringContaining("actions: write"),
+      );
     });
   });
 });
@@ -256,7 +279,7 @@ describe("review-fix review loop hooks", () => {
     resetEnv();
     mocks.dispatchAgentPhaseWorkflow.mockClear();
     mocks.postComment.mockClear();
-    process.env.COMMENT_ID = "42";
+    vi.stubEnv("COMMENT_ID", "42");
   });
 
   afterEach(() => {
@@ -264,8 +287,8 @@ describe("review-fix review loop hooks", () => {
   });
 
   it("dispatches the next code-review round after a push", async () => {
-    process.env.REVIEW_LOOP_ACTIVE = "true";
-    process.env.REVIEW_LOOP_ROUND = "0";
+    vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+    vi.stubEnv("REVIEW_LOOP_ROUND", "0");
 
     await afterReviewFixPushInReviewLoop(octokit, "o", "r", loopConfig, {
       issueNumber: 1,
@@ -289,8 +312,8 @@ describe("review-fix review loop hooks", () => {
   });
 
   it("stops when the next round would exceed max_rounds", async () => {
-    process.env.REVIEW_LOOP_ACTIVE = "true";
-    process.env.REVIEW_LOOP_ROUND = "3";
+    vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+    vi.stubEnv("REVIEW_LOOP_ROUND", "3");
 
     await afterReviewFixPushInReviewLoop(octokit, "o", "r", loopConfig, {
       issueNumber: 1,
@@ -320,8 +343,8 @@ describe("review-fix review loop hooks", () => {
   });
 
   it("posts a stop comment when the code-review dispatch fails", async () => {
-    process.env.REVIEW_LOOP_ACTIVE = "true";
-    process.env.REVIEW_LOOP_ROUND = "0";
+    vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
+    vi.stubEnv("REVIEW_LOOP_ROUND", "0");
     mocks.dispatchAgentPhaseWorkflow.mockRejectedValueOnce(new Error("422"));
 
     await afterReviewFixPushInReviewLoop(octokit, "o", "r", loopConfig, {
@@ -340,7 +363,7 @@ describe("review-fix review loop hooks", () => {
   });
 
   it("reports a stall when review-fix made no changes", async () => {
-    process.env.REVIEW_LOOP_ACTIVE = "true";
+    vi.stubEnv("REVIEW_LOOP_ACTIVE", "true");
 
     await onReviewFixNoChangesInReviewLoop(octokit, "o", "r", 2);
 
@@ -365,7 +388,7 @@ describe("startReviewLoopAfterImplement", () => {
     resetEnv();
     mocks.dispatchAgentPhaseWorkflow.mockClear();
     mocks.postComment.mockClear();
-    process.env.COMMENT_ID = "42";
+    vi.stubEnv("COMMENT_ID", "42");
   });
 
   afterEach(() => {

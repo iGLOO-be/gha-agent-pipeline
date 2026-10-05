@@ -1,13 +1,12 @@
 import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "./config.js";
+import type {
+  PhaseDispatchFailureReason,
+  PhaseDispatchResult,
+} from "./phase-dispatch.js";
 import { dispatchPhaseFromEnv } from "./phase-dispatch.js";
 import type { ReviewTracker } from "./tools/index.js";
 import { listReviewCommentsForReview, postComment } from "./tools/github.js";
-
-export type ReviewLoopDispatchOptions = {
-  reviewLoopActive?: boolean;
-  reviewLoopRound?: number;
-};
 
 export function isReviewLoopEnabled(config: AgentConfig): boolean {
   return config.review_loop?.enabled === true;
@@ -53,28 +52,45 @@ async function postReviewLoopComment(
 
 /**
  * Report a follow-up dispatch that GitHub rejected (or that was skipped because
- * `COMMENT_ID` is missing) instead of ending the loop silently.
+ * `COMMENT_ID` is missing) instead of ending the loop silently. `remedy` is
+ * caller-supplied so each failure path points at the right fix.
  */
 async function postUnableToDispatchComment(
   octokit: Octokit,
   owner: string,
   repo: string,
   prNumber: number,
-  params: { headline: string; detail: string; manualCommand: string },
+  params: {
+    headline: string;
+    detail: string;
+    manualCommand: string;
+    remedy: string;
+  },
 ): Promise<void> {
   await postReviewLoopComment(
     octokit,
     owner,
     repo,
     prNumber,
-    `${params.headline}: could not dispatch ${params.detail}. Check the App token \`actions: write\` scope and the \`agent-phase.yml\` inputs, then run \`${params.manualCommand}\` manually.`,
+    `${params.headline}: could not dispatch ${params.detail}. ${params.remedy}, then run \`${params.manualCommand}\` manually.`,
   );
 }
 
 /**
- * Dispatch the next review-loop phase. Returns whether the dispatch was issued
- * (false when `COMMENT_ID` is missing or GitHub rejected the dispatch), so
- * callers can post a stop comment instead of ending the loop silently.
+ * Turn a dispatch failure into the action the reader should take. A missing
+ * `COMMENT_ID` has nothing to do with the App token scope, so the two paths get
+ * different advice.
+ */
+function remedyForDispatchFailure(reason: PhaseDispatchFailureReason): string {
+  return reason === "missing-comment-id"
+    ? "`COMMENT_ID` is missing from the run environment"
+    : "Check the App token `actions: write` scope and the `agent-phase.yml` inputs";
+}
+
+/**
+ * Dispatch the next review-loop phase. Flattens the review-loop state onto the
+ * shared dispatcher and forwards its result, so callers can post a stop comment
+ * instead of ending the loop silently.
  */
 export async function dispatchReviewLoopPhase(
   octokit: Octokit,
@@ -88,9 +104,10 @@ export async function dispatchReviewLoopPhase(
     reviewInstructions?: string;
     reviewFeedback?: string;
     reactionTarget?: string;
-    chain?: ReviewLoopDispatchOptions;
+    reviewLoopActive?: boolean;
+    reviewLoopRound?: number;
   },
-): Promise<boolean> {
+): Promise<PhaseDispatchResult> {
   return dispatchPhaseFromEnv(octokit, owner, repo, {
     phase: input.phase,
     issueNumber: input.issueNumber,
@@ -99,8 +116,8 @@ export async function dispatchReviewLoopPhase(
     reviewInstructions: input.reviewInstructions,
     reviewFeedback: input.reviewFeedback,
     reactionTarget: input.reactionTarget,
-    reviewLoopActive: input.chain?.reviewLoopActive,
-    reviewLoopRound: input.chain?.reviewLoopRound,
+    reviewLoopActive: input.reviewLoopActive,
+    reviewLoopRound: input.reviewLoopRound,
   });
 }
 
@@ -114,24 +131,23 @@ export async function startReviewLoopAfterImplement(
     agentBranch: string;
   },
 ): Promise<void> {
-  const dispatched = await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const result = await dispatchReviewLoopPhase(octokit, owner, repo, {
     phase: "code-review",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
     headRef: params.agentBranch,
     reviewInstructions:
       "Initial code review after implement (review loop). Review the new PR diff against repo standards and the issue/plan scope.",
-    chain: {
-      reviewLoopActive: true,
-      reviewLoopRound: 0,
-    },
+    reviewLoopActive: true,
+    reviewLoopRound: 0,
   });
 
-  if (!dispatched) {
+  if (!result.dispatched) {
     await postUnableToDispatchComment(octokit, owner, repo, params.prNumber, {
       headline: "Review loop not started",
       detail: "the initial code-review (round 0)",
       manualCommand: "/agent code-review",
+      remedy: remedyForDispatchFailure(result.reason),
     });
   }
 }
@@ -286,24 +302,23 @@ export async function afterCodeReviewInReviewLoop(
     params.review,
   );
 
-  const dispatched = await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const result = await dispatchReviewLoopPhase(octokit, owner, repo, {
     phase: "review-fix",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
     headRef: params.headRef,
     reviewFeedback,
     reactionTarget: "issue_comment",
-    chain: {
-      reviewLoopActive: true,
-      reviewLoopRound: round,
-    },
+    reviewLoopActive: true,
+    reviewLoopRound: round,
   });
 
-  if (!dispatched) {
+  if (!result.dispatched) {
     await postUnableToDispatchComment(octokit, owner, repo, params.prNumber, {
       headline: "Review loop stopped",
       detail: `\`review-fix\` after code-review round ${round}`,
       manualCommand: "/agent fix",
+      remedy: remedyForDispatchFailure(result.reason),
     });
   }
 }
@@ -337,24 +352,23 @@ export async function afterReviewFixPushInReviewLoop(
     return;
   }
 
-  const dispatched = await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const result = await dispatchReviewLoopPhase(octokit, owner, repo, {
     phase: "code-review",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
     headRef: params.agentBranch,
     reviewInstructions:
       "Follow-up code review after review-fix (review loop). Verify prior review findings are addressed in the latest commit.",
-    chain: {
-      reviewLoopActive: true,
-      reviewLoopRound: nextRound,
-    },
+    reviewLoopActive: true,
+    reviewLoopRound: nextRound,
   });
 
-  if (!dispatched) {
+  if (!result.dispatched) {
     await postUnableToDispatchComment(octokit, owner, repo, params.prNumber, {
       headline: "Review loop stopped",
       detail: `code-review round ${nextRound}`,
       manualCommand: "/agent code-review",
+      remedy: remedyForDispatchFailure(result.reason),
     });
   }
 }
