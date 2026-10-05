@@ -73,11 +73,10 @@ implement:
   follow_up:
     code_review: true
 
-# Review loop (README § Review loop): implement → CR ↔ fix until COMMENT or cap.
-# Needs agent-phase.yml inputs review_loop_* + App actions:write. Off until dogfood #107.
-# review_loop:
-#   enabled: true
-#   max_rounds: 3
+# Dogfood #107: automated implement → code-review ↔ review-fix (see README § Review loop).
+review_loop:
+  enabled: true
+  max_rounds: 2
 
 commands:
   config-audit:
