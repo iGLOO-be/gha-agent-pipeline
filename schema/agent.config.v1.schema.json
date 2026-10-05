@@ -327,7 +327,7 @@
             "apply_to": {
               "type": "string",
               "enum": ["pr", "issue", "both"],
-              "description": "Where to apply status and merge-risk labels.",
+              "description": "Where to apply status, merge-risk, and severity labels.",
               "default": "pr"
             },
             "status": {
@@ -368,6 +368,31 @@
                   "type": "string",
                   "minLength": 1,
                   "default": "agent-risk-high"
+                }
+              }
+            },
+            "severity": {
+              "type": "object",
+              "description": "Mutually exclusive finding-severity labels from inline review comments (_Category_ | _Severity_ | _Effort_). Highest severity wins.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "minor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "ai-review:minor"
+                },
+                "major": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "ai-review:major"
+                },
+                "critical": {
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "ai-review:critical"
                 }
               }
             }

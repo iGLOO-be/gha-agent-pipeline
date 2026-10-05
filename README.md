@@ -296,6 +296,7 @@ Optional `code_review.labels` applies GitHub labels after a review is posted (no
 
 - **Status** — `status.ok` when the review is `COMMENT` (no hard findings); `status.pending` when `REQUEST_CHANGES`. Sibling status labels are removed when both are configured, and a stale status label is cleared when the current review event has no configured label.
 - **Merge risk** — when `merge_risk` is present and `enabled` (default `true`), the runner parses `## Merge risk` (**Minimal** / **Moderate** / **High**) and applies the configured label for that level (defaults: `agent-risk-low`, `agent-risk-medium`, `agent-risk-high`). Sibling risk labels are removed, and a stale risk label is cleared when the review has no parseable level.
+- **Severity** — when `severity` is present and `enabled` (default `true`), the runner loads inline review comments for the posted review and applies the label for the highest parsed **Severity** (`Minor` / `Major` / `Critical` from the `_Category_ | _Severity_ | _Effort_` tag line; defaults: `ai-review:minor`, `ai-review:major`, `ai-review:critical`). Sibling severity labels are removed when none parse. On `COMMENT`, `status.ok` is not applied when any severity label is set (so a PR is not both `ai-review:ok` and `ai-review:minor`).
 - **apply_to** — `pr` (default), `issue`, or `both`.
 
 ```yaml
@@ -310,6 +311,11 @@ code_review:
       low: agent-risk-low
       medium: agent-risk-medium
       high: agent-risk-high
+    severity:
+      enabled: true
+      minor: ai-review:minor
+      major: ai-review:major
+      critical: ai-review:critical
 ```
 
 Your app CI workflow must use **`name: CI`** (see `workflows: [CI]` in the triggers above) unless you fork the wrappers.

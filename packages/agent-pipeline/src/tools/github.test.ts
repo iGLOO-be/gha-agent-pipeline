@@ -24,6 +24,8 @@ import {
   hasFailedCheckRuns,
   hasAgentMarkerInComments,
   isAgentInlineReviewCommentBody,
+  maxInlineReviewSeverity,
+  parseInlineReviewCommentSeverity,
   isAutomatedReviewAuthor,
   isBareReviewFixFeedback,
   markerFor,
@@ -609,6 +611,47 @@ describe("tools/github", () => {
         ),
       ).toBe(true);
       expect(isAgentInlineReviewCommentBody("Please fix.")).toBe(false);
+    });
+  });
+
+  describe("parseInlineReviewCommentSeverity", () => {
+    it("parses Minor, Major, and Critical from the tag line", () => {
+      expect(
+        parseInlineReviewCommentSeverity(
+          "_Docs_ | _Minor_ | _Quick win_\n\nPlease fix.",
+        ),
+      ).toBe("minor");
+      expect(
+        parseInlineReviewCommentSeverity(
+          "_Security & Privacy_ | _Major_ | _Needs discussion_\n\nx",
+        ),
+      ).toBe("major");
+      expect(
+        parseInlineReviewCommentSeverity(
+          "_Functional Correctness_ | _Critical_ | _Quick win_\n\nx",
+        ),
+      ).toBe("critical");
+    });
+
+    it("returns null for non-agent comments", () => {
+      expect(parseInlineReviewCommentSeverity("Please fix.")).toBeNull();
+    });
+  });
+
+  describe("maxInlineReviewSeverity", () => {
+    it("returns the highest severity", () => {
+      expect(
+        maxInlineReviewSeverity([
+          "_Docs_ | _Minor_ | _Quick win_\n\na",
+          "_Docs_ | _Major_ | _Quick win_\n\nb",
+        ]),
+      ).toBe("major");
+      expect(
+        maxInlineReviewSeverity([
+          "_Docs_ | _Major_ | _Quick win_\n\nb",
+          "_Docs_ | _Critical_ | _Quick win_\n\nc",
+        ]),
+      ).toBe("critical");
     });
   });
 
