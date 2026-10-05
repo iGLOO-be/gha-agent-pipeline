@@ -260,7 +260,7 @@ describe("review loop state machine", () => {
         "r",
         2,
         expect.stringContaining(
-          "`COMMENT_ID` is missing from the run environment",
+          "Add the missing `COMMENT_ID` to the run environment",
         ),
       );
       expect(mocks.postComment).not.toHaveBeenCalledWith(

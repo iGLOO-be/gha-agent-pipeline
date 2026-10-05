@@ -1,9 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "./config.js";
-import type {
-  PhaseDispatchFailureReason,
-  PhaseDispatchResult,
-} from "./phase-dispatch.js";
+import type { PhaseDispatchFailureReason } from "./phase-dispatch.js";
 import { dispatchPhaseFromEnv } from "./phase-dispatch.js";
 import type { ReviewTracker } from "./tools/index.js";
 import { listReviewCommentsForReview, postComment } from "./tools/github.js";
@@ -52,8 +49,9 @@ async function postReviewLoopComment(
 
 /**
  * Report a follow-up dispatch that GitHub rejected (or that was skipped because
- * `COMMENT_ID` is missing) instead of ending the loop silently. `remedy` is
- * caller-supplied so each failure path points at the right fix.
+ * `COMMENT_ID` is missing) instead of ending the loop silently. `remedy` is a
+ * caller-supplied imperative sentence so each failure path points at the right
+ * fix.
  */
 async function postUnableToDispatchComment(
   octokit: Octokit,
@@ -72,53 +70,19 @@ async function postUnableToDispatchComment(
     owner,
     repo,
     prNumber,
-    `${params.headline}: could not dispatch ${params.detail}. ${params.remedy}, then run \`${params.manualCommand}\` manually.`,
+    `${params.headline}: could not dispatch ${params.detail}. ${params.remedy}. Run \`${params.manualCommand}\` manually as a fallback.`,
   );
 }
 
 /**
- * Turn a dispatch failure into the action the reader should take. A missing
- * `COMMENT_ID` has nothing to do with the App token scope, so the two paths get
- * different advice.
+ * Turn a dispatch failure into the action the reader should take. Both branches
+ * are imperative sentences so the posted comment stays grammatical: a missing
+ * `COMMENT_ID` is fixed by the run inputs, not by the App token scope.
  */
 function remedyForDispatchFailure(reason: PhaseDispatchFailureReason): string {
   return reason === "missing-comment-id"
-    ? "`COMMENT_ID` is missing from the run environment"
+    ? "Add the missing `COMMENT_ID` to the run environment (check the `agent-phase-run` `comment_id` input and the App token)"
     : "Check the App token `actions: write` scope and the `agent-phase.yml` inputs";
-}
-
-/**
- * Dispatch the next review-loop phase. Flattens the review-loop state onto the
- * shared dispatcher and forwards its result, so callers can post a stop comment
- * instead of ending the loop silently.
- */
-export async function dispatchReviewLoopPhase(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  input: {
-    phase: string;
-    issueNumber: number;
-    prNumber: number;
-    headRef: string;
-    reviewInstructions?: string;
-    reviewFeedback?: string;
-    reactionTarget?: string;
-    reviewLoopActive?: boolean;
-    reviewLoopRound?: number;
-  },
-): Promise<PhaseDispatchResult> {
-  return dispatchPhaseFromEnv(octokit, owner, repo, {
-    phase: input.phase,
-    issueNumber: input.issueNumber,
-    prNumber: input.prNumber,
-    headRef: input.headRef,
-    reviewInstructions: input.reviewInstructions,
-    reviewFeedback: input.reviewFeedback,
-    reactionTarget: input.reactionTarget,
-    reviewLoopActive: input.reviewLoopActive,
-    reviewLoopRound: input.reviewLoopRound,
-  });
 }
 
 export async function startReviewLoopAfterImplement(
@@ -131,7 +95,7 @@ export async function startReviewLoopAfterImplement(
     agentBranch: string;
   },
 ): Promise<void> {
-  const result = await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const result = await dispatchPhaseFromEnv(octokit, owner, repo, {
     phase: "code-review",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
@@ -302,7 +266,7 @@ export async function afterCodeReviewInReviewLoop(
     params.review,
   );
 
-  const result = await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const result = await dispatchPhaseFromEnv(octokit, owner, repo, {
     phase: "review-fix",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
@@ -352,7 +316,7 @@ export async function afterReviewFixPushInReviewLoop(
     return;
   }
 
-  const result = await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const result = await dispatchPhaseFromEnv(octokit, owner, repo, {
     phase: "code-review",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
