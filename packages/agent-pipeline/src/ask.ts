@@ -146,6 +146,7 @@ Question: ${question}${retryNote}`,
       toolCallsCount: session.toolCallsCount,
       runFriction,
       collapsibleMetrics: true,
+      skipEmptyPhaseReportPlaceholder: true,
     });
 
     if (answerComment.id && answerComment.body) {

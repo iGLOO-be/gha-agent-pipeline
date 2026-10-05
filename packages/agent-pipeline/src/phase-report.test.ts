@@ -213,7 +213,9 @@ describe("phase-report", () => {
       expect(output).toContain("Fixed lint issues.");
       expect(output).toContain("### Test plan");
       expect(output).toContain("Run pnpm test.");
-      expect(output).toContain("### Run metrics");
+      expect(output).toContain("<details>");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("#### Run metrics");
       expect(output).toContain("`sess-1`");
       expect(output).toContain("`deepseek/v3`");
       expect(output).toContain("### Run friction");
@@ -238,7 +240,8 @@ describe("phase-report", () => {
       expect(output).toContain("## Agent phase report (Fix)");
       expect(output).toContain("Addressed feedback.");
       expect(output).not.toContain("### Test plan");
-      expect(output).toContain("### Run metrics");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("#### Run metrics");
     });
 
     it("shows neutral fallback when phase report is absent", () => {
@@ -259,7 +262,8 @@ describe("phase-report", () => {
       expect(output).toContain("## Agent phase report (Implement)");
       expect(output).toContain("PR #42 created.");
       expect(output).toContain("_No business summary was submitted._");
-      expect(output).toContain("### Run metrics");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("#### Run metrics");
       expect(output).not.toContain("### Run friction");
       expect(output).not.toContain("### Test plan");
     });
@@ -281,7 +285,8 @@ describe("phase-report", () => {
 
       expect(output).toContain("Review posted");
       expect(output).not.toContain("_No business summary was submitted._");
-      expect(output).toContain("### Run metrics");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("#### Run metrics");
     });
 
     it("omits metrics section when sessionUsage is absent", () => {
@@ -323,7 +328,8 @@ describe("phase-report", () => {
       });
 
       expect(output).not.toContain("### Run friction");
-      expect(output).toContain("### Run metrics");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("#### Run metrics");
     });
 
     it("renders minimal block when all optional sections are absent", () => {
@@ -402,7 +408,7 @@ describe("phase-report", () => {
       expect(output).not.toContain("### Run metrics");
     });
 
-    it("default (false/omitted) produces flat ### Run metrics without <details>", () => {
+    it("collapsibleMetrics false produces flat ### Run metrics without <details>", () => {
       const output = formatPhaseCompletionMarkdown({
         phase: "implement",
         statusLine: "PR #42 created.",
@@ -415,11 +421,34 @@ describe("phase-report", () => {
         },
         sessionId: "sess-flat",
         modelId: "deepseek/v3",
+        collapsibleMetrics: false,
       });
 
       expect(output).toContain("### Run metrics");
       expect(output).not.toContain("<details>");
       expect(output).not.toContain("<summary>");
+    });
+
+    it("defaults to collapsible when collapsibleMetrics is omitted", () => {
+      const output = formatPhaseCompletionMarkdown({
+        phase: "implement",
+        statusLine: "PR #42 created.",
+        sessionUsage: {
+          inputTokens: 600,
+          outputTokens: 200,
+          cacheReadTokens: 300,
+          cacheWriteTokens: 0,
+          totalCost: 0.003,
+        },
+        sessionId: "sess-default",
+        modelId: "deepseek/v3",
+      });
+
+      expect(output).toContain("<details>");
+      expect(output).toContain("<summary>Run metrics</summary>");
+      expect(output).toContain("</details>");
+      expect(output).toContain("#### Run metrics");
+      expect(output).not.toMatch(/^### Run metrics$/m);
     });
   });
 });

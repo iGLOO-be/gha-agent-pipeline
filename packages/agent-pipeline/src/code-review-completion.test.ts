@@ -26,7 +26,8 @@ describe("buildCodeReviewPhaseComment", () => {
     expect(output).toContain(
       "Review posted — [view review](https://github.com/o/r/pull/1#pullrequestreview-9)",
     );
-    expect(output).toContain("### Run metrics");
+    expect(output).toContain("<summary>Run metrics</summary>");
+    expect(output).toContain("#### Run metrics");
     expect(output).toContain("`sess-cr-1`");
     expect(output).not.toContain("_No business summary was submitted._");
   });
@@ -48,6 +49,7 @@ describe("buildCodeReviewPhaseComment", () => {
     });
 
     expect(output).not.toContain("Review posted");
-    expect(output).toContain("### Run metrics");
+    expect(output).toContain("<summary>Run metrics</summary>");
+    expect(output).toContain("#### Run metrics");
   });
 });
