@@ -230,7 +230,6 @@ export async function applyCodeReviewLabels(params: {
           targetNumber,
           names,
           labelsConfig.severity[maxSeverity],
-          riskLabelEnsureOptions,
         );
       } else {
         await removeLabelsFromIssue(octokit, owner, repo, targetNumber, names);

@@ -585,25 +585,6 @@ export function maxInlineReviewSeverity(
   return best;
 }
 
-export async function listReviewCommentBodiesForReview(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  reviewId: number,
-): Promise<string[]> {
-  const comments = await readPullRequestReviewComments(
-    octokit,
-    owner,
-    repo,
-    prNumber,
-  );
-  return comments
-    .filter((comment) => comment.pull_request_review_id === reviewId)
-    .map((comment) => comment.body ?? "")
-    .filter((body) => body.length > 0);
-}
-
 export function formatReviewCommentsForPrompt(
   comments: PullRequestReviewCommentForPrompt[],
   options?: { maxDiffHunkChars?: number },
@@ -758,6 +739,29 @@ export async function listReviewCommentsForReview(
     review_id: reviewId,
   });
   return data;
+}
+
+/**
+ * Bodies of the inline comments attached to a single review, ignoring empty
+ * bodies. Review-scoped wrapper used to derive the review's severity label.
+ */
+export async function listReviewCommentBodiesForReview(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewId: number,
+): Promise<string[]> {
+  const comments = await listReviewCommentsForReview(
+    octokit,
+    owner,
+    repo,
+    prNumber,
+    reviewId,
+  );
+  return comments
+    .map((comment) => comment.body ?? "")
+    .filter((body) => body.length > 0);
 }
 
 export async function buildReviewFixReviewCommentContext(
