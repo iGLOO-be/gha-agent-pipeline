@@ -96,7 +96,7 @@ jobs:
 
 Automated **implement → code-review ↔ review-fix** cycle on the new PR. Only starts when **`review_loop.enabled: true`** on a successful **`/agent implement`** (not from a manual `/agent code-review` on its own). When the loop is enabled, implement uses this path instead of `implement.follow_up.code_review` (you do not need both).
 
-**Dogfood:** this repository runs the loop on itself during [#107](https://github.com/iGLOO-be/gha-agent-pipeline/issues/107) — [`.github/agent.config.yml`](./.github/agent.config.yml) sets `review_loop.enabled: true` with `max_rounds: 2` (smoke test [#115](https://github.com/iGLOO-be/gha-agent-pipeline/issues/115)).
+**Dogfood:** this repository runs the loop on itself during [#107](https://github.com/iGLOO-be/gha-agent-pipeline/issues/107) — [`.github/agent.config.yml`](./.github/agent.config.yml) sets `review_loop.enabled: true` with `max_rounds: 2`. Smoke test [#115](https://github.com/iGLOO-be/gha-agent-pipeline/issues/115) covered **implement → chained code-review**; the **manual review-fix** (`/agent fix`) with the **follow-up code-review recheck** is the smoke of this ticket ([#118](https://github.com/iGLOO-be/gha-agent-pipeline/issues/118)), covering **review-fix → follow-up code-review** (`review_fix.follow_up.code_review: true`).
 
 **Flow**
 
