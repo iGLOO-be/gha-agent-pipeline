@@ -8,6 +8,7 @@ import {
   type RunFrictionCollector,
 } from "./run-friction.js";
 import type { SessionAccumulatedUsage } from "./types/usage.js";
+import type { AgentSessionResult } from "./runtime.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -281,6 +282,78 @@ export function formatPhaseReportForComment(report: PhaseReport): string {
   return lines.join("\n");
 }
 
+// ── Run metrics ─────────────────────────────────────────────────────────────
+
+/**
+ * Subset of {@link AgentSessionResult} needed to render the run metrics table.
+ * Every command feeds the same fields so the metrics block stays identical
+ * across phases (plan, implement, yolo, fix, code-review, ask).
+ */
+export type SessionMetricsSource = Partial<
+  Pick<
+    AgentSessionResult,
+    | "sessionId"
+    | "modelId"
+    | "servedModelIds"
+    | "openRouterCostUsd"
+    | "iterations"
+    | "toolCallsCount"
+    | "usage"
+  >
+>;
+
+export interface FormatRunMetricsOptions {
+  /**
+   * When true, wraps the `### Run metrics` section in a
+   * `<details><summary>Run metrics</summary>…</details>` block (heading demoted
+   * to `#### Run metrics`) so GitHub collapses it by default. Defaults to true.
+   */
+  collapsible?: boolean;
+}
+
+/**
+ * Canonical run metrics formatter shared by every agent command.
+ * Returns the markdown block (or null when usage is unavailable).
+ */
+export function formatRunMetricsMarkdown(
+  session: SessionMetricsSource,
+  opts: FormatRunMetricsOptions = {},
+): string | null {
+  const usageMd = safeFormatUsageMarkdown(session.usage, {
+    heading: "### Run metrics",
+    sessionId: session.sessionId,
+    modelId: session.modelId,
+    servedModelIds: session.servedModelIds,
+    openRouterCostUsd: session.openRouterCostUsd,
+    iterations: session.iterations,
+    toolCallsCount: session.toolCallsCount,
+  });
+
+  if (!usageMd) {
+    return null;
+  }
+
+  const collapsible = opts.collapsible ?? true;
+  if (!collapsible) {
+    return usageMd;
+  }
+
+  // The usage markdown starts with a leading newline; strip it and demote the
+  // heading one level so it nests properly inside the collapsible block.
+  const demoted = usageMd
+    .replace(/^\n/, "")
+    .replace(/^### Run metrics/m, "#### Run metrics");
+
+  return [
+    "<details>",
+    "<summary>Run metrics</summary>",
+    "",
+    demoted,
+    "",
+    "</details>",
+  ].join("\n");
+}
+
 // ── Phase completion block ──────────────────────────────────────────────────
 
 export interface FormatPhaseCompletionOptions {
@@ -308,7 +381,7 @@ export interface FormatPhaseCompletionOptions {
   runFriction?: RunFrictionCollector;
   /** When true, wraps the ### Run metrics section in a
    * <details><summary>Run metrics</summary>…</details> block
-   * for collapsibility in GitHub comments. Defaults to false. */
+   * for collapsibility in GitHub comments. Defaults to true. */
   collapsibleMetrics?: boolean;
   /** When true and no phaseReport, omit the neutral business-summary fallback. */
   skipEmptyPhaseReportPlaceholder?: boolean;
@@ -348,37 +421,22 @@ export function formatPhaseCompletionMarkdown(
     sections.push("", "_No business summary was submitted._");
   }
 
-  // Runner-owned run metrics
+  /** Runner-owned run metrics */
   if (opts.sessionUsage) {
-    const usageMd = safeFormatUsageMarkdown(opts.sessionUsage, {
-      heading: "### Run metrics",
-      sessionId: opts.sessionId,
-      modelId: opts.modelId,
-      servedModelIds: opts.servedModelIds,
-      openRouterCostUsd: opts.openRouterCostUsd,
-      iterations: opts.iterations,
-      toolCallsCount: opts.toolCallsCount,
-    });
-    if (usageMd) {
-      if (opts.collapsibleMetrics) {
-        // Wrap in <details> for collapsibility. The usage markdown starts
-        // with a leading newline; strip it and demote the heading one level
-        // so it nests properly inside the collapsible block.
-        const demoted = usageMd
-          .replace(/^\n/, "")
-          .replace(/^### Run metrics/m, "#### Run metrics");
-        const wrapper = [
-          "<details>",
-          "<summary>Run metrics</summary>",
-          "",
-          demoted,
-          "",
-          "</details>",
-        ].join("\n");
-        sections.push("", wrapper);
-      } else {
-        sections.push("", usageMd);
-      }
+    const metricsMd = formatRunMetricsMarkdown(
+      {
+        usage: opts.sessionUsage,
+        sessionId: opts.sessionId,
+        modelId: opts.modelId,
+        servedModelIds: opts.servedModelIds,
+        openRouterCostUsd: opts.openRouterCostUsd,
+        iterations: opts.iterations,
+        toolCallsCount: opts.toolCallsCount,
+      },
+      { collapsible: opts.collapsibleMetrics ?? true },
+    );
+    if (metricsMd) {
+      sections.push("", metricsMd);
     }
   }
 
