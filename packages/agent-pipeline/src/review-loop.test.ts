@@ -37,6 +37,7 @@ import {
   isReviewLoopEnabled,
   onReviewFixNoChangesInReviewLoop,
   parseReviewLoopRoundFromEnv,
+  startReviewLoopAfterImplement,
 } from "./review-loop.js";
 
 const baseConfig = {
@@ -359,6 +360,82 @@ describe("review-fix review loop hooks", () => {
   });
 });
 
+describe("startReviewLoopAfterImplement", () => {
+  beforeEach(() => {
+    resetEnv();
+    mocks.dispatchAgentPhaseWorkflow.mockClear();
+    mocks.postComment.mockClear();
+    process.env.COMMENT_ID = "42";
+  });
+
+  afterEach(() => {
+    resetEnv();
+  });
+
+  it("dispatches the initial code-review round 0", async () => {
+    await startReviewLoopAfterImplement(octokit, "o", "r", {
+      issueNumber: 1,
+      prNumber: 2,
+      agentBranch: "agent/1",
+    });
+
+    expect(mocks.postComment).not.toHaveBeenCalled();
+    expect(mocks.dispatchAgentPhaseWorkflow).toHaveBeenCalledWith(
+      octokit,
+      "o",
+      "r",
+      expect.objectContaining({
+        phase: "code-review",
+        commentId: "42",
+        headRef: "agent/1",
+        reviewLoopActive: true,
+        reviewLoopRound: 0,
+      }),
+    );
+  });
+
+  it("reports a rejected initial dispatch instead of ending silently", async () => {
+    mocks.dispatchAgentPhaseWorkflow.mockRejectedValueOnce(
+      new Error("Resource not accessible by integration"),
+    );
+
+    await startReviewLoopAfterImplement(octokit, "o", "r", {
+      issueNumber: 1,
+      prNumber: 2,
+      agentBranch: "agent/1",
+    });
+
+    expect(mocks.postComment).toHaveBeenCalledWith(
+      octokit,
+      "o",
+      "r",
+      2,
+      expect.stringContaining(
+        "Review loop not started: could not dispatch the initial code-review",
+      ),
+    );
+  });
+
+  it("reports a missing COMMENT_ID", async () => {
+    delete process.env.COMMENT_ID;
+
+    await startReviewLoopAfterImplement(octokit, "o", "r", {
+      issueNumber: 1,
+      prNumber: 2,
+      agentBranch: "agent/1",
+    });
+
+    expect(mocks.dispatchAgentPhaseWorkflow).not.toHaveBeenCalled();
+    expect(mocks.postComment).toHaveBeenCalledWith(
+      octokit,
+      "o",
+      "r",
+      2,
+      expect.stringContaining("Review loop not started: could not dispatch"),
+    );
+  });
+});
+
 describe("buildChainedReviewFixFeedback", () => {
   beforeEach(() => {
     mocks.listReviewCommentsForReview.mockReset();
@@ -428,7 +505,7 @@ describe("buildChainedReviewFixFeedback", () => {
 });
 
 describe("dispatchAgentPhaseWorkflow review loop inputs", () => {
-  it("forwards chain and loop fields", async () => {
+  it("forwards the review loop fields", async () => {
     const actual =
       await vi.importActual<typeof import("./tools/github.js")>(
         "./tools/github.js",
@@ -448,7 +525,6 @@ describe("dispatchAgentPhaseWorkflow review loop inputs", () => {
       prNumber: 2,
       headRef: "agent/1",
       reviewFeedback: "fix",
-      chainCodeReview: true,
       reviewLoopActive: true,
       reviewLoopRound: 1,
     });
@@ -456,7 +532,6 @@ describe("dispatchAgentPhaseWorkflow review loop inputs", () => {
     expect(createWorkflowDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         inputs: expect.objectContaining({
-          chain_code_review: "true",
           review_loop_active: "true",
           review_loop_round: "1",
           review_feedback: "fix",

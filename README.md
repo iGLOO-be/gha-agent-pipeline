@@ -108,14 +108,16 @@ Automated **implement → code-review ↔ review-fix** cycle on the new PR. Only
 
 **Stop conditions**
 
-| Outcome                                                     | What happens                          |
-| ----------------------------------------------------------- | ------------------------------------- |
-| Code-review `COMMENT`                                       | Success; loop ends                    |
-| `REQUEST_CHANGES` and `round >= max_rounds`                 | PR comment; no auto review-fix        |
-| Review-fix finishes with **no code changes**                | Stall comment; no further code-review |
-| Review not posted                                           | No chain (logged warning)             |
-| Follow-up dispatch rejected (missing `actions: write`, 422) | Stop comment; loop ends               |
-| Next code-review would exceed `max_rounds` after a fix push | Cap comment; no dispatch              |
+| Outcome                                                                  | What happens                          |
+| ------------------------------------------------------------------------ | ------------------------------------- |
+| Code-review `COMMENT`                                                    | Success; loop ends                    |
+| `REQUEST_CHANGES` and `round >= max_rounds`                              | PR comment; no auto review-fix        |
+| Review-fix finishes with **no code changes**                             | Stall comment; no further code-review |
+| Review not posted                                                        | No chain (logged warning)             |
+| Dispatch rejected (`actions: write` missing, 422) or `COMMENT_ID` absent | Stop comment; loop ends               |
+| Next code-review would exceed `max_rounds` after a fix push              | Cap comment; no dispatch              |
+
+Every stop comment carries the `<!-- agent-review-loop -->` marker. A dispatch that cannot be issued — including the **initial** code-review after implement — is always surfaced as a comment, never a silent end.
 
 **Consumer wiring** (in addition to chained code-review above):
 

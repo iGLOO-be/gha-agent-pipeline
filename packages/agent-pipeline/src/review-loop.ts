@@ -31,6 +31,47 @@ export function parseReviewLoopRoundFromEnv(): number {
 }
 
 /**
+ * Post a review-loop comment. The `<!-- agent-review-loop -->` marker and the
+ * stop/status phrasing live here so every stop path stays consistent and easy
+ * to find.
+ */
+async function postReviewLoopComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  message: string,
+): Promise<void> {
+  await postComment(
+    octokit,
+    owner,
+    repo,
+    prNumber,
+    `<!-- agent-review-loop -->\n${message}`,
+  );
+}
+
+/**
+ * Report a follow-up dispatch that GitHub rejected (or that was skipped because
+ * `COMMENT_ID` is missing) instead of ending the loop silently.
+ */
+async function postUnableToDispatchComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  params: { headline: string; detail: string; manualCommand: string },
+): Promise<void> {
+  await postReviewLoopComment(
+    octokit,
+    owner,
+    repo,
+    prNumber,
+    `${params.headline}: could not dispatch ${params.detail}. Check the App token \`actions: write\` scope and the \`agent-phase.yml\` inputs, then run \`${params.manualCommand}\` manually.`,
+  );
+}
+
+/**
  * Dispatch the next review-loop phase. Returns whether the dispatch was issued
  * (false when `COMMENT_ID` is missing or GitHub rejected the dispatch), so
  * callers can post a stop comment instead of ending the loop silently.
@@ -73,7 +114,7 @@ export async function startReviewLoopAfterImplement(
     agentBranch: string;
   },
 ): Promise<void> {
-  await dispatchReviewLoopPhase(octokit, owner, repo, {
+  const dispatched = await dispatchReviewLoopPhase(octokit, owner, repo, {
     phase: "code-review",
     issueNumber: params.issueNumber,
     prNumber: params.prNumber,
@@ -85,6 +126,14 @@ export async function startReviewLoopAfterImplement(
       reviewLoopRound: 0,
     },
   });
+
+  if (!dispatched) {
+    await postUnableToDispatchComment(octokit, owner, repo, params.prNumber, {
+      headline: "Review loop not started",
+      detail: "the initial code-review (round 0)",
+      manualCommand: "/agent code-review",
+    });
+  }
 }
 
 /**
@@ -204,12 +253,12 @@ export async function afterCodeReviewInReviewLoop(
   const event = params.review.event ?? "COMMENT";
 
   if (event === "COMMENT") {
-    await postComment(
+    await postReviewLoopComment(
       octokit,
       owner,
       repo,
       params.prNumber,
-      "<!-- agent-review-loop -->\nReview loop complete: latest code-review finished with no hard findings (`COMMENT`).",
+      "Review loop complete: latest code-review finished with no hard findings (`COMMENT`).",
     );
     return;
   }
@@ -219,12 +268,12 @@ export async function afterCodeReviewInReviewLoop(
   }
 
   if (round >= maxRounds) {
-    await postComment(
+    await postReviewLoopComment(
       octokit,
       owner,
       repo,
       params.prNumber,
-      `<!-- agent-review-loop -->\nReview loop stopped: \`REQUEST_CHANGES\` after code-review round ${round}, but \`review_loop.max_rounds\` is ${maxRounds}. Run \`/agent fix\` manually or adjust config.`,
+      `Review loop stopped: \`REQUEST_CHANGES\` after code-review round ${round}, but \`review_loop.max_rounds\` is ${maxRounds}. Run \`/agent fix\` manually or adjust config.`,
     );
     return;
   }
@@ -251,13 +300,11 @@ export async function afterCodeReviewInReviewLoop(
   });
 
   if (!dispatched) {
-    await postComment(
-      octokit,
-      owner,
-      repo,
-      params.prNumber,
-      `<!-- agent-review-loop -->\nReview loop stopped: could not dispatch \`review-fix\` after code-review round ${round}. Check the App token \`actions: write\` scope and the \`agent-phase.yml\` inputs, then run \`/agent fix\` manually.`,
-    );
+    await postUnableToDispatchComment(octokit, owner, repo, params.prNumber, {
+      headline: "Review loop stopped",
+      detail: `\`review-fix\` after code-review round ${round}`,
+      manualCommand: "/agent fix",
+    });
   }
 }
 
@@ -280,12 +327,12 @@ export async function afterReviewFixPushInReviewLoop(
   const maxRounds = getReviewLoopMaxRounds(config);
 
   if (nextRound > maxRounds) {
-    await postComment(
+    await postReviewLoopComment(
       octokit,
       owner,
       repo,
       params.prNumber,
-      `<!-- agent-review-loop -->\nReview loop stopped: would start code-review round ${nextRound} but \`review_loop.max_rounds\` is ${maxRounds}.`,
+      `Review loop stopped: would start code-review round ${nextRound} but \`review_loop.max_rounds\` is ${maxRounds}.`,
     );
     return;
   }
@@ -304,13 +351,11 @@ export async function afterReviewFixPushInReviewLoop(
   });
 
   if (!dispatched) {
-    await postComment(
-      octokit,
-      owner,
-      repo,
-      params.prNumber,
-      `<!-- agent-review-loop -->\nReview loop stopped: could not dispatch code-review round ${nextRound}. Check the App token \`actions: write\` scope and the \`agent-phase.yml\` inputs, then run \`/agent code-review\` manually.`,
-    );
+    await postUnableToDispatchComment(octokit, owner, repo, params.prNumber, {
+      headline: "Review loop stopped",
+      detail: `code-review round ${nextRound}`,
+      manualCommand: "/agent code-review",
+    });
   }
 }
 
@@ -324,11 +369,11 @@ export async function onReviewFixNoChangesInReviewLoop(
     return;
   }
 
-  await postComment(
+  await postReviewLoopComment(
     octokit,
     owner,
     repo,
     prNumber,
-    "<!-- agent-review-loop -->\nReview loop stopped: review-fix completed with no code changes. Address findings manually or re-run `/agent fix`.",
+    "Review loop stopped: review-fix completed with no code changes. Address findings manually or re-run `/agent fix`.",
   );
 }
