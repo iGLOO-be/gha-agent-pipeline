@@ -275,6 +275,8 @@ pnpm exec agent-pipeline list-commands --format json
 
 Dogfood example: `/agent config-audit` on an issue (extends `ask`).
 
+**Recognized vs reserved slashes.** Dispatch resolves slash tokens from `loadAgentCommands()` and only accepts the ones enabled for the target (`issue` / `pr`). Two slashes are routed directly in `dispatch.yml` before config resolution: `code-review` (PR only) and `fix` (PR only, also accepted from a submitted review body). `fix` is reserved and cannot be declared as a `commands` slash (`RESERVED` in `.github/scripts/command-constants.cjs`); `code-review` is a built-in phase and can still be overridden in `commands`. When an `/agent <slash>` is syntactically valid but unknown, disabled, or not allowed on the target, dispatch posts an explanatory comment on the same thread — with the received token, the reason (unknown / disabled in config / not available on this target), a suggestion when it is close to an available slash (e.g. `review` → `code-review`), and the list of commands available for that context — then stops without adding the 👀 reaction or dispatching an agent phase.
+
 ```yaml
 code_review:
   path_filters:

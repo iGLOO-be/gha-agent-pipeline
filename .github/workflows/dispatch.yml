@@ -67,8 +67,14 @@ jobs:
           script: |
             const {
               parseAgentCommandsFromYaml,
+              parseAgentSlashInvocation,
               resolveSlashCommand
             } = require('./.github/scripts/parse-agent-commands.cjs')
+            const {
+              formatUnknownAgentCommandReply,
+              unknownCommandReason
+            } = require('./.github/scripts/format-unknown-agent-command.cjs')
+            const { RESERVED } = require('./.github/scripts/command-constants.cjs')
             const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR']
             const owner = context.repo.owner
             const repo = context.repo.repo
@@ -379,6 +385,40 @@ jobs:
               return { busy: true, runUrl }
             }
 
+            // Reserved slash tokens are wired directly in this workflow rather
+            // than declared in `commands`, so they are not visible to
+            // `loadAgentCommands()`.
+            function reservedSlashTokensFor(target) {
+              return target === 'pr' ? [...RESERVED] : []
+            }
+
+            // Posts a single explanatory comment when a syntactically valid
+            // `/agent <slash>` invocation could not be dispatched. No eyes
+            // reaction and no agent-phase run happen in that case.
+            async function replyUnknownAgentCommand({
+              issueNumber,
+              slash,
+              target,
+              commands,
+              reason
+            }) {
+              const resolvedReason =
+                reason || unknownCommandReason({ slash, commands })
+              const body = formatUnknownAgentCommandReply({
+                slash,
+                target,
+                commands,
+                reservedSlashTokens: reservedSlashTokensFor(target),
+                ...(resolvedReason ? { reason: resolvedReason } : {})
+              })
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body
+              })
+            }
+
             if (context.eventName === 'issue_comment') {
               const body = (context.payload.comment.body || '').trim()
               const isPullRequest = Boolean(context.payload.issue.pull_request)
@@ -419,14 +459,13 @@ jobs:
 
                 const commentId = context.payload.comment.id
 
-                await github.rest.reactions.createForIssueComment({
-                  owner,
-                  repo,
-                  comment_id: commentId,
-                  content: 'eyes'
-                })
-
                 if (isCodeReview) {
+                  await github.rest.reactions.createForIssueComment({
+                    owner,
+                    repo,
+                    comment_id: commentId,
+                    content: 'eyes'
+                  })
                   const reviewInstructions = body.replace(/\/agent\s+code-review/i, '').trim()
                   await dispatchCodeReview({
                     commentId,
@@ -440,6 +479,12 @@ jobs:
                 }
 
                 if (isFix) {
+                  await github.rest.reactions.createForIssueComment({
+                    owner,
+                    repo,
+                    comment_id: commentId,
+                    content: 'eyes'
+                  })
                   const rawFeedback = body.replace(/\/agent\s+fix/gi, '').trim() || body
                   const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
                   const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
@@ -463,13 +508,37 @@ jobs:
                 const slashMatch = resolveSlashCommand(body, agentCommands)
                 if (!slashMatch) {
                   core.info('Unrecognized /agent command on PR comment')
+                  const parsed = parseAgentSlashInvocation(body)
+                  if (parsed) {
+                    await replyUnknownAgentCommand({
+                      issueNumber: resolved.prNumber,
+                      slash: parsed.slash,
+                      target: 'pr',
+                      commands: agentCommands
+                    })
+                  }
                   return
                 }
                 const { command, args } = slashMatch
                 if (!command.targets.includes('pr')) {
                   core.info(`Command ${command.id} is not enabled on pull request comments`)
+                  const parsed = parseAgentSlashInvocation(body)
+                  await replyUnknownAgentCommand({
+                    issueNumber: resolved.prNumber,
+                    slash: parsed ? parsed.slash : command.slash,
+                    target: 'pr',
+                    commands: agentCommands,
+                    reason: 'wrong-target'
+                  })
                   return
                 }
+
+                await github.rest.reactions.createForIssueComment({
+                  owner,
+                  repo,
+                  comment_id: commentId,
+                  content: 'eyes'
+                })
 
                 const runtimePhase = command.extends
                 const question =
@@ -492,11 +561,12 @@ jobs:
               }
 
               if (body.includes('/agent code-review')) {
-                await github.rest.issues.createComment({
-                  owner,
-                  repo,
-                  issue_number: context.payload.issue.number,
-                  body: '`/agent code-review` only works on a pull request comment.'
+                await replyUnknownAgentCommand({
+                  issueNumber: context.payload.issue.number,
+                  slash: 'code-review',
+                  target: 'issue',
+                  commands: agentCommands,
+                  reason: 'wrong-target'
                 })
                 return
               }
@@ -504,12 +574,30 @@ jobs:
               const slashMatch = resolveSlashCommand(body, agentCommands)
               if (!slashMatch) {
                 core.info('No /agent slash command detected')
+                const parsed = parseAgentSlashInvocation(body)
+                if (parsed) {
+                  await replyUnknownAgentCommand({
+                    issueNumber: context.payload.issue.number,
+                    slash: parsed.slash,
+                    target: 'issue',
+                    commands: agentCommands,
+                    ...(RESERVED.has(parsed.slash) ? { reason: 'wrong-target' } : {})
+                  })
+                }
                 return
               }
 
               const { command, args } = slashMatch
               if (!command.targets.includes('issue')) {
                 core.info(`Command ${command.id} is not enabled on issue comments`)
+                const parsed = parseAgentSlashInvocation(body)
+                await replyUnknownAgentCommand({
+                  issueNumber: context.payload.issue.number,
+                  slash: parsed ? parsed.slash : command.slash,
+                  target: 'issue',
+                  commands: agentCommands,
+                  reason: 'wrong-target'
+                })
                 return
               }
 
