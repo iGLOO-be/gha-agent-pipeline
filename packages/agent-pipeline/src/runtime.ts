@@ -40,8 +40,10 @@ import {
   getSessionContinueMaxAttempts,
   getSessionMaxAttempts,
   getSessionRetryBaseDelayMs,
+  isNonRetriableProviderError,
   isRetriableSessionFinishReason,
   isSessionTurnFailure,
+  type ProviderErrorInfo,
   resolvePhaseModel,
   SESSION_CONTINUE_USER_PROMPT,
   sleep,
@@ -81,6 +83,67 @@ function formatSessionFailureMessage(
     message += ` [sessionId=${sessionId}]`;
   }
   return message;
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (error.name === "SessionNotFoundError") {
+    return true;
+  }
+  const code =
+    "code" in error && typeof (error as { code?: string }).code === "string"
+      ? (error as { code: string }).code
+      : undefined;
+  return (
+    code === "session_not_found" || /session not found/i.test(error.message)
+  );
+}
+
+function formatFailureWithProvider(
+  finishReason: string,
+  session: { result?: { text?: string } | null; text?: string },
+  sessionId?: string,
+  attempt?: number,
+  providerError?: ProviderErrorInfo,
+): string {
+  if (providerError && isNonRetriableProviderError(providerError.message)) {
+    const codeSuffix = providerError.code ? ` (${providerError.code})` : "";
+    let message = `Agent session failed (${finishReason})${codeSuffix}: ${providerError.message}`;
+    if (attempt !== undefined && attempt > 1) {
+      message += ` [attempt=${attempt}]`;
+    }
+    if (sessionId) {
+      message += ` [sessionId=${sessionId}]`;
+    }
+    return message;
+  }
+  return formatSessionFailureMessage(finishReason, session, sessionId, attempt);
+}
+
+function throwAgentSessionFailure(
+  finishReason: string,
+  turnResult: SessionTurnResult | null | undefined,
+  attempt: number,
+  sessionId?: string,
+  providerError?: ProviderErrorInfo,
+): never {
+  throw new AgentSessionError(
+    formatFailureWithProvider(
+      finishReason,
+      { result: turnResult ?? null },
+      sessionId,
+      attempt,
+      providerError,
+    ),
+    {
+      finishReason,
+      sessionId,
+      attempt,
+      providerError,
+    },
+  );
 }
 
 export type RunSessionInput = {
@@ -250,6 +313,14 @@ async function runAgentSessionAttempt(
       isRetriableSessionFinishReason(turnResult?.finishReason ?? "unknown") &&
       continueCount < maxContinues
     ) {
+      const lastProviderError = sessionLogger.getLastProviderError();
+      if (isNonRetriableProviderError(lastProviderError?.message)) {
+        console.warn(
+          `[session] skipping in-session continue (non-retriable provider error)`,
+        );
+        break;
+      }
+
       const failedReason = turnResult?.finishReason ?? "unknown";
       continueCount += 1;
       const delayMs = continueBaseDelayMs * 2 ** (continueCount - 1);
@@ -258,11 +329,25 @@ async function runAgentSessionAttempt(
       );
       await sleep(delayMs);
 
-      const continued = await cline.send(sessionId, {
-        prompt: SESSION_CONTINUE_USER_PROMPT,
-        mode: sessionMode(input.phase),
-      });
-      turnResult = continued ?? null;
+      try {
+        const continued = await cline.send(sessionId, {
+          prompt: SESSION_CONTINUE_USER_PROMPT,
+          mode: sessionMode(input.phase),
+        });
+        turnResult = continued ?? null;
+      } catch (sendError) {
+        const providerError = sessionLogger.getLastProviderError();
+        if (providerError && isSessionNotFoundError(sendError)) {
+          throwAgentSessionFailure(
+            "error",
+            turnResult ?? null,
+            input.attempt,
+            sessionId,
+            providerError,
+          );
+        }
+        throw sendError;
+      }
       const continuedReason = turnResult?.finishReason ?? "unknown";
       console.log(`[session] finishReason=${continuedReason}`);
     }
@@ -317,14 +402,12 @@ async function runAgentSessionAttempt(
     }
 
     if (isSessionTurnFailure(turnResult)) {
-      throw new AgentSessionError(
-        formatSessionFailureMessage(
-          finishReason,
-          { result: turnResult ?? null },
-          sessionId,
-          input.attempt,
-        ),
-        { finishReason, sessionId, attempt: input.attempt },
+      throwAgentSessionFailure(
+        finishReason,
+        turnResult ?? null,
+        input.attempt,
+        sessionId,
+        sessionLogger.getLastProviderError(),
       );
     }
 

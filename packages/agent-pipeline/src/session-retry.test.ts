@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { IMPLEMENT_MODEL, REVIEW_FIX_MODEL } from "./config.js";
 import {
   AgentSessionError,
+  classifyProviderError,
   getSessionContinueMaxAttempts,
   getSessionMaxAttempts,
   getSessionRetryBaseDelayMs,
+  isNonRetriableProviderError,
   isRetriableSessionFinishReason,
   isSessionTurnFailure,
   resolvePhaseModel,
@@ -154,6 +156,46 @@ describe("session-retry", () => {
       expect(err.retriable).toBe(true);
       expect(err.name).toBe("AgentSessionError");
       expect(err.attempt).toBe(2);
+    });
+
+    it("is not retriable when a non-retriable provider error is attached", () => {
+      const err = new AgentSessionError("failed", {
+        finishReason: "error",
+        sessionId: "s1",
+        attempt: 1,
+        providerError: {
+          message:
+            "No model left by the jev-router model lists is admitted for this request",
+        },
+      });
+      expect(err.retriable).toBe(false);
+    });
+  });
+
+  describe("isNonRetriableProviderError", () => {
+    it("detects Jev admission failures", () => {
+      expect(
+        isNonRetriableProviderError(
+          "No model left by the jev-router model lists is admitted for this request",
+        ),
+      ).toBe(true);
+    });
+
+    it("treats empty messages as transient", () => {
+      expect(isNonRetriableProviderError("")).toBe(false);
+      expect(isNonRetriableProviderError(undefined)).toBe(false);
+    });
+  });
+
+  describe("classifyProviderError", () => {
+    it("maps known patterns to non-retriable", () => {
+      expect(
+        classifyProviderError("No model left by the jev-router model lists"),
+      ).toBe("non-retriable");
+    });
+
+    it("defaults to transient for unknown messages", () => {
+      expect(classifyProviderError("rate limit exceeded")).toBe("transient");
     });
   });
 });
