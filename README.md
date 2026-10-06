@@ -299,6 +299,7 @@ Optional `code_review.labels` applies GitHub labels after a review is posted (no
 - **Status** — `status.ok` when the review is `COMMENT` (no hard findings); `status.pending` when `REQUEST_CHANGES`. Sibling status labels are removed when both are configured, and a stale status label is cleared when the current review event has no configured label.
 - **Merge risk** — when `merge_risk` is present and `enabled` (default `true`), the runner parses `## Merge risk` (**Minimal** / **Moderate** / **High**) and applies the configured label for that level (defaults: `agent-risk-low`, `agent-risk-medium`, `agent-risk-high`). Sibling risk labels are removed, and a stale risk label is cleared when the review has no parseable level.
 - **Severity** — when `severity` is present and `enabled` (default `true`), the runner loads inline review comments for the posted review and applies the label for the highest parsed **Severity** (`Minor` / `Major` / `Critical` from the `_Category_ | _Severity_ | _Effort_` tag line; defaults: `ai-review:minor`, `ai-review:major`, `ai-review:critical`). Sibling severity labels are removed when none parse. On `COMMENT`, `status.ok` is not applied when any severity label is set (so a PR is not both `ai-review:ok` and `ai-review:minor`).
+- **Display** — at post time the runner adds emojis to inline tag lines, `Suggested fix` / `Evidence` summaries, and the `## Merge risk` level line for easier scanning on GitHub (parsing for labels is unchanged).
 - **apply_to** — `pr` (default), `issue`, or `both`.
 
 ```yaml

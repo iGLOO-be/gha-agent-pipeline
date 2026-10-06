@@ -1,4 +1,8 @@
 import { Octokit } from "@octokit/rest";
+import {
+  detectMergeRiskLevelWord,
+  INLINE_REVIEW_TAG_LINE,
+} from "../code-review-display.js";
 
 export function createOctokit(token: string): Octokit {
   return new Octokit({ auth: token });
@@ -601,11 +605,14 @@ export function isAutomatedReviewAuthor(
   return lower.endsWith("[bot]");
 }
 
-const AGENT_INLINE_REVIEW_COMMENT_TAG = /^_[^|\n]+_\s*\|\s*_[^|\n]+_\s*\|\s*_/m;
+const INLINE_REVIEW_SEVERITY_CAPTURE = new RegExp(
+  `^(?:\\S+\\s+)?_[^|\\n]+_\\s*\\|\\s*(?:\\S+\\s+)?_([^|\\n]+)_\\s*\\|\\s*(?:\\S+\\s+)?_`,
+  "m",
+);
 
 /** Matches agent code-review inline comments (_Category_ | _Severity_ | _Effort_). */
 export function isAgentInlineReviewCommentBody(body: string): boolean {
-  return AGENT_INLINE_REVIEW_COMMENT_TAG.test(body.trim());
+  return INLINE_REVIEW_TAG_LINE.test(body.trim());
 }
 
 export type InlineReviewSeverity = "minor" | "major" | "critical";
@@ -615,9 +622,6 @@ const INLINE_REVIEW_SEVERITY_RANK: Record<InlineReviewSeverity, number> = {
   major: 2,
   critical: 3,
 };
-
-const INLINE_REVIEW_SEVERITY_CAPTURE =
-  /^_[^|\n]+_\s*\|\s*_([^|\n]+)_\s*\|\s*_/m;
 
 /** Parses the Severity column from an agent inline review comment tag line. */
 export function parseInlineReviewCommentSeverity(
@@ -1373,15 +1377,6 @@ export function parseRiskLevel(text: string): RiskLevel | null {
   return null;
 }
 
-// Anchored to the start of the (bold-stripped) line so justification words
-// such as "minimal blast radius" cannot win over the actual level. An optional
-// short `level:` / `risk:` prefix is tolerated.
-const MERGE_RISK_LEVEL_WORDS: { line: RegExp; level: RiskLevel }[] = [
-  { line: /^(?:level|risk)?[:\s-]*minimal\b/i, level: "low" },
-  { line: /^(?:level|risk)?[:\s-]*moderate\b/i, level: "medium" },
-  { line: /^(?:level|risk)?[:\s-]*high\b/i, level: "high" },
-];
-
 /** Parses ## Merge risk (Minimal / Moderate / High) from a code-review body. */
 export function parseMergeRiskLevel(body: string): RiskLevel | null {
   const sectionMatch = body.match(
@@ -1397,13 +1392,17 @@ export function parseMergeRiskLevel(body: string): RiskLevel | null {
   if (!firstLine) {
     return null;
   }
-  const candidate = firstLine.replace(/\*\*/g, "").replace(/^[-*:]?\s*/, "");
-  for (const { line, level } of MERGE_RISK_LEVEL_WORDS) {
-    if (line.test(candidate)) {
-      return level;
-    }
+  const word = detectMergeRiskLevelWord(firstLine);
+  if (!word) {
+    return null;
   }
-  return null;
+  if (word === "minimal") {
+    return "low";
+  }
+  if (word === "moderate") {
+    return "medium";
+  }
+  return "high";
 }
 
 export function riskLabelEnsureOptions(labelName: string): {
