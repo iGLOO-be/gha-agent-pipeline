@@ -255,6 +255,29 @@ export function formatJevRouterLogLabel(pool: JevRouterPool): string {
   return `${JEV_ROUTER_MODEL_ID} (${parts.join("; ")})`;
 }
 
+export function isJevRouterFallbackOnExhaustionEnabled(
+  config: AgentConfig,
+): boolean {
+  const envFallback = parseEnvBoolean(
+    process.env.OPENROUTER_JEV_ROUTER_FALLBACK_ON_EXHAUSTION,
+  );
+  if (envFallback !== undefined) {
+    return envFallback;
+  }
+  return (
+    getJevRouterConfig(config)?.fallback_to_phase_model_on_exhaustion ?? true
+  );
+}
+
+export function resolveDirectOpenRouterModel(
+  resolvedSlug: string,
+): OpenRouterModelResolution {
+  return {
+    requestModelId: resolvedSlug,
+    logLabel: resolvedSlug,
+  };
+}
+
 export function resolveOpenRouterModelForPhase(
   phase: AgentPhase,
   resolvedSlug: string,

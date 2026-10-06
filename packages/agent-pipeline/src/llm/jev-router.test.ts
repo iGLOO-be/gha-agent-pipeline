@@ -11,6 +11,8 @@ import {
   extractUsageCostFromOpenRouterPayload,
   getJevRouterPoolForPhase,
   isJevRouterEnabledForPhase,
+  isJevRouterFallbackOnExhaustionEnabled,
+  resolveDirectOpenRouterModel,
   resolveOpenRouterModelForPhase,
 } from "./jev-router.js";
 
@@ -19,6 +21,7 @@ const ENV_KEYS = [
   "OPENROUTER_JEV_ROUTER_MODELS",
   "OPENROUTER_JEV_ROUTER_ALLOWED_MODELS",
   "OPENROUTER_JEV_ROUTER_EXCLUDED_MODELS",
+  "OPENROUTER_JEV_ROUTER_FALLBACK_ON_EXHAUSTION",
 ] as const;
 
 function baseConfig(overrides?: Partial<AgentConfig>): AgentConfig {
@@ -152,6 +155,42 @@ describe("jev-router", () => {
       const pool = getJevRouterPoolForPhase("implement", "fallback", config);
       expect(pool.models).toEqual(["anthropic/*"]);
       expect(pool.excluded_models).toEqual(["anthropic/claude-opus*"]);
+    });
+  });
+
+  describe("isJevRouterFallbackOnExhaustionEnabled", () => {
+    it("defaults to true", () => {
+      expect(isJevRouterFallbackOnExhaustionEnabled(baseConfig())).toBe(true);
+    });
+
+    it("reads YAML false", () => {
+      const config = baseConfig({
+        openrouter: openrouterConfig({
+          enabled: true,
+          fallback_to_phase_model_on_exhaustion: false,
+        }),
+      });
+      expect(isJevRouterFallbackOnExhaustionEnabled(config)).toBe(false);
+    });
+
+    it("honors OPENROUTER_JEV_ROUTER_FALLBACK_ON_EXHAUSTION env", () => {
+      const config = baseConfig({
+        openrouter: openrouterConfig({
+          enabled: true,
+          fallback_to_phase_model_on_exhaustion: true,
+        }),
+      });
+      process.env.OPENROUTER_JEV_ROUTER_FALLBACK_ON_EXHAUSTION = "false";
+      expect(isJevRouterFallbackOnExhaustionEnabled(config)).toBe(false);
+    });
+  });
+
+  describe("resolveDirectOpenRouterModel", () => {
+    it("returns the slug without jev context", () => {
+      expect(resolveDirectOpenRouterModel("deepseek/deepseek-v4-pro")).toEqual({
+        requestModelId: "deepseek/deepseek-v4-pro",
+        logLabel: "deepseek/deepseek-v4-pro",
+      });
     });
   });
 

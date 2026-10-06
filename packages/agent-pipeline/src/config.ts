@@ -228,6 +228,7 @@ export const agentConfigSchema = z
             models: z.array(z.string().min(1)).max(1024).default([]),
             allowed_models: z.array(z.string().min(1)).max(1024).default([]),
             excluded_models: z.array(z.string().min(1)).max(1024).default([]),
+            fallback_to_phase_model_on_exhaustion: z.boolean().default(true),
             phases: z
               .record(
                 z.string(),
@@ -252,6 +253,7 @@ export const agentConfigSchema = z
             models: [],
             allowed_models: [],
             excluded_models: [],
+            fallback_to_phase_model_on_exhaustion: true,
             phases: {},
           })),
       })
