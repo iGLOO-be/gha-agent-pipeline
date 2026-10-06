@@ -94,6 +94,35 @@ describe("commitAll", () => {
     expect(committedFiles.trim()).toBe("app.txt");
     expect(committedFiles).not.toContain(AGENT_STATE_DIR);
   });
+
+  it("creates a merge commit when MERGE_HEAD is set and the index matches HEAD", async () => {
+    runGit(worktree, "git checkout -b feature");
+    writeFileSync(join(worktree, "pin.txt"), "v0.3.3\n");
+    runGit(worktree, 'git add pin.txt && git commit -m "feature pin"');
+
+    runGit(worktree, "git checkout main");
+    writeFileSync(join(worktree, "pin.txt"), "v0.3.2\n");
+    runGit(worktree, 'git add pin.txt && git commit -m "main pin"');
+
+    runGit(worktree, "git checkout feature");
+    try {
+      runGit(worktree, "git merge main --no-edit");
+    } catch {
+      // expected conflict
+    }
+
+    writeFileSync(join(worktree, "pin.txt"), "v0.3.3\n");
+    runGit(worktree, "git add pin.txt");
+
+    const committed = await commitAll("fix: merge main into feature");
+    expect(committed).toBe(true);
+
+    const parents = runGit(worktree, "git rev-list --parents -n 1 HEAD").trim();
+    expect(parents.split(" ").length).toBe(3);
+    expect(runGit(worktree, "git show -s --pretty=%s HEAD").trim()).toBe(
+      "fix: merge main into feature",
+    );
+  });
 });
 
 // --- pushBranch retry tests -------------------------------------------------
