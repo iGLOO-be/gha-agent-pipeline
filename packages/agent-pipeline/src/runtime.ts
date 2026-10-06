@@ -1,4 +1,5 @@
 import type { AgentTool } from "@cline/sdk";
+import { createWorkspaceScopedApplyPatchExecutor } from "./cline/workspace-scoped-apply-patch.js";
 import { createWorkspaceScopedEditorExecutor } from "./cline/workspace-scoped-editor.js";
 import { createWorkspaceScopedFileReadExecutor } from "./cline/workspace-file-read.js";
 import { loadClineSdk } from "./cline.js";
@@ -253,6 +254,7 @@ async function runAgentSessionAttempt(
 
     const readFile = await createWorkspaceScopedFileReadExecutor(cwd);
     const editor = await createWorkspaceScopedEditorExecutor(cwd);
+    const applyPatch = await createWorkspaceScopedApplyPatchExecutor(cwd);
     const { createDefaultShellExecutor } = await loadClineSdk();
     const bash = createDefaultShellExecutor({
       timeoutMs: getRunCommandsTimeoutMs(config),
@@ -284,6 +286,7 @@ async function runAgentSessionAttempt(
         toolExecutors: {
           readFile,
           editor,
+          applyPatch,
           bash,
         },
       },
