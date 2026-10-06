@@ -11,6 +11,8 @@ export const OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS = 600_000;
 
 export const OPENROUTER_METADATA_HEADER = "X-OpenRouter-Metadata";
 export const OPENROUTER_METADATA_ENABLED = "enabled";
+export const OPENROUTER_APP_VISIBILITY_HEADER = "X-OpenRouter-App-Visibility";
+export const OPENROUTER_APP_VISIBILITY_HIDDEN = "hidden";
 
 export function getOpenRouterApiKey(): string {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -40,6 +42,7 @@ export function buildOpenRouterHttpHeaders(
   const headers: Record<string, string> = {
     "HTTP-Referer": referer,
     "X-Title": title,
+    [OPENROUTER_APP_VISIBILITY_HEADER]: OPENROUTER_APP_VISIBILITY_HIDDEN,
   };
   if (options?.jevMetadata) {
     headers[OPENROUTER_METADATA_HEADER] = OPENROUTER_METADATA_ENABLED;
