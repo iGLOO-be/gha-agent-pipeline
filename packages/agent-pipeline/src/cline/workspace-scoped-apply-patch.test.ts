@@ -15,31 +15,34 @@ vi.mock("../cline.js", () => ({ loadClineSdk: mockLoadClineSdk }));
 
 import {
   createWorkspaceScopedApplyPatchExecutor,
-  normalizePatchWorkspaceAliases,
+  listPatchHeaderPaths,
+  normalizePatchHeaderPaths,
 } from "./workspace-scoped-apply-patch.js";
 
 const workspaceRoot = "/tmp/gha-agent-apply-patch-checkout";
 
-describe("normalizePatchWorkspaceAliases", () => {
-  it("strips /workspace/ from Add/Update/Delete/Move headers", () => {
+describe("normalizePatchHeaderPaths", () => {
+  it("maps /workspace/, bare leading-slash, and absolute checkout paths into the workspace", () => {
     const patch = [
       "*** Begin Patch",
       "*** Add File: /workspace/src/a.ts",
       "+a",
       "*** Update File: /workspace/src/b.ts",
       "@@",
-      "*** Delete File: /workspace/src/c.ts",
+      "*** Delete File: /src/c.ts",
       "*** Update File: src/d.ts",
       "*** Move to: /workspace/src/e.ts",
+      `*** Update File: ${workspaceRoot}/src/f.ts`,
       "*** End Patch",
     ].join("\n");
 
-    const normalized = normalizePatchWorkspaceAliases(patch);
+    const normalized = normalizePatchHeaderPaths(patch, workspaceRoot);
 
     expect(normalized).toContain("*** Add File: src/a.ts");
     expect(normalized).toContain("*** Update File: src/b.ts");
     expect(normalized).toContain("*** Delete File: src/c.ts");
     expect(normalized).toContain("*** Move to: src/e.ts");
+    expect(normalized).toContain("*** Update File: src/f.ts");
     expect(normalized).not.toContain("/workspace/");
   });
 
@@ -50,7 +53,29 @@ describe("normalizePatchWorkspaceAliases", () => {
       "*** End Patch",
     ].join("\n");
 
-    expect(normalizePatchWorkspaceAliases(patch)).toBe(patch);
+    expect(normalizePatchHeaderPaths(patch, workspaceRoot)).toBe(patch);
+  });
+
+  it("leaves paths that cannot be mapped into the workspace untouched", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Update File: ../outside.ts",
+      "*** End Patch",
+    ].join("\n");
+
+    expect(normalizePatchHeaderPaths(patch, workspaceRoot)).toBe(patch);
+  });
+
+  it("lists patch header paths for friction context", () => {
+    const patch = [
+      "*** Begin Patch",
+      "*** Add File: src/a.ts",
+      "+a",
+      "*** Move to: src/b.ts",
+      "*** End Patch",
+    ].join("\n");
+
+    expect(listPatchHeaderPaths(patch)).toEqual(["src/a.ts", "src/b.ts"]);
   });
 });
 
@@ -84,7 +109,7 @@ describe("createWorkspaceScopedApplyPatchExecutor", () => {
     );
   });
 
-  it("normalises /workspace/ aliases before forwarding the patch", async () => {
+  it("normalises patch header paths before forwarding the patch", async () => {
     mockInnerApplyPatch.mockResolvedValueOnce("applied");
     const applyPatch =
       await createWorkspaceScopedApplyPatchExecutor(workspaceRoot);
@@ -102,7 +127,7 @@ describe("createWorkspaceScopedApplyPatchExecutor", () => {
     );
   });
 
-  it("records runtime/tool_limit friction with an editor hint and rethrows", async () => {
+  it("records runtime/tool_error friction with the patched paths and rethrows", async () => {
     const collector = new RunFrictionCollector();
     setActiveRunFrictionCollector(collector);
     mockInnerApplyPatch.mockRejectedValueOnce(new Error("boom"));
@@ -111,7 +136,7 @@ describe("createWorkspaceScopedApplyPatchExecutor", () => {
 
     await expect(
       applyPatch(
-        { input: "*** Begin Patch\n*** End Patch" },
+        { input: "*** Begin Patch\n*** Update File: /src/a.ts\n*** End Patch" },
         workspaceRoot,
         {} as never,
       ),
@@ -120,9 +145,10 @@ describe("createWorkspaceScopedApplyPatchExecutor", () => {
     expect(collector.noteCount).toBe(1);
     const note = collector.list()[0];
     expect(note.source).toBe("runtime");
-    expect(note.category).toBe("tool_limit");
+    expect(note.category).toBe("tool_error");
     expect(note.summary).toContain("apply_patch: boom");
-    expect(note.mitigation).toContain("editor");
+    expect(note.context).toBe("/src/a.ts");
+    expect(note.mitigation).toContain("workspace-relative");
   });
 
   it("throws a descriptive error when the SDK exposes no applyPatch executor", async () => {

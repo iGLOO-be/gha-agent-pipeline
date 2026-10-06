@@ -254,6 +254,11 @@ async function runAgentSessionAttempt(
 
     const readFile = await createWorkspaceScopedFileReadExecutor(cwd);
     const editor = await createWorkspaceScopedEditorExecutor(cwd);
+    // Cline advertises `apply_patch` only when its preset/model routing enables
+    // it (codex/gpt + openai-native act runs) *and* an `applyPatch` executor is
+    // present — `@cline/core` `createDefaultTools` pushes `editor` when enabled,
+    // otherwise `apply_patch`. Registering the shim keeps the workspace-scoped
+    // implementation in that slot for the runs where Cline disables `editor`.
     const applyPatch = await createWorkspaceScopedApplyPatchExecutor(cwd);
     const { createDefaultShellExecutor } = await loadClineSdk();
     const bash = createDefaultShellExecutor({
