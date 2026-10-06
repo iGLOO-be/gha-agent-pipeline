@@ -14,6 +14,11 @@ import {
   resolveYoloBranchName,
 } from "./git/branch.js";
 import {
+  formatCommitHookRetryPrompt,
+  getCommitHookRetryMaxPasses,
+  runCommitWithHookRetry,
+} from "./git/commit-hook-retry.js";
+import {
   commitAndPushBranch,
   createPullRequest,
   findOpenPullRequestForBranch,
@@ -163,26 +168,46 @@ async function main() {
       ? `\n\nAdditional instructions:\n${userArgs}`
       : "";
 
-    const session = await runAgentSession({
-      phase: cmd.runtimePhase,
-      modelId: cmd.modelId,
-      systemPrompt: cmd.systemPrompt,
-      tools,
-      runFriction,
-      sessionMetadata: {
-        phase: cmd.runtimePhase,
-        commandId: cmd.commandId,
-        issueNumber: env.ISSUE_NUMBER,
-        repository: env.GITHUB_REPOSITORY,
-        branch,
-      },
-      prompt: `Implement issue #${env.ISSUE_NUMBER}: ${issue.title}
+    const yoloInitialPrompt = `Implement issue #${env.ISSUE_NUMBER}: ${issue.title}
 
 Issue body (implementation instructions):
 ${issue.body ?? "(empty)"}
 
 Repository: ${env.GITHUB_REPOSITORY}
-Branch: ${branch}${extraArgsBlock}`,
+Branch: ${branch}${extraArgsBlock}`;
+
+    const runYoloSession = (prompt: string, commitHookRetry?: number) =>
+      runAgentSession({
+        phase: cmd.runtimePhase,
+        modelId: cmd.modelId,
+        systemPrompt: cmd.systemPrompt,
+        tools,
+        runFriction,
+        sessionMetadata: {
+          phase: cmd.runtimePhase,
+          commandId: cmd.commandId,
+          issueNumber: env.ISSUE_NUMBER,
+          repository: env.GITHUB_REPOSITORY,
+          branch,
+          ...(commitHookRetry != null ? { commitHookRetry } : {}),
+        },
+        prompt,
+      });
+
+    let session = await runYoloSession(yoloInitialPrompt);
+
+    const commitSubject = `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
+    const hookMaxPasses = getCommitHookRetryMaxPasses();
+
+    const pushResult = await runCommitWithHookRetry({
+      maxPasses: hookMaxPasses,
+      commit: () => commitAndPushBranch(branch, commitSubject),
+      relaunchForHookFailure: async (hookLog, retryIndex) => {
+        session = await runYoloSession(
+          formatCommitHookRetryPrompt(hookLog),
+          retryIndex,
+        );
+      },
     });
 
     appendRunFrictionStepSummary(runFriction, "yolo");
@@ -195,11 +220,6 @@ Branch: ${branch}${extraArgsBlock}`,
     const { riskLevel, riskJustification } = resolveYoloRiskAssessment(
       phaseReport,
       session.outputText,
-    );
-
-    const pushResult = await commitAndPushBranch(
-      branch,
-      `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`,
     );
 
     if (pushResult.status === "noChanges") {

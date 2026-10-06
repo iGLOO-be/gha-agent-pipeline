@@ -9,6 +9,11 @@ import {
   prepareCommandRuntime,
 } from "./command-runtime.js";
 import { branchName, createAndCheckoutBranch } from "./git/branch.js";
+import {
+  formatCommitHookRetryPrompt,
+  getCommitHookRetryMaxPasses,
+  runCommitWithHookRetry,
+} from "./git/commit-hook-retry.js";
 import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
 import { reportPhaseFailure } from "./report-failure.js";
@@ -88,20 +93,7 @@ async function main() {
       ? `\n\nAdditional instructions:\n${userArgs}`
       : "";
 
-    const session = await runAgentSession({
-      phase: cmd.runtimePhase,
-      modelId: cmd.modelId,
-      systemPrompt: cmd.systemPrompt,
-      tools,
-      runFriction,
-      sessionMetadata: {
-        phase: cmd.runtimePhase,
-        commandId: cmd.commandId,
-        issueNumber: env.ISSUE_NUMBER,
-        repository: env.GITHUB_REPOSITORY,
-        branch,
-      },
-      prompt: `Implement issue #${env.ISSUE_NUMBER}: ${issue.title}
+    const implementInitialPrompt = `Implement issue #${env.ISSUE_NUMBER}: ${issue.title}
 
 Issue body:
 ${issue.body ?? "(empty)"}
@@ -110,7 +102,49 @@ Approved plan:
 ${plan ?? "(no plan comment — proceed from issue only)"}
 
 Repository: ${env.GITHUB_REPOSITORY}
-Branch: ${branch}${extraArgsBlock}`,
+Branch: ${branch}${extraArgsBlock}`;
+
+    const runImplementSession = (prompt: string, commitHookRetry?: number) =>
+      runAgentSession({
+        phase: cmd.runtimePhase,
+        modelId: cmd.modelId,
+        systemPrompt: cmd.systemPrompt,
+        tools,
+        runFriction,
+        sessionMetadata: {
+          phase: cmd.runtimePhase,
+          commandId: cmd.commandId,
+          issueNumber: env.ISSUE_NUMBER,
+          repository: env.GITHUB_REPOSITORY,
+          branch,
+          ...(commitHookRetry != null ? { commitHookRetry } : {}),
+        },
+        prompt,
+      });
+
+    let session = await runImplementSession(implementInitialPrompt);
+
+    const commitSubject =
+      cmd.resolved.git?.commit_subject ??
+      `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
+
+    const hookMaxPasses = getCommitHookRetryMaxPasses();
+
+    await runCommitWithHookRetry({
+      maxPasses: hookMaxPasses,
+      commit: async () => {
+        const committed = await commitAll(commitSubject);
+        if (!committed) {
+          throw new Error("No changes were made by the implement agent.");
+        }
+        await pushBranch(branch);
+      },
+      relaunchForHookFailure: async (hookLog, retryIndex) => {
+        session = await runImplementSession(
+          formatCommitHookRetryPrompt(hookLog),
+          retryIndex,
+        );
+      },
     });
 
     appendRunFrictionStepSummary(runFriction, "implement");
@@ -119,17 +153,6 @@ Branch: ${branch}${extraArgsBlock}`,
     const phaseReportMarkdown = phaseReport
       ? formatPhaseReportForPr(phaseReport)
       : undefined;
-
-    const commitSubject =
-      cmd.resolved.git?.commit_subject ??
-      `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
-
-    const committed = await commitAll(commitSubject);
-    if (!committed) {
-      throw new Error("No changes were made by the implement agent.");
-    }
-
-    await pushBranch(branch);
 
     if (cmd.resolved.git?.skip_pr) {
       console.log("\nSkipping PR creation (commands.git.skip_pr).");

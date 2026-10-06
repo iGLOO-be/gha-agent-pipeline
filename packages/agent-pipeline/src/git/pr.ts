@@ -28,9 +28,23 @@ export async function commitAll(message: string): Promise<boolean> {
 
   const commit = await runShell(`git commit -m ${JSON.stringify(message)}`);
   if (commit.exitCode !== 0) {
-    throw new Error(`git commit failed: ${commit.stderr}`);
+    const hookOutput = [commit.stderr, commit.stdout]
+      .filter(Boolean)
+      .join("\n");
+    throw new GitCommitError(hookOutput);
   }
   return true;
+}
+
+export class GitCommitError extends Error {
+  readonly hookOutput: string;
+
+  constructor(hookOutput: string) {
+    const trimmed = hookOutput.trim();
+    super(`git commit failed: ${trimmed}`);
+    this.name = "GitCommitError";
+    this.hookOutput = hookOutput;
+  }
 }
 
 const NETWORK_ERROR_PATTERN =

@@ -10,6 +10,11 @@ import {
   applyCommandGithubTools,
   prepareCommandRuntime,
 } from "./command-runtime.js";
+import {
+  formatCommitHookRetryPrompt,
+  getCommitHookRetryMaxPasses,
+  runCommitWithHookRetry,
+} from "./git/commit-hook-retry.js";
 import { commitAndPushBranch } from "./git/pr.js";
 import {
   assertLocalMergeResolved,
@@ -243,6 +248,7 @@ export async function runFixPhase(
 
     const runFriction = createRunFrictionCollector();
     const maxPasses = getUpstreamDriftMaxPasses();
+    const hookMaxPasses = getCommitHookRetryMaxPasses();
 
     for (let pass = 0; pass < maxPasses; pass++) {
       if (pass > 0) {
@@ -319,7 +325,7 @@ export async function runFixPhase(
 `
           : "";
 
-      const session = await runAgentSession({
+      let session = await runAgentSession({
         phase: cmd.runtimePhase,
         modelId: cmd.modelId,
         systemPrompt: cmd.systemPrompt,
@@ -386,13 +392,11 @@ Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
       });
 
-      const phaseReport = phaseReportTracker.report;
-
       const buildFixComment = (body: string): string => {
         const completion = formatPhaseCompletionMarkdown({
           phase: entry,
           statusLine: body,
-          phaseReport,
+          phaseReport: phaseReportTracker.report,
           sessionUsage: session.usage,
           sessionId: session.sessionId,
           modelId: session.modelId,
@@ -405,17 +409,49 @@ Branch: ${env.AGENT_BRANCH}`,
         return `<!-- ${fixCommentMarker(entry)} -->\n${completion}`;
       };
 
-      await prepareResolvedMergeForCommit();
+      const pushResult = await runCommitWithHookRetry({
+        maxPasses: hookMaxPasses,
+        commit: async () => {
+          await prepareResolvedMergeForCommit();
+          return commitAndPushBranch(
+            env.AGENT_BRANCH,
+            resolveAgentCommitMessage(
+              phaseReportTracker.report,
+              pass > 0
+                ? syncCommitSubject(
+                    entry,
+                    config.git.base_branch,
+                    env.PR_NUMBER,
+                  )
+                : defaultCommitSubject(entry, env.PR_NUMBER),
+            ),
+          );
+        },
+        relaunchForHookFailure: async (hookLog, retryIndex) => {
+          session = await runAgentSession({
+            phase: cmd.runtimePhase,
+            modelId: cmd.modelId,
+            systemPrompt: cmd.systemPrompt,
+            tools,
+            runFriction,
+            sessionMetadata: {
+              phase: cmd.runtimePhase,
+              commandId: cmd.commandId,
+              issueNumber: env.ISSUE_NUMBER,
+              prNumber: env.PR_NUMBER,
+              headSha,
+              repository: env.GITHUB_REPOSITORY,
+              upstreamDriftPass: pass,
+              commitHookRetry: retryIndex,
+            },
+            prompt: `${formatCommitHookRetryPrompt(hookLog)}
 
-      const pushResult = await commitAndPushBranch(
-        env.AGENT_BRANCH,
-        resolveAgentCommitMessage(
-          phaseReport,
-          pass > 0
-            ? syncCommitSubject(entry, config.git.base_branch, env.PR_NUMBER)
-            : defaultCommitSubject(entry, env.PR_NUMBER),
-        ),
-      );
+Repository: ${env.GITHUB_REPOSITORY}
+Branch: ${env.AGENT_BRANCH}
+PR #${env.PR_NUMBER}`,
+          });
+        },
+      });
 
       // Only the first pass can legitimately complete with "already synced".
       // On a drift-retry pass the branch was already pushed, so we must still
