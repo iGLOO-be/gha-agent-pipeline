@@ -307,6 +307,69 @@ export async function readCheckRuns(
 }
 
 const MAX_LOG_CHARS = 80_000;
+const ACTIONS_JOB_ID_FROM_DETAILS_URL = /\/actions\/runs\/\d+\/job\/(\d+)\b/;
+
+/** GitHub Actions job id for workflow log download (not check run external_id UUID). */
+export function resolveActionsJobIdFromCheckRun(run: {
+  external_id?: string | null;
+  details_url?: string | null;
+}): number | null {
+  const detailsUrl = run.details_url;
+  if (detailsUrl) {
+    const match = ACTIONS_JOB_ID_FROM_DETAILS_URL.exec(detailsUrl);
+    if (match) {
+      const jobId = Number.parseInt(match[1], 10);
+      if (Number.isFinite(jobId)) {
+        return jobId;
+      }
+    }
+  }
+
+  const externalId = run.external_id;
+  if (externalId && /^\d+$/.test(externalId)) {
+    const jobId = Number.parseInt(externalId, 10);
+    if (Number.isFinite(jobId)) {
+      return jobId;
+    }
+  }
+
+  return null;
+}
+
+function hasCheckRunOutput(run: {
+  output?: {
+    title?: string | null;
+    summary?: string | null;
+    text?: string | null;
+  };
+}): boolean {
+  return Boolean(run.output?.title || run.output?.summary || run.output?.text);
+}
+
+async function formatCheckRunAnnotations(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  checkRunId: number,
+): Promise<string | null> {
+  const { data: annotations } = await octokit.checks.listAnnotations({
+    owner,
+    repo,
+    check_run_id: checkRunId,
+    per_page: 50,
+  });
+  if (annotations.length === 0) {
+    return null;
+  }
+  const lines = annotations.map((a) => {
+    const loc =
+      a.path && a.start_line != null
+        ? `${a.path}:${a.start_line}`
+        : (a.path ?? "?");
+    return `- ${loc}: ${a.message ?? "(no message)"}`;
+  });
+  return `annotations:\n${lines.join("\n")}`;
+}
 
 export async function readCheckLogs(
   octokit: Octokit,
@@ -331,30 +394,45 @@ export async function readCheckLogs(
     chunks.push(`text:\n${run.output.text}`);
   }
 
-  const externalId = run.external_id;
-  if (externalId) {
+  if (!hasCheckRunOutput(run)) {
     try {
-      const jobId = Number.parseInt(externalId, 10);
-      if (Number.isFinite(jobId)) {
-        const { data: job } = await octokit.actions.getJobForWorkflowRun({
-          owner,
-          repo,
-          job_id: jobId,
-        });
-        const logs = await octokit.actions.downloadJobLogsForWorkflowRun({
-          owner,
-          repo,
-          job_id: jobId,
-        });
-        const payload = logs.data as string | Blob;
-        const logText =
-          typeof payload === "string" ? payload : await payload.text();
-        chunks.push(
-          `job: ${job.name} (workflow_run ${job.run_id})\nlogs:\n${logText}`,
-        );
+      const annotationText = await formatCheckRunAnnotations(
+        octokit,
+        owner,
+        repo,
+        checkRunId,
+      );
+      if (annotationText) {
+        chunks.push(annotationText);
       }
     } catch {
-      // Fall back to check run output only.
+      // Annotations are optional context.
+    }
+  }
+
+  const jobId = resolveActionsJobIdFromCheckRun(run);
+  if (jobId != null) {
+    try {
+      const { data: job } = await octokit.actions.getJobForWorkflowRun({
+        owner,
+        repo,
+        job_id: jobId,
+      });
+      const logs = await octokit.actions.downloadJobLogsForWorkflowRun({
+        owner,
+        repo,
+        job_id: jobId,
+      });
+      const payload = logs.data as string | Blob;
+      const logText =
+        typeof payload === "string" ? payload : await payload.text();
+      chunks.push(
+        `job: ${job.name} (workflow_run ${job.run_id})\nlogs:\n${logText}`,
+      );
+    } catch {
+      chunks.push(
+        `(workflow job logs unavailable for job_id=${jobId}; see details_url on the check run)`,
+      );
     }
   }
 

@@ -38,7 +38,9 @@ import {
   parseRiskLevel,
   stripRiskScoreSection,
   prependAgentMarker,
+  readCheckLogs,
   readComments,
+  resolveActionsJobIdFromCheckRun,
   unescapeToolString,
 } from "./github.js";
 
@@ -996,6 +998,133 @@ describe("tools/github", () => {
       );
       expect(result.id).toBe(12);
       expect(events).toEqual(["REQUEST_CHANGES", "COMMENT"]);
+    });
+  });
+
+  describe("resolveActionsJobIdFromCheckRun", () => {
+    it("parses job id from GitHub Actions details_url", () => {
+      expect(
+        resolveActionsJobIdFromCheckRun({
+          external_id: "b0dda418-8ffb-5531-b70e-f0959510f88e",
+          details_url:
+            "https://github.com/Foldio/foldio-app/actions/runs/37442588442/job/112199676889",
+        }),
+      ).toBe(112199676889);
+    });
+
+    it("does not treat UUID external_id prefixes as job ids", () => {
+      expect(
+        resolveActionsJobIdFromCheckRun({
+          external_id: "1effff95-d1a0-5895-b35f-83fc643eb70e",
+          details_url: null,
+        }),
+      ).toBeNull();
+      expect(
+        resolveActionsJobIdFromCheckRun({
+          external_id: "3339339f-3939-5063-a1e4-78b0bea2e605",
+          details_url: null,
+        }),
+      ).toBeNull();
+    });
+
+    it("accepts numeric external_id when entire string is digits", () => {
+      expect(
+        resolveActionsJobIdFromCheckRun({
+          external_id: "12345",
+          details_url: null,
+        }),
+      ).toBe(12345);
+    });
+  });
+
+  describe("readCheckLogs", () => {
+    it("downloads workflow logs using job id from details_url", async () => {
+      const octokit = {
+        checks: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              external_id: "b0dda418-8ffb-5531-b70e-f0959510f88e",
+              details_url: "https://github.com/o/r/actions/runs/1/job/999",
+              output: { summary: "failed" },
+            },
+          }),
+          listAnnotations: vi.fn(),
+        },
+        actions: {
+          getJobForWorkflowRun: vi.fn().mockResolvedValue({
+            data: { name: "ci", run_id: 1 },
+          }),
+          downloadJobLogsForWorkflowRun: vi.fn().mockResolvedValue({
+            data: "log line one",
+          }),
+        },
+      } as unknown as Octokit;
+
+      const text = await readCheckLogs(octokit, "o", "r", 42);
+      expect(octokit.actions.getJobForWorkflowRun).toHaveBeenCalledWith({
+        owner: "o",
+        repo: "r",
+        job_id: 999,
+      });
+      expect(text).toContain("log line one");
+      expect(octokit.checks.listAnnotations).not.toHaveBeenCalled();
+    });
+
+    it("includes annotations when check output is empty", async () => {
+      const octokit = {
+        checks: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              external_id: "uuid",
+              details_url: null,
+              output: {},
+            },
+          }),
+          listAnnotations: vi.fn().mockResolvedValue({
+            data: [
+              {
+                path: ".github",
+                start_line: 3,
+                message: "Something failed",
+              },
+            ],
+          }),
+        },
+        actions: {
+          getJobForWorkflowRun: vi.fn(),
+          downloadJobLogsForWorkflowRun: vi.fn(),
+        },
+      } as unknown as Octokit;
+
+      const text = await readCheckLogs(octokit, "o", "r", 7);
+      expect(text).toContain("annotations:");
+      expect(text).toContain(".github:3");
+      expect(text).toContain("Something failed");
+    });
+
+    it("returns a fallback note when job log download fails", async () => {
+      const octokit = {
+        checks: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              external_id: "99",
+              details_url: "https://github.com/o/r/actions/runs/1/job/99",
+              output: { summary: "failed" },
+            },
+          }),
+          listAnnotations: vi.fn(),
+        },
+        actions: {
+          getJobForWorkflowRun: vi
+            .fn()
+            .mockRejectedValue(new Error("Not Found")),
+          downloadJobLogsForWorkflowRun: vi.fn(),
+        },
+      } as unknown as Octokit;
+
+      const text = await readCheckLogs(octokit, "o", "r", 1);
+      expect(text).toContain("summary:");
+      expect(text).toContain("workflow job logs unavailable for job_id=99");
     });
   });
 
