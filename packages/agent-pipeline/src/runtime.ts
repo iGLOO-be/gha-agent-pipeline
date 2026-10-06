@@ -20,7 +20,10 @@ import {
 } from "./llm/gateway.js";
 import {
   type JevRouterRequestContext,
+  isJevRouterFallbackOnExhaustionEnabled,
+  resolveDirectOpenRouterModel,
   resolveOpenRouterModelForPhase,
+  type OpenRouterModelResolution,
 } from "./llm/jev-router.js";
 import {
   createSessionLogger,
@@ -46,6 +49,7 @@ import {
   type ProviderErrorInfo,
   resolvePhaseModel,
   SESSION_CONTINUE_USER_PROMPT,
+  shouldFallbackFromJevRouter,
   sleep,
 } from "./session-retry.js";
 
@@ -463,11 +467,9 @@ export async function runAgentSession(
 ): Promise<AgentSessionResult> {
   const resolvedSlug = resolvePhaseModel(input.phase, input.modelId);
   const config = loadAgentConfig();
-  const openRouterModel = resolveOpenRouterModelForPhase(
-    input.phase,
-    resolvedSlug,
-    config,
-  );
+  let openRouterModel: OpenRouterModelResolution =
+    resolveOpenRouterModelForPhase(input.phase, resolvedSlug, config);
+  let jevExhaustionFallbackUsed = false;
   const maxAttempts = getSessionMaxAttempts();
   const baseDelayMs = getSessionRetryBaseDelayMs();
   let lastError: AgentSessionError | undefined;
@@ -510,6 +512,22 @@ export async function runAgentSession(
         console.warn(
           `[session] attempt ${attempt}/${maxAttempts} failed (${error.finishReason}): ${error.message}`,
         );
+        if (
+          shouldFallbackFromJevRouter({
+            providerMessage: error.providerError?.message,
+            jevActive: openRouterModel.jevContext !== undefined,
+            fallbackUsed: jevExhaustionFallbackUsed,
+            fallbackEnabled: isJevRouterFallbackOnExhaustionEnabled(config),
+          })
+        ) {
+          jevExhaustionFallbackUsed = true;
+          openRouterModel = resolveDirectOpenRouterModel(resolvedSlug);
+          console.warn(
+            `[session] jev-router exhausted; falling back to phase model ${resolvedSlug}`,
+          );
+          attempt -= 1;
+          continue;
+        }
         if (!error.retriable || attempt === maxAttempts) {
           throw error;
         }

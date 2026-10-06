@@ -7,9 +7,13 @@ export type ProviderErrorInfo = {
   message: string;
 };
 
-const NON_RETRIABLE_PROVIDER_ERROR_PATTERNS = [
+const JEV_ROUTER_ADMISSION_FAILURE_PATTERNS = [
   /no model left by the jev-router/i,
   /no model admitted/i,
+] as const;
+
+const NON_RETRIABLE_PROVIDER_ERROR_PATTERNS = [
+  ...JEV_ROUTER_ADMISSION_FAILURE_PATTERNS,
   /no models? (?:are )?available/i,
   /no endpoints? found/i,
   /model not found/i,
@@ -18,6 +22,27 @@ const NON_RETRIABLE_PROVIDER_ERROR_PATTERNS = [
 ] as const;
 
 export type ProviderErrorClass = "non-retriable" | "transient";
+
+export function isJevRouterAdmissionFailure(message?: string | null): boolean {
+  if (!message?.trim()) {
+    return false;
+  }
+  return JEV_ROUTER_ADMISSION_FAILURE_PATTERNS.some((pattern) =>
+    pattern.test(message),
+  );
+}
+
+export function shouldFallbackFromJevRouter(input: {
+  providerMessage?: string | null;
+  jevActive: boolean;
+  fallbackUsed: boolean;
+  fallbackEnabled: boolean;
+}): boolean {
+  if (!input.fallbackEnabled || input.fallbackUsed || !input.jevActive) {
+    return false;
+  }
+  return isJevRouterAdmissionFailure(input.providerMessage);
+}
 
 export function isNonRetriableProviderError(message?: string | null): boolean {
   if (!message?.trim()) {

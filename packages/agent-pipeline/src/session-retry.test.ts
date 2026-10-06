@@ -3,6 +3,8 @@ import { IMPLEMENT_MODEL, REVIEW_FIX_MODEL } from "./config.js";
 import {
   AgentSessionError,
   classifyProviderError,
+  isJevRouterAdmissionFailure,
+  shouldFallbackFromJevRouter,
   getSessionContinueMaxAttempts,
   getSessionMaxAttempts,
   getSessionRetryBaseDelayMs,
@@ -169,6 +171,55 @@ describe("session-retry", () => {
         },
       });
       expect(err.retriable).toBe(false);
+    });
+  });
+
+  describe("isJevRouterAdmissionFailure", () => {
+    it("detects Jev admission failures", () => {
+      expect(
+        isJevRouterAdmissionFailure(
+          "No model left by the jev-router model lists is admitted for this request",
+        ),
+      ).toBe(true);
+    });
+
+    it("ignores unrelated messages", () => {
+      expect(isJevRouterAdmissionFailure("rate limit exceeded")).toBe(false);
+    });
+  });
+
+  describe("shouldFallbackFromJevRouter", () => {
+    const admissionMessage =
+      "No model left by the jev-router model lists is admitted for this request";
+
+    it("requests fallback when jev is active and admission fails", () => {
+      expect(
+        shouldFallbackFromJevRouter({
+          providerMessage: admissionMessage,
+          jevActive: true,
+          fallbackUsed: false,
+          fallbackEnabled: true,
+        }),
+      ).toBe(true);
+    });
+
+    it("skips when fallback already used or jev inactive", () => {
+      expect(
+        shouldFallbackFromJevRouter({
+          providerMessage: admissionMessage,
+          jevActive: true,
+          fallbackUsed: true,
+          fallbackEnabled: true,
+        }),
+      ).toBe(false);
+      expect(
+        shouldFallbackFromJevRouter({
+          providerMessage: admissionMessage,
+          jevActive: false,
+          fallbackUsed: false,
+          fallbackEnabled: true,
+        }),
+      ).toBe(false);
     });
   });
 

@@ -250,6 +250,11 @@
               "description": "Exclude list (never ignored by OpenRouter).",
               "default": []
             },
+            "fallback_to_phase_model_on_exhaustion": {
+              "type": "boolean",
+              "description": "When true, restart the session on the phase models.<phase> slug if Jev Router reports no admitted models remain.",
+              "default": true
+            },
             "phases": {
               "type": "object",
               "description": "Per-phase Jev Router overrides (enabled flag and optional pool lists).",
