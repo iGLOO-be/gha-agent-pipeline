@@ -128,7 +128,7 @@ describe("workspace-scoped-editor insert_line recovery", () => {
     await rm(workspaceRoot, { recursive: true, force: true });
   });
 
-  it("clamps EOF off-by-one insert_line before calling Cline", async () => {
+  it("passes through a valid EOF append insert_line before calling Cline", async () => {
     mockInnerEditor.mockResolvedValueOnce({
       success: true,
       query: "edit:two-lines.txt",
@@ -144,7 +144,31 @@ describe("workspace-scoped-editor insert_line recovery", () => {
 
     expect(result.success).toBe(true);
     expect(mockInnerEditor).toHaveBeenCalledTimes(1);
-    expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(2);
+    // 3 is Cline's max for this file, i.e. the documented EOF append.
+    expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(3);
+  });
+
+  it("allows insert_line 1 on an empty existing file", async () => {
+    const emptyFile = path.join(workspaceRoot, "empty.txt");
+    const fh = await open(emptyFile, "w");
+    await fh.close();
+    mockInnerEditor.mockResolvedValueOnce({
+      success: true,
+      query: "edit:empty.txt",
+      result: "ok",
+      error: "",
+    });
+
+    const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
+    const result = await editor(
+      { path: "empty.txt", insert_line: 1, new_text: "first line\n" },
+      workspaceRoot,
+      {} as never,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockInnerEditor).toHaveBeenCalledTimes(1);
+    expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(1);
   });
 
   it("returns recovery for stale insert_line without recording friction", async () => {
@@ -159,7 +183,9 @@ describe("workspace-scoped-editor insert_line recovery", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("1–2");
+    expect(result.error).toContain("1–3");
+    expect(result.error).toContain("insert_line: 3");
+    expect(result.error).not.toContain(workspaceRoot);
     expect(mockInnerEditor).not.toHaveBeenCalled();
     expect(collector.noteCount).toBe(0);
   });
@@ -171,7 +197,7 @@ describe("workspace-scoped-editor insert_line recovery", () => {
         query: "edit:two-lines.txt",
         result: "",
         error:
-          "Invalid insert_line: 3. insert_line must be a positive one-based boundary line in the range 1-2. Use 2 to append at EOF.",
+          "Invalid insert_line: 4. insert_line must be a positive one-based boundary line in the range 1-3. Use 3 to append at EOF.",
       })
       .mockResolvedValueOnce({
         success: true,
@@ -182,13 +208,15 @@ describe("workspace-scoped-editor insert_line recovery", () => {
 
     const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
     const result = await editor(
-      { path: "two-lines.txt", insert_line: 2, new_text: "appended\n" },
+      { path: "two-lines.txt", insert_line: 4, new_text: "appended\n" },
       workspaceRoot,
       {} as never,
     );
 
     expect(result.success).toBe(true);
     expect(mockInnerEditor).toHaveBeenCalledTimes(2);
-    expect(mockInnerEditor.mock.calls[1][0].insert_line).toBe(2);
+    // First attempt passes through unchanged; retry uses Cline's EOF line.
+    expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(4);
+    expect(mockInnerEditor.mock.calls[1][0].insert_line).toBe(3);
   });
 });

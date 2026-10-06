@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  countEditorFileLines,
   invalidInsertLineRecoveryMessage,
   isInvalidInsertLineEditorError,
-  normalizeInsertLineForFile,
+  maxInsertLineForFile,
   parseInvalidInsertLineError,
+  resolveInsertLineForCline,
 } from "./editor-insert-line-recovery.js";
 
 const FOLDIO_ERROR =
@@ -31,34 +31,45 @@ describe("editor-insert-line-recovery", () => {
     });
   });
 
-  describe("countEditorFileLines", () => {
-    it("counts lines without trailing newline", () => {
-      expect(countEditorFileLines("a\nb")).toBe(2);
+  describe("maxInsertLineForFile", () => {
+    it("matches Cline's bound (newlineCount + 2) without a trailing newline", () => {
+      expect(maxInsertLineForFile("a\nb")).toBe(3);
     });
 
-    it("counts lines with trailing newline", () => {
-      expect(countEditorFileLines("a\nb\n")).toBe(2);
+    it("matches Cline's bound with a trailing newline", () => {
+      expect(maxInsertLineForFile("a\nb\n")).toBe(4);
     });
 
-    it("returns 0 for empty file", () => {
-      expect(countEditorFileLines("")).toBe(0);
+    it("accepts 1..2 for an empty file", () => {
+      expect(maxInsertLineForFile("")).toBe(2);
+    });
+
+    it("matches Cline's bound for a single line", () => {
+      expect(maxInsertLineForFile("a")).toBe(2);
     });
   });
 
-  describe("normalizeInsertLineForFile", () => {
-    it("clamps EOF off-by-one", () => {
-      expect(normalizeInsertLineForFile(236, 235)).toBe(235);
-      expect(normalizeInsertLineForFile(21, 20)).toBe(20);
+  describe("resolveInsertLineForCline", () => {
+    it("does not rewrite a valid EOF append (lineCount + 1)", () => {
+      // Cline accepts 1..3 for "line one\nline two"; 3 appends at EOF.
+      expect(resolveInsertLineForCline(3, 3)).toBe(3);
+      expect(resolveInsertLineForCline(2, 3)).toBe(2);
+    });
+
+    it("passes through the out-of-range off-by-one so the SDK retry can fix it", () => {
+      expect(resolveInsertLineForCline(4, 3)).toBe(4);
     });
 
     it("passes through in-range values", () => {
-      expect(normalizeInsertLineForFile(10, 235)).toBe(10);
-      expect(normalizeInsertLineForFile(235, 235)).toBe(235);
+      expect(resolveInsertLineForCline(10, 235)).toBe(10);
+      expect(resolveInsertLineForCline(235, 235)).toBe(235);
+      expect(resolveInsertLineForCline(1, 2)).toBe(1);
     });
 
     it("returns null for stale out-of-range values", () => {
-      expect(normalizeInsertLineForFile(95, 92)).toBeNull();
-      expect(normalizeInsertLineForFile(193, 184)).toBeNull();
+      expect(resolveInsertLineForCline(95, 92)).toBeNull();
+      expect(resolveInsertLineForCline(193, 184)).toBeNull();
+      expect(resolveInsertLineForCline(5, 3)).toBeNull();
     });
   });
 
@@ -68,6 +79,12 @@ describe("editor-insert-line-recovery", () => {
       expect(msg).toContain("1–92");
       expect(msg).toContain("insert_line: 92");
       expect(msg).toContain("re-read");
+    });
+
+    it("reports Cline's bound for an empty existing file", () => {
+      const msg = invalidInsertLineRecoveryMessage("empty.txt", 5, 2);
+      expect(msg).toContain("1–2");
+      expect(msg).toContain("insert_line: 2");
     });
   });
 });

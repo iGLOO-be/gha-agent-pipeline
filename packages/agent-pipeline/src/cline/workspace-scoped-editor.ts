@@ -1,11 +1,11 @@
 import { access, readFile } from "node:fs/promises";
 import { loadClineSdk } from "../cline.js";
 import {
-  countEditorFileLines,
   invalidInsertLineRecoveryMessage,
   isInvalidInsertLineEditorError,
-  normalizeInsertLineForFile,
+  maxInsertLineForFile,
   parseInvalidInsertLineError,
+  resolveInsertLineForCline,
 } from "./editor-insert-line-recovery.js";
 import {
   isMissingOldTextEditorError,
@@ -57,20 +57,26 @@ function editorFailureResult(displayPath: string, error: string) {
 
 async function resolveInsertLineForExistingFile(
   resolvedPath: string,
+  displayPath: string,
   insertLine: number,
 ): Promise<{ ok: true; insertLine: number } | { ok: false; recovery: string }> {
-  const content = await readFile(resolvedPath, "utf8");
-  const lineCount = countEditorFileLines(content);
-  const normalized = normalizeInsertLineForFile(insertLine, lineCount);
-  if (normalized !== null) {
-    return { ok: true, insertLine: normalized };
+  const content = await readFile(resolvedPath, "utf8").catch(() => null);
+  if (content === null) {
+    // Directory, or file removed between access() and read(): let Cline own the
+    // resulting error instead of throwing out of the executor.
+    return { ok: true, insertLine };
+  }
+  const maxLine = maxInsertLineForFile(content);
+  const resolvedInsertLine = resolveInsertLineForCline(insertLine, maxLine);
+  if (resolvedInsertLine !== null) {
+    return { ok: true, insertLine: resolvedInsertLine };
   }
   return {
     ok: false,
     recovery: invalidInsertLineRecoveryMessage(
-      resolvedPath,
+      displayPath,
       insertLine,
-      lineCount,
+      maxLine,
     ),
   };
 }
@@ -106,7 +112,7 @@ function shouldRetryInvalidInsertLineAtEof(toolError: string): number | null {
  *
  * - **Paths** — resolve `read_files` / `editor` paths against the checkout root.
  * - **Missing `old_text`** — clearer errors (`editor-old-text-recovery.ts`).
- * - **`insert_line` bounds** — EOF off-by-one clamp + recovery (`editor-insert-line-recovery.ts`).
+ * - **`insert_line` bounds** — Cline-derived clamp + recovery (`editor-insert-line-recovery.ts`).
  * - **6000-char tool args** — bypass + recovery (`editor-size-recovery.ts`); see
  *   that module’s file comment for background and when to remove the workaround.
  * - **Run friction** — record non-fatal editor failures for phase summaries.
@@ -155,6 +161,7 @@ export async function createWorkspaceScopedEditorExecutor(
       const insertLine = normalizedInput.insert_line as number;
       const resolved = await resolveInsertLineForExistingFile(
         resolvedPath,
+        displayPath,
         insertLine,
       );
       if (!resolved.ok) {

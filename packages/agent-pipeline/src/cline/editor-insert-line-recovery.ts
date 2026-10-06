@@ -1,7 +1,13 @@
 /**
- * Cline `editor` rejects `insert_line` outside `1..lineCount` on existing files.
- * Models often pass `lineCount + 1` when appending at EOF, or stale line numbers
- * after incremental inserts. See `workspace-scoped-editor.ts`.
+ * Cline `editor` bounds `insert_line` on existing files.
+ *
+ * The installed `@cline/core` implementation does
+ * `content.split(/\r\n|\n/).length + 1` and rejects anything outside
+ * `1..max`, where `max === newlineCount + 2`. That maximum is also the value
+ * that *appends at EOF* (`line_count + 1` relative to what `read_files` shows),
+ * which is exactly the value Cline's own tool description recommends. Models
+ * still sometimes pass stale line numbers after incremental inserts. See
+ * `workspace-scoped-editor.ts`.
  */
 
 const INVALID_INSERT_LINE_RE =
@@ -34,36 +40,37 @@ export function parseInvalidInsertLineError(
   };
 }
 
-/** Line count for Cline `insert_line` bounds (1..count inclusive for EOF). */
-export function countEditorFileLines(content: string): number {
-  if (content.length === 0) {
-    return 0;
-  }
+/**
+ * Cline's `insert_line` bound for a file: `newlineCount + 2`
+ * (`content.split(/\r\n|\n/).length + 1`). This is the largest accepted value
+ * and the one that appends at EOF. Returns 2 for an empty file (Cline accepts
+ * `1..2` there).
+ */
+export function maxInsertLineForFile(content: string): number {
   let newlines = 0;
   for (let i = 0; i < content.length; i++) {
-    if (content[i] === "\n") {
+    if (content.charCodeAt(i) === 10) {
       newlines++;
     }
   }
-  if (content.endsWith("\n")) {
-    return newlines;
-  }
-  return newlines + 1;
+  return newlines + 2;
 }
 
 /**
- * Returns corrected `insert_line` when the only issue is EOF off-by-one
- * (`lineCount + 1`). Otherwise `null` (caller should surface recovery).
+ * Decides whether `insert_line` can be handed to Cline unchanged.
+ *
+ * In-range values (`<= maxLine`) always pass through, so a valid EOF append is
+ * never rewritten. `maxLine + 1` (the classic off-by-one) also passes through:
+ * Cline rejects it with its own numbers and the error-driven retry in
+ * `workspace-scoped-editor.ts` recovers the EOF position. Anything higher is a
+ * stale value and returns `null` (caller should surface recovery directly).
  */
-export function normalizeInsertLineForFile(
+export function resolveInsertLineForCline(
   insertLine: number,
-  lineCount: number,
+  maxLine: number,
 ): number | null {
-  if (insertLine <= lineCount) {
+  if (insertLine <= maxLine + 1) {
     return insertLine;
-  }
-  if (lineCount > 0 && insertLine === lineCount + 1) {
-    return lineCount;
   }
   return null;
 }
