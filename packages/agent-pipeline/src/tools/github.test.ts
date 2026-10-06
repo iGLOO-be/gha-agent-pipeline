@@ -646,6 +646,14 @@ describe("tools/github", () => {
     it("returns null for non-agent comments", () => {
       expect(parseInlineReviewCommentSeverity("Please fix.")).toBeNull();
     });
+
+    it("parses severity when the runner added display emojis", () => {
+      expect(
+        parseInlineReviewCommentSeverity(
+          "🐛 _Functional Correctness_ | 🟠 _Major_ | 💬 _Needs discussion_\n\nx",
+        ),
+      ).toBe("major");
+    });
   });
 
   describe("maxInlineReviewSeverity", () => {
@@ -836,6 +844,14 @@ describe("tools/github", () => {
       expect(parseMergeRiskLevel("## Merge risk\n\nHigh — breaking API.")).toBe(
         "high",
       );
+    });
+
+    it("parses merge risk when display emojis are present", () => {
+      expect(
+        parseMergeRiskLevel(
+          "## Merge risk\n\n🟡 **Moderate** — auth path touched.",
+        ),
+      ).toBe("medium");
     });
 
     it("returns null when section is missing", () => {

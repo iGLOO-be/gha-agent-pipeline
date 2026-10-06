@@ -1,4 +1,8 @@
 import type { Octokit } from "@octokit/rest";
+import {
+  decorateCodeReviewBody,
+  decorateInlineReviewCommentBody,
+} from "../code-review-display.js";
 import { loadClineSdk } from "../cline.js";
 import { readCacheValue, writeCacheValue } from "../state/cache.js";
 import {
@@ -635,8 +639,13 @@ export async function createCodeReviewTools(
       body: string;
       comments?: PullRequestReviewCommentInput[];
     }) {
+      const displayBody = decorateCodeReviewBody(input.body);
+      const displayComments = input.comments?.map((comment) => ({
+        ...comment,
+        body: decorateInlineReviewCommentBody(comment.body),
+      }));
       const markedBody = prependAgentMarker(
-        input.body,
+        displayBody,
         AGENT_COMMENT_MARKERS.codeReview,
       );
       const posted = await createPullRequestReview(
@@ -647,7 +656,7 @@ export async function createCodeReviewTools(
         {
           event: input.event,
           body: markedBody,
-          comments: input.comments,
+          comments: displayComments,
         },
       );
       review.posted = true;
