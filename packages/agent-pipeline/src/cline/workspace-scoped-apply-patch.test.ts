@@ -127,7 +127,7 @@ describe("createWorkspaceScopedApplyPatchExecutor", () => {
     );
   });
 
-  it("records runtime/tool_error friction with the patched paths and rethrows", async () => {
+  it("records runtime/tool_error friction with the normalised paths and rethrows a model-visible hint", async () => {
     const collector = new RunFrictionCollector();
     setActiveRunFrictionCollector(collector);
     mockInnerApplyPatch.mockRejectedValueOnce(new Error("boom"));
@@ -140,15 +140,29 @@ describe("createWorkspaceScopedApplyPatchExecutor", () => {
         workspaceRoot,
         {} as never,
       ),
-    ).rejects.toThrow("boom");
+    ).rejects.toThrow("workspace-relative paths");
 
     expect(collector.noteCount).toBe(1);
     const note = collector.list()[0];
     expect(note.source).toBe("runtime");
     expect(note.category).toBe("tool_error");
     expect(note.summary).toContain("apply_patch: boom");
-    expect(note.context).toBe("/src/a.ts");
+    expect(note.context).toBe("src/a.ts");
     expect(note.mitigation).toContain("workspace-relative");
+  });
+
+  it("keeps the original error message in the thrown recovery error", async () => {
+    mockInnerApplyPatch.mockRejectedValueOnce(new Error("boom"));
+    const applyPatch =
+      await createWorkspaceScopedApplyPatchExecutor(workspaceRoot);
+
+    await expect(
+      applyPatch(
+        { input: "*** Begin Patch\n*** End Patch" },
+        workspaceRoot,
+        {} as never,
+      ),
+    ).rejects.toThrow(/^boom — /);
   });
 
   it("throws a descriptive error when the SDK exposes no applyPatch executor", async () => {

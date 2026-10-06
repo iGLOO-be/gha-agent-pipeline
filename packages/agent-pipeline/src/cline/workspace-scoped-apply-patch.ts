@@ -36,7 +36,12 @@
  *   filesystem root) into the checkout, and emits the result workspace-relative
  *   so Cline’s `restrictToCwd` guard still applies.
  * - Record `runtime/tool_error` run friction (sibling `editor` shim category),
- *   including the patched paths as `context`, when patch application throws.
+ *   including the patched paths as `context`, when patch application throws,
+ *   and append the recovery hint to the error message. Cline wraps executor
+ *   throws as `apply_patch failed: <message>` and returns them to the model, so
+ *   extending the message is what changes the model’s next action — friction
+ *   notes alone are only visible in the phase comment, and the model families
+ *   routed here have `editor` disabled.
  *
  * ## Revisit when
  *
@@ -52,6 +57,20 @@ import { resolveWorkspaceFilePath } from "./resolve-workspace-path.js";
 /** Cline patch headers that carry a file path (`@cline/core` `PATCH_MARKERS`). */
 const PATCH_HEADER_PATTERN =
   /^(\*\*\* (?:Add File|Update File|Delete File|Move to): )(.*)$/gm;
+
+/**
+ * Recovery guidance for a failed patch. Used both as run-friction `mitigation`
+ * and appended to the error the model sees (Cline reports executor throws as
+ * `apply_patch failed: <message>` when the tool is routed to `apply_patch`,
+ * which is exactly where `editor` is disabled for that model family).
+ */
+export const APPLY_PATCH_RECOVERY_HINT =
+  "Retry the patch with workspace-relative paths in the *** Add File: / *** Update File: / *** Delete File: / *** Move to: headers; if it still fails, use bash (git mv / patch) or the editor tool when that model has it enabled.";
+
+/** Model-visible error message for a failed patch, including the recovery hint. */
+export function applyPatchRecoveryMessage(errorMessage: string): string {
+  return `${errorMessage} — ${APPLY_PATCH_RECOVERY_HINT}`;
+}
 
 /** Trimmed paths from all patch headers; used for run-friction context. */
 export function listPatchHeaderPaths(patchText: string): string[] {
@@ -130,16 +149,20 @@ export async function createWorkspaceScopedApplyPatchExecutor(
       return await inner(normalizedInput, workspaceRoot, context);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const headerPaths = listPatchHeaderPaths(input.input);
+      // Report the paths actually attempted (post-normalisation) so a reader can
+      // compare them against what Cline resolved on disk.
+      const headerPaths = listPatchHeaderPaths(normalizedInput.input);
       getActiveRunFrictionCollector()?.record({
         source: "runtime",
         category: "tool_error",
         summary: `apply_patch: ${message}`,
         context: headerPaths.length > 0 ? headerPaths.join(", ") : undefined,
-        mitigation:
-          "Retry the patch with workspace-relative paths in the *** Add File: / *** Update File: / *** Delete File: / *** Move to: headers; if it still fails, use bash (git mv / patch) or the editor tool when that model has it enabled.",
+        mitigation: APPLY_PATCH_RECOVERY_HINT,
       });
-      throw error;
+      // Surface the same guidance to the model: Cline wraps executor throws as
+      // `apply_patch failed: <message>`, so the friction note alone would never
+      // reach the model and a failed patch would just be retried verbatim.
+      throw new Error(applyPatchRecoveryMessage(message), { cause: error });
     }
   };
 }
