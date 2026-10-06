@@ -107,3 +107,88 @@ describe("workspace-scoped-editor pre-flight", () => {
     expect(mockInnerEditor).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("workspace-scoped-editor insert_line recovery", () => {
+  let workspaceRoot: string;
+  let existingFile: string;
+
+  beforeEach(async () => {
+    workspaceRoot = await mkdtemp(path.join(tmpdir(), "ws-insert-line-"));
+    existingFile = path.join(workspaceRoot, "two-lines.txt");
+    const fh = await open(existingFile, "w");
+    await fh.writeFile("line one\nline two");
+    await fh.close();
+    mockInnerEditor.mockReset();
+    mockLoadClineSdk.mockClear();
+    setActiveRunFrictionCollector(null);
+  });
+
+  afterEach(async () => {
+    setActiveRunFrictionCollector(null);
+    await rm(workspaceRoot, { recursive: true, force: true });
+  });
+
+  it("clamps EOF off-by-one insert_line before calling Cline", async () => {
+    mockInnerEditor.mockResolvedValueOnce({
+      success: true,
+      query: "edit:two-lines.txt",
+      result: "ok",
+      error: "",
+    });
+    const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
+    const result = await editor(
+      { path: "two-lines.txt", insert_line: 3, new_text: "line three\n" },
+      workspaceRoot,
+      {} as never,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockInnerEditor).toHaveBeenCalledTimes(1);
+    expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(2);
+  });
+
+  it("returns recovery for stale insert_line without recording friction", async () => {
+    const collector = new RunFrictionCollector();
+    setActiveRunFrictionCollector(collector);
+
+    const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
+    const result = await editor(
+      { path: "two-lines.txt", insert_line: 5, new_text: "x\n" },
+      workspaceRoot,
+      {} as never,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("1–2");
+    expect(mockInnerEditor).not.toHaveBeenCalled();
+    expect(collector.noteCount).toBe(0);
+  });
+
+  it("retries once when Cline reports EOF off-by-one", async () => {
+    mockInnerEditor
+      .mockResolvedValueOnce({
+        success: false,
+        query: "edit:two-lines.txt",
+        result: "",
+        error:
+          "Invalid insert_line: 3. insert_line must be a positive one-based boundary line in the range 1-2. Use 2 to append at EOF.",
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        query: "edit:two-lines.txt",
+        result: "ok",
+        error: "",
+      });
+
+    const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
+    const result = await editor(
+      { path: "two-lines.txt", insert_line: 2, new_text: "appended\n" },
+      workspaceRoot,
+      {} as never,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockInnerEditor).toHaveBeenCalledTimes(2);
+    expect(mockInnerEditor.mock.calls[1][0].insert_line).toBe(2);
+  });
+});
