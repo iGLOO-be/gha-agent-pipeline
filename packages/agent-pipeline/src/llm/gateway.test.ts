@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  OPENROUTER_APP_VISIBILITY_HEADER,
+  OPENROUTER_APP_VISIBILITY_HIDDEN,
   OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS,
   OPENROUTER_METADATA_HEADER,
   OPENROUTER_PROVIDER_ID,
@@ -12,6 +14,10 @@ import {
   createOpenRouterUsageCostTracker,
   createServedModelTracker,
 } from "./jev-router.js";
+
+const HIDDEN_VISIBILITY = {
+  [OPENROUTER_APP_VISIBILITY_HEADER]: OPENROUTER_APP_VISIBILITY_HIDDEN,
+} as const;
 
 const ENV_KEYS = [
   "OPENROUTER_API_KEY",
@@ -59,6 +65,7 @@ describe("openrouter gateway", () => {
       expect(buildOpenRouterHttpHeaders()).toEqual({
         "HTTP-Referer": "https://github.com/iGLOO-be/gha-agent-demo",
         "X-Title": "gha-agent-demo",
+        ...HIDDEN_VISIBILITY,
       });
     });
 
@@ -67,6 +74,7 @@ describe("openrouter gateway", () => {
       expect(buildOpenRouterHttpHeaders("my-consumer-app")).toEqual({
         "HTTP-Referer": "https://github.com/iGLOO-be/gha-agent-demo",
         "X-Title": "my-consumer-app",
+        ...HIDDEN_VISIBILITY,
       });
     });
 
@@ -76,6 +84,7 @@ describe("openrouter gateway", () => {
       expect(buildOpenRouterHttpHeaders("my-consumer-app")).toEqual({
         "HTTP-Referer": "https://github.com/iGLOO-be/gha-agent-demo",
         "X-Title": "env-title",
+        ...HIDDEN_VISIBILITY,
       });
     });
 
@@ -83,6 +92,7 @@ describe("openrouter gateway", () => {
       expect(buildOpenRouterHttpHeaders()).toEqual({
         "HTTP-Referer": "",
         "X-Title": "gha-agent",
+        ...HIDDEN_VISIBILITY,
       });
     });
 
@@ -90,6 +100,7 @@ describe("openrouter gateway", () => {
       expect(buildOpenRouterHttpHeaders("my-consumer-app")).toEqual({
         "HTTP-Referer": "",
         "X-Title": "my-consumer-app",
+        ...HIDDEN_VISIBILITY,
       });
     });
 
@@ -99,6 +110,7 @@ describe("openrouter gateway", () => {
       ).toEqual({
         "HTTP-Referer": "",
         "X-Title": "my-consumer-app",
+        ...HIDDEN_VISIBILITY,
         [OPENROUTER_METADATA_HEADER]: "enabled",
       });
     });

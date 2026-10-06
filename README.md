@@ -431,6 +431,8 @@ The CLI phases read the following environment variables. Common variables (`OPEN
 | `OPENROUTER_JEV_ROUTER_EXCLUDED_MODELS`                                 | Jev Router active        | Comma-separated exclude patterns when YAML `excluded_models` are empty for the phase.                                                                                                                                         |
 | `OPENROUTER_JEV_ROUTER_FALLBACK_ON_EXHAUSTION`                          | Jev Router active        | When `true`/`false`, enables or disables falling back to the phase `models.<phase>` slug after a Jev Router admission failure (overrides `openrouter.jev_router.fallback_to_phase_model_on_exhaustion` when set).             |
 
+All LLM requests send OpenRouter [app attribution](https://openrouter.ai/docs/app-attribution) headers (`HTTP-Referer`, `X-Title`, optional `OPENROUTER_HTTP_REFERER` / `OPENROUTER_APP_TITLE` env overrides) plus **`X-OpenRouter-App-Visibility: hidden`** so new attributed apps stay off public rankings and the marketplace while usage still appears in your OpenRouter analytics. That visibility value applies only when OpenRouter creates a **new** app for a referer; already-public apps are unchanged (contact OpenRouter support to adjust them).
+
 ### OpenRouter Jev Router (optional)
 
 In `.github/agent.config.yml`, enable dynamic model selection via `typesafe/jev-router`:
