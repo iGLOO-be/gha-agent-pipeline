@@ -9,6 +9,11 @@ import {
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
 
+async function isMergeInProgress(): Promise<boolean> {
+  const mergeHead = await runShell("git rev-parse -q --verify MERGE_HEAD");
+  return mergeHead.exitCode === 0;
+}
+
 export async function commitAll(message: string): Promise<boolean> {
   const add = await runShell(gitAddAllExcludingPipelineCheckoutCommand());
   if (add.exitCode !== 0) {
@@ -16,7 +21,8 @@ export async function commitAll(message: string): Promise<boolean> {
     await runShell(unstagePipelineCheckoutCommand());
   }
   const status = await runShell("git diff --cached --quiet");
-  if (status.exitCode === 0) {
+  const mergeInProgress = await isMergeInProgress();
+  if (status.exitCode === 0 && !mergeInProgress) {
     return false;
   }
 
