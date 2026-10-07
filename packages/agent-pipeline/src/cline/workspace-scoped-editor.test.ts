@@ -1,4 +1,4 @@
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -218,5 +218,29 @@ describe("workspace-scoped-editor insert_line recovery", () => {
     // First attempt passes through unchanged; retry uses Cline's EOF line.
     expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(4);
     expect(mockInnerEditor.mock.calls[1][0].insert_line).toBe(3);
+  });
+
+  it("defers to Cline when the path is not a readable file", async () => {
+    // access() succeeds on directories, so readFile is the first failing call.
+    const dirPath = path.join(workspaceRoot, "dir.txt");
+    await mkdir(dirPath, { recursive: true });
+    mockInnerEditor.mockResolvedValueOnce({
+      success: false,
+      query: "edit:dir.txt",
+      result: "",
+      error: "Path is a directory",
+    });
+
+    const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
+    const result = await editor(
+      { path: "dir.txt", insert_line: 2, new_text: "x\n" },
+      workspaceRoot,
+      {} as never,
+    );
+
+    // The read failure must not throw out of the executor; Cline owns the error.
+    expect(mockInnerEditor).toHaveBeenCalledTimes(1);
+    expect(mockInnerEditor.mock.calls[0][0].insert_line).toBe(2);
+    expect(result.success).toBe(false);
   });
 });
