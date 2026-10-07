@@ -6,6 +6,7 @@ import { sleep } from "../session-retry.js";
 import { runGh, runShell } from "../tools/shell.js";
 import {
   gitAddAllExcludingPipelineCheckoutCommand,
+  gitStatusPorcelainExcludingPipelineCheckoutCommand,
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
 
@@ -126,7 +127,11 @@ export async function commitAndPushBranch(
   if (revListExit === 0) {
     ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
   } else {
-    const porcelain = await runShell("git status --porcelain");
+    // Ignore untracked excluded artifacts (pipeline checkout, agent state) so
+    // the diagnostic reflects real working-tree changes only.
+    const porcelain = await runShell(
+      gitStatusPorcelainExcludingPipelineCheckoutCommand(),
+    );
     const dirty =
       porcelain.exitCode === 0 && porcelain.stdout.trim().length > 0;
     if (committed || dirty) {

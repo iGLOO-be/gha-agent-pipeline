@@ -205,6 +205,34 @@ describe("commitAndPushBranch", () => {
       }),
     ).rejects.toThrow(/could not count commits ahead/);
   });
+
+  it("treats untracked excluded artifacts as a clean tree when rev-list fails", async () => {
+    runGit(worktree, "git checkout -b excluded-only");
+    mkdirSync(join(worktree, PIPELINE_GHA_CHECKOUT_DIR), { recursive: true });
+    writeFileSync(join(worktree, PIPELINE_GHA_CHECKOUT_DIR, "junk.txt"), "x\n");
+    mkdirSync(join(worktree, AGENT_STATE_DIR), { recursive: true });
+    writeFileSync(join(worktree, AGENT_STATE_DIR, "ci-round"), "1\n");
+
+    const { runShell: originalRunShell } =
+      await vi.importActual<typeof import("../tools/shell.js")>(
+        "../tools/shell.js",
+      );
+    vi.spyOn(shell, "runShell").mockImplementation(async (command: string) => {
+      if (command.startsWith("git rev-list --count")) {
+        return makeShellResult({
+          exitCode: 128,
+          stderr: "fatal: ambiguous argument",
+        });
+      }
+      return originalRunShell(command);
+    });
+
+    await expect(
+      commitAndPushBranch("excluded-only", "feat: should fail", {
+        baseBranch: "missing-on-origin",
+      }),
+    ).rejects.toThrow(/git rev-list --count failed/);
+  });
 });
 
 // --- pushBranch retry tests -------------------------------------------------

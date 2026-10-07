@@ -3,9 +3,22 @@ import { AGENT_STATE_DIR } from "../state/cache.js";
 /** Matches `path` in install-agent-pipeline composite action (GHA checkout). */
 export const PIPELINE_GHA_CHECKOUT_DIR = "gha-agent-pipeline";
 
+/** Pathspecs excluding the pipeline checkout and local agent runner state. */
+export function excludedWorktreePathspecs(): string {
+  return `':!${PIPELINE_GHA_CHECKOUT_DIR}' ':!${AGENT_STATE_DIR}'`;
+}
+
 /** Stage all changes without pipeline checkout or local agent runner state. */
 export function gitAddAllExcludingPipelineCheckoutCommand(): string {
-  return `git add -A -- . ':!${PIPELINE_GHA_CHECKOUT_DIR}' ':!${AGENT_STATE_DIR}'`;
+  return `git add -A -- . ${excludedWorktreePathspecs()}`;
+}
+
+/**
+ * Report the working-tree status while ignoring untracked excluded artifacts
+ * (pipeline checkout, local agent state), so diagnostics reflect real changes.
+ */
+export function gitStatusPorcelainExcludingPipelineCheckoutCommand(): string {
+  return `git status --porcelain -- . ${excludedWorktreePathspecs()}`;
 }
 
 /** Unstage/remove the pipeline checkout if it was picked up by a plain `git add -A`. */

@@ -125,6 +125,22 @@ async function postYoloIssueComment(
   );
 }
 
+async function applyYoloRiskLabels(
+  octokit: ReturnType<typeof createOctokit>,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  prNumber: number,
+  riskLevel: RiskLevel,
+): Promise<void> {
+  try {
+    await manageRiskLabels(octokit, owner, repo, issueNumber, riskLevel);
+    await manageRiskLabels(octokit, owner, repo, prNumber, riskLevel);
+  } catch (error) {
+    console.warn("Failed to manage risk labels:", error);
+  }
+}
+
 async function main() {
   const env = loadAgentEnv();
   const config = loadAgentConfig();
@@ -199,12 +215,15 @@ Branch: ${branch}${extraArgsBlock}`,
     );
 
     if (phaseReport?.summary) {
+      // Compare against the working tree (no `..HEAD`) so uncommitted agent
+      // edits — the common case, since the agent is told not to commit — are
+      // included and do not trigger a false-positive warning.
       const diffStat = await runShell(
-        `git diff --stat origin/${config.git.base_branch}..HEAD`,
+        `git diff --stat origin/${config.git.base_branch}`,
       );
       if (diffStat.exitCode === 0 && diffStat.stdout.trim() === "") {
         console.warn(
-          `yolo: submitPhaseReport was called but origin/${config.git.base_branch}..HEAD has no diff`,
+          `yolo: submitPhaseReport was called but origin/${config.git.base_branch} has no diff`,
         );
       }
     }
@@ -234,24 +253,14 @@ Branch: ${branch}${extraArgsBlock}`,
         runFriction,
       });
 
-      try {
-        await manageRiskLabels(
-          octokit,
-          owner,
-          repo,
-          env.ISSUE_NUMBER,
-          riskLevel,
-        );
-        await manageRiskLabels(
-          octokit,
-          owner,
-          repo,
-          existingPr.number,
-          riskLevel,
-        );
-      } catch (error) {
-        console.warn("Failed to manage risk labels:", error);
-      }
+      await applyYoloRiskLabels(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        existingPr.number,
+        riskLevel,
+      );
 
       console.log(
         `\nYolo completed with no changes on branch ${branch} (PR #${existingPr.number})`,
@@ -323,12 +332,14 @@ Branch: ${branch}${extraArgsBlock}`,
       runFriction,
     });
 
-    try {
-      await manageRiskLabels(octokit, owner, repo, env.ISSUE_NUMBER, riskLevel);
-      await manageRiskLabels(octokit, owner, repo, pr.number, riskLevel);
-    } catch (error) {
-      console.warn("Failed to manage risk labels:", error);
-    }
+    await applyYoloRiskLabels(
+      octokit,
+      owner,
+      repo,
+      env.ISSUE_NUMBER,
+      pr.number,
+      riskLevel,
+    );
 
     console.log(`\nPR created: ${pr.url}`);
   } catch (error) {
