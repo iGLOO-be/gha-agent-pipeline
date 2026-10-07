@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import { runShell } from "../tools/shell.js";
 import { GitCommitError } from "./pr.js";
 
 const DEFAULT_MAX_PASSES = 2;
@@ -13,6 +15,25 @@ const HOOK_FAILURE_MARKERS = [
   /prepare-commit-msg/i,
   /failed to run tasks for staged files/i,
   /\.git\/hooks\//i,
+];
+
+/**
+ * `git commit` failures that are definitely not caused by a commit hook. Used as
+ * a guard for the "hooks are installed" fallback so identity/index errors are
+ * not misread as hook rejections.
+ */
+const NON_HOOK_FAILURE_MARKERS = [
+  /nothing added to commit/i,
+  /cannot do a partial commit/i,
+  /author identity unknown/i,
+  /please tell me who you are/i,
+  /not a git repository/i,
+  /pathspec .* did not match/i,
+  /you have not concluded your merge/i,
+  /would be overwritten by merge/i,
+  /unable to write new index file/i,
+  /index\.lock/i,
+  /gpg failed to sign/i,
 ];
 
 /** Total commit attempts (includes the first try after a session). Default 2 = one hook-fix relaunch. */
@@ -37,10 +58,60 @@ export function isCommitHookFailure(commitOutput: string): boolean {
   return HOOK_FAILURE_MARKERS.some((pattern) => pattern.test(normalized));
 }
 
+/** True when the output matches a known non-hook `git commit` error. */
+export function isKnownNonHookGitFailure(commitOutput: string): boolean {
+  const normalized = stripAnsi(commitOutput);
+  return NON_HOOK_FAILURE_MARKERS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Hook runners we do not recognize (e.g. `pre-commit.com`, repo-local `pnpm
+ * lint` hooks) print no marker from {@link HOOK_FAILURE_MARKERS}. When hooks are
+ * actually installed and the output is not a known non-hook git error, treat the
+ * failure as a hook rejection so the agent is still relaunched.
+ */
+export function isCommitHookFailureLike(
+  commitOutput: string,
+  hooksInstalled = false,
+): boolean {
+  if (isCommitHookFailure(commitOutput)) {
+    return true;
+  }
+  return hooksInstalled && !isKnownNonHookGitFailure(commitOutput);
+}
+
+/**
+ * True when the current checkout has real commit hooks installed: either a
+ * `core.hooksPath` config value, or a non-`.sample` entry under `.git/hooks/`.
+ */
+export async function hasInstalledCommitHooks(): Promise<boolean> {
+  const configured = await runShell("git config --get core.hooksPath");
+  if (configured.exitCode === 0 && configured.stdout.trim() !== "") {
+    return true;
+  }
+
+  const hooksDir = await runShell("git rev-parse --git-path hooks");
+  if (hooksDir.exitCode !== 0) {
+    return false;
+  }
+  const dir = hooksDir.stdout.trim();
+  if (!dir) {
+    return false;
+  }
+
+  try {
+    const entries = await readdir(dir);
+    return entries.some((name) => !name.endsWith(".sample"));
+  } catch {
+    return false;
+  }
+}
+
 export function shouldRetryCommitHookFailure(
   error: unknown,
   commitAttemptIndex: number,
   maxPasses: number,
+  hooksInstalled = false,
 ): boolean {
   if (commitAttemptIndex >= maxPasses - 1) {
     return false;
@@ -48,7 +119,7 @@ export function shouldRetryCommitHookFailure(
   if (!(error instanceof GitCommitError)) {
     return false;
   }
-  return isCommitHookFailure(error.commitOutput);
+  return isCommitHookFailureLike(error.commitOutput, hooksInstalled);
 }
 
 export function formatCommitHookRetryPrompt(hookLog: string): string {
@@ -78,17 +149,32 @@ export async function runCommitWithHookRetry<T>(options: {
 }): Promise<T> {
   const { maxPasses, commit, relaunchForHookFailure } = options;
 
+  let hooksInstalled: boolean | undefined;
+  const resolveHooksInstalled = async (): Promise<boolean> => {
+    hooksInstalled ??= await hasInstalledCommitHooks();
+    return hooksInstalled;
+  };
+
   for (let attempt = 0; attempt < maxPasses; attempt++) {
     try {
       return await commit();
     } catch (error) {
-      if (!shouldRetryCommitHookFailure(error, attempt, maxPasses)) {
-        // Only flag the heuristic gap when the output really matched nothing;
-        // when a marker matched but the retry budget is exhausted the reason is
-        // the pass limit, not the detection heuristic.
+      const hooksInstalledForFailure =
+        error instanceof GitCommitError ? await resolveHooksInstalled() : false;
+      if (
+        !shouldRetryCommitHookFailure(
+          error,
+          attempt,
+          maxPasses,
+          hooksInstalledForFailure,
+        )
+      ) {
+        // Only flag the heuristic gap when nothing matched at all; when a marker
+        // (or the installed-hooks fallback) matched but the retry budget is
+        // exhausted the reason is the pass limit, not the detection heuristic.
         if (
           error instanceof GitCommitError &&
-          !isCommitHookFailure(error.commitOutput)
+          !isCommitHookFailureLike(error.commitOutput, hooksInstalledForFailure)
         ) {
           console.warn(
             "git commit failed but the output did not match known hook-failure patterns. " +

@@ -15,7 +15,7 @@ import {
   getCommitHookRetryMaxPasses,
   runCommitWithHookRetry,
 } from "./git/commit-hook-retry.js";
-import { commitAndPushBranch } from "./git/pr.js";
+import { commitAndPushBranch, type CommitAndPushResult } from "./git/pr.js";
 import {
   assertLocalMergeResolved,
   prepareResolvedMergeForCommit,
@@ -415,50 +415,60 @@ Branch: ${env.AGENT_BRANCH}`,
         return `<!-- ${fixCommentMarker(entry)} -->\n${completion}`;
       };
 
-      const pushResult = await runCommitWithHookRetry({
-        maxPasses: hookMaxPasses,
-        commit: async () => {
-          await prepareResolvedMergeForCommit();
-          return commitAndPushBranch(
-            env.AGENT_BRANCH,
-            resolveAgentCommitMessage(
-              phaseReportTracker.report,
-              pass > 0
-                ? syncCommitSubject(
-                    entry,
-                    config.git.base_branch,
-                    env.PR_NUMBER,
-                  )
-                : defaultCommitSubject(entry, env.PR_NUMBER),
-            ),
-          );
-        },
-        relaunchForHookFailure: async (hookLog, retryIndex) => {
-          session = await runAgentSession({
-            phase: cmd.runtimePhase,
-            modelId: cmd.modelId,
-            systemPrompt: cmd.systemPrompt,
-            tools,
-            runFriction,
-            sessionMetadata: {
+      let pushResult: CommitAndPushResult;
+      try {
+        pushResult = await runCommitWithHookRetry({
+          maxPasses: hookMaxPasses,
+          commit: async () => {
+            await prepareResolvedMergeForCommit();
+            return commitAndPushBranch(
+              env.AGENT_BRANCH,
+              resolveAgentCommitMessage(
+                phaseReportTracker.report,
+                pass > 0
+                  ? syncCommitSubject(
+                      entry,
+                      config.git.base_branch,
+                      env.PR_NUMBER,
+                    )
+                  : defaultCommitSubject(entry, env.PR_NUMBER),
+              ),
+            );
+          },
+          relaunchForHookFailure: async (hookLog, retryIndex) => {
+            session = await runAgentSession({
               phase: cmd.runtimePhase,
-              commandId: cmd.commandId,
-              issueNumber: env.ISSUE_NUMBER,
-              prNumber: env.PR_NUMBER,
-              headSha,
-              repository: env.GITHUB_REPOSITORY,
-              upstreamDriftPass: pass,
-              commitHookRetry: retryIndex,
-            },
-            prompt: `${formatCommitHookRetryPrompt(hookLog)}
+              modelId: cmd.modelId,
+              systemPrompt: cmd.systemPrompt,
+              tools,
+              runFriction,
+              sessionMetadata: {
+                phase: cmd.runtimePhase,
+                commandId: cmd.commandId,
+                issueNumber: env.ISSUE_NUMBER,
+                prNumber: env.PR_NUMBER,
+                headSha,
+                repository: env.GITHUB_REPOSITORY,
+                upstreamDriftPass: pass,
+                commitHookRetry: retryIndex,
+              },
+              prompt: `${formatCommitHookRetryPrompt(hookLog)}
 
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}
 PR #${env.PR_NUMBER}`,
-          });
-          sessions.push(session);
-        },
-      });
+            });
+            sessions.push(session);
+          },
+        });
+      } catch (error) {
+        // An exhausted commit-hook retry throws here, before any of the
+        // post-commit success paths below, and `reportPhaseFailure` does not
+        // append friction — so record it now to keep this phase consistent with
+        // implement/yolo.
+        appendRunFrictionStepSummary(runFriction, entry);
+        throw error;
+      }
 
       // Only the first pass can legitimately complete with "already synced".
       // On a drift-retry pass the branch was already pushed, so we must still
