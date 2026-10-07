@@ -11,4 +11,11 @@ describe("FILE_EDIT_SYSTEM_HINT", () => {
     expect(FILE_EDIT_SYSTEM_HINT).toContain("Editor input too large");
     expect(FILE_EDIT_SYSTEM_HINT).toContain("apply_patch");
   });
+
+  it("documents the Cline insert_line EOF append bound", () => {
+    expect(FILE_EDIT_SYSTEM_HINT).toContain("line_count + 1");
+    expect(FILE_EDIT_SYSTEM_HINT).not.toContain(
+      "To append at EOF use lineCount",
+    );
+  });
 });

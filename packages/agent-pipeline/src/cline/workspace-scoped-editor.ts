@@ -1,5 +1,12 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { loadClineSdk } from "../cline.js";
+import {
+  invalidInsertLineRecoveryMessage,
+  isInsertLineHandledByCline,
+  isInvalidInsertLineEditorError,
+  maxInsertLineForFile,
+  parseInvalidInsertLineError,
+} from "./editor-insert-line-recovery.js";
 import {
   isMissingOldTextEditorError,
   missingOldTextRecoveryMessage,
@@ -49,10 +56,81 @@ function editorFailureResult(displayPath: string, error: string) {
 }
 
 /**
+ * Pre-flight guard for `insert_line` on an existing file: returns a recovery
+ * message when the value is stale for the current contents, or `null` when the
+ * value can be handed to Cline unchanged.
+ *
+ * This only *validates*; it never rewrites `insert_line`, so a request that
+ * Cline would accept is never turned into a different (wrong-position) insert,
+ * and the SDK-error retry path below stays reachable for the classic
+ * off-by-one (`maxLine + 1`).
+ */
+async function recoveryForStaleInsertLine(
+  resolvedPath: string,
+  displayPath: string,
+  insertLine: number,
+): Promise<string | null> {
+  const content = await readFile(resolvedPath, "utf8").catch(() => null);
+  if (content === null) {
+    // Directory, or file removed between access() and read(): let Cline own the
+    // resulting error instead of throwing out of the executor.
+    return null;
+  }
+  const maxLine = maxInsertLineForFile(content);
+  if (isInsertLineHandledByCline(insertLine, maxLine)) {
+    return null;
+  }
+  return invalidInsertLineRecoveryMessage(displayPath, insertLine, maxLine);
+}
+
+function recoveryFromInvalidInsertLineToolError(
+  displayPath: string,
+  toolError: string,
+): string | null {
+  const parsed = parseInvalidInsertLineError(toolError);
+  if (!parsed) {
+    return null;
+  }
+  return invalidInsertLineRecoveryMessage(
+    displayPath,
+    parsed.attempted,
+    parsed.maxLine,
+  );
+}
+
+/**
+ * Computes the retry line for Cline's classic EOF off-by-one (`maxLine + 1`).
+ *
+ * Cline's `appendAtEofLine` is its `maxLine`, which inserts after the trailing
+ * empty element on files that already end with a newline, adding a stray blank
+ * line. The no-blank-line boundary for those files is `maxLine - 1`, which is
+ * what `FILE_EDIT_SYSTEM_HINT` and the recovery message recommend
+ * (`line_count + 1`). `maxLine - 1` is always `>= 1`, so the retry stays valid.
+ */
+function insertLineRetryAtEof(
+  toolError: string,
+  content: string | null,
+): number | null {
+  const parsed = parseInvalidInsertLineError(toolError);
+  if (!parsed) {
+    return null;
+  }
+  if (parsed.attempted !== parsed.maxLine + 1) {
+    return null;
+  }
+  if (content !== null && /\r?\n$/.test(content)) {
+    return parsed.maxLine - 1;
+  }
+  return parsed.appendAtEofLine;
+}
+
+/**
  * Workspace-aware wrapper around Cline’s default `editor` executor.
  *
  * - **Paths** — resolve `read_files` / `editor` paths against the checkout root.
  * - **Missing `old_text`** — clearer errors (`editor-old-text-recovery.ts`).
+ * - **`insert_line` bounds** — Cline-derived bound validation + recovery
+ *   (`editor-insert-line-recovery.ts`).
  * - **6000-char tool args** — bypass + recovery (`editor-size-recovery.ts`); see
  *   that module’s file comment for background and when to remove the workaround.
  * - **Run friction** — record non-fatal editor failures for phase summaries.
@@ -94,6 +172,17 @@ export async function createWorkspaceScopedEditorExecutor(
         normalizedInput.old_text,
       );
       return editorFailureResult(displayPath, recovery);
+    }
+
+    if (fileExists && hasInsertLine) {
+      const recovery = await recoveryForStaleInsertLine(
+        resolvedPath,
+        displayPath,
+        normalizedInput.insert_line as number,
+      );
+      if (recovery) {
+        return editorFailureResult(displayPath, recovery);
+      }
     }
 
     if (exceedsEditorArgLimit(normalizedInput)) {
@@ -153,6 +242,37 @@ export async function createWorkspaceScopedEditorExecutor(
             return { ...result, error: recovery };
           }
           return editorFailureResult(displayPath, recovery);
+        }
+
+        if (isInvalidInsertLineEditorError(toolError)) {
+          // Cline validates before writing, so the file is unchanged here; the
+          // read only decides the retry boundary for trailing-newline files.
+          const content = await readFile(resolvedPath, "utf8").catch(
+            () => null,
+          );
+          const retryLine = insertLineRetryAtEof(toolError, content);
+          if (retryLine !== null) {
+            const retryResult = await inner(
+              { ...normalizedInput, insert_line: retryLine },
+              cwd,
+              context,
+            );
+            const retryError = editorResultError(retryResult);
+            if (!retryError) {
+              return retryResult;
+            }
+          }
+
+          const recovery = recoveryFromInvalidInsertLineToolError(
+            displayPath,
+            toolError,
+          );
+          if (recovery) {
+            if (result && typeof result === "object") {
+              return { ...result, error: recovery };
+            }
+            return editorFailureResult(displayPath, recovery);
+          }
         }
 
         getActiveRunFrictionCollector()?.recordRuntimeToolError(
