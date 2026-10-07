@@ -43,6 +43,10 @@ import {
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
 import { gitStatusPorcelainExcludingPipelineCheckoutCommand } from "./git/worktree-excludes.js";
+import {
+  commitsAheadOfBaseCommand,
+  shouldWarnNoYoloChanges,
+} from "./git/worktree-status.js";
 import { runShell } from "./tools/shell.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
@@ -216,18 +220,19 @@ Branch: ${branch}${extraArgsBlock}`,
     );
 
     if (phaseReport?.summary) {
-      // `git status --porcelain` is untracked-aware (unlike `git diff`), and the
-      // pathspec excludes runner-internal artifacts, so it reflects only real
-      // changes produced by the agent (staged, unstaged or brand-new files).
       const worktreeStatus = await runShell(
         gitStatusPorcelainExcludingPipelineCheckoutCommand(),
       );
-      if (
-        worktreeStatus.exitCode === 0 &&
-        worktreeStatus.stdout.trim() === ""
-      ) {
+      // `git status --porcelain` only compares the index/worktree to HEAD, so a
+      // session that committed its own work shows a clean tree while still
+      // being ahead of the base branch. Count the commits ahead too, otherwise
+      // the warning below would fire on every already-committed re-run.
+      const ahead = await runShell(
+        commitsAheadOfBaseCommand(config.git.base_branch),
+      );
+      if (shouldWarnNoYoloChanges(worktreeStatus, ahead)) {
         console.warn(
-          `yolo: submitPhaseReport was called but the working tree has no changes vs origin/${config.git.base_branch}`,
+          `yolo: submitPhaseReport was called but there are no changes vs origin/${config.git.base_branch} (clean working tree, no commits ahead)`,
         );
       }
     }
