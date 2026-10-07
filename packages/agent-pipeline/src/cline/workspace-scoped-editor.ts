@@ -2,10 +2,10 @@ import { access, readFile } from "node:fs/promises";
 import { loadClineSdk } from "../cline.js";
 import {
   invalidInsertLineRecoveryMessage,
+  isInsertLineHandledByCline,
   isInvalidInsertLineEditorError,
   maxInsertLineForFile,
   parseInvalidInsertLineError,
-  resolveInsertLineForCline,
 } from "./editor-insert-line-recovery.js";
 import {
   isMissingOldTextEditorError,
@@ -77,7 +77,7 @@ async function recoveryForStaleInsertLine(
     return null;
   }
   const maxLine = maxInsertLineForFile(content);
-  if (resolveInsertLineForCline(insertLine, maxLine) !== null) {
+  if (isInsertLineHandledByCline(insertLine, maxLine)) {
     return null;
   }
   return invalidInsertLineRecoveryMessage(displayPath, insertLine, maxLine);
@@ -98,15 +98,30 @@ function recoveryFromInvalidInsertLineToolError(
   );
 }
 
-function shouldRetryInvalidInsertLineAtEof(toolError: string): number | null {
+/**
+ * Computes the retry line for Cline's classic EOF off-by-one (`maxLine + 1`).
+ *
+ * Cline's `appendAtEofLine` is its `maxLine`, which inserts after the trailing
+ * empty element on files that already end with a newline, adding a stray blank
+ * line. The no-blank-line boundary for those files is `maxLine - 1`, which is
+ * what `FILE_EDIT_SYSTEM_HINT` and the recovery message recommend
+ * (`line_count + 1`). `maxLine - 1` is always `>= 1`, so the retry stays valid.
+ */
+function insertLineRetryAtEof(
+  toolError: string,
+  content: string | null,
+): number | null {
   const parsed = parseInvalidInsertLineError(toolError);
   if (!parsed) {
     return null;
   }
-  if (parsed.attempted === parsed.maxLine + 1) {
-    return parsed.appendAtEofLine;
+  if (parsed.attempted !== parsed.maxLine + 1) {
+    return null;
   }
-  return null;
+  if (content !== null && /\r?\n$/.test(content)) {
+    return parsed.maxLine - 1;
+  }
+  return parsed.appendAtEofLine;
 }
 
 /**
@@ -230,7 +245,12 @@ export async function createWorkspaceScopedEditorExecutor(
         }
 
         if (isInvalidInsertLineEditorError(toolError)) {
-          const retryLine = shouldRetryInvalidInsertLineAtEof(toolError);
+          // Cline validates before writing, so the file is unchanged here; the
+          // read only decides the retry boundary for trailing-newline files.
+          const content = await readFile(resolvedPath, "utf8").catch(
+            () => null,
+          );
+          const retryLine = insertLineRetryAtEof(toolError, content);
           if (retryLine !== null) {
             const retryResult = await inner(
               { ...normalizedInput, insert_line: retryLine },

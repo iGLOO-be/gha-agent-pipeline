@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   invalidInsertLineRecoveryMessage,
+  isInsertLineHandledByCline,
   isInvalidInsertLineEditorError,
   maxInsertLineForFile,
   parseInvalidInsertLineError,
-  resolveInsertLineForCline,
 } from "./editor-insert-line-recovery.js";
 
 const FOLDIO_ERROR =
@@ -49,27 +49,27 @@ describe("editor-insert-line-recovery", () => {
     });
   });
 
-  describe("resolveInsertLineForCline", () => {
-    it("does not rewrite a valid EOF append (lineCount + 1)", () => {
+  describe("isInsertLineHandledByCline", () => {
+    it("handles a valid EOF append (lineCount + 1) without rewriting it", () => {
       // Cline accepts 1..3 for "line one\nline two"; 3 appends at EOF.
-      expect(resolveInsertLineForCline(3, 3)).toBe(3);
-      expect(resolveInsertLineForCline(2, 3)).toBe(2);
+      expect(isInsertLineHandledByCline(3, 3)).toBe(true);
+      expect(isInsertLineHandledByCline(2, 3)).toBe(true);
     });
 
-    it("passes through the out-of-range off-by-one so the SDK retry can fix it", () => {
-      expect(resolveInsertLineForCline(4, 3)).toBe(4);
+    it("handles the out-of-range off-by-one so the SDK retry can fix it", () => {
+      expect(isInsertLineHandledByCline(4, 3)).toBe(true);
     });
 
-    it("passes through in-range values", () => {
-      expect(resolveInsertLineForCline(10, 235)).toBe(10);
-      expect(resolveInsertLineForCline(235, 235)).toBe(235);
-      expect(resolveInsertLineForCline(1, 2)).toBe(1);
+    it("handles in-range values", () => {
+      expect(isInsertLineHandledByCline(10, 235)).toBe(true);
+      expect(isInsertLineHandledByCline(235, 235)).toBe(true);
+      expect(isInsertLineHandledByCline(1, 2)).toBe(true);
     });
 
-    it("returns null for stale out-of-range values", () => {
-      expect(resolveInsertLineForCline(95, 92)).toBeNull();
-      expect(resolveInsertLineForCline(193, 184)).toBeNull();
-      expect(resolveInsertLineForCline(5, 3)).toBeNull();
+    it("rejects stale out-of-range values", () => {
+      expect(isInsertLineHandledByCline(95, 92)).toBe(false);
+      expect(isInsertLineHandledByCline(193, 184)).toBe(false);
+      expect(isInsertLineHandledByCline(5, 3)).toBe(false);
     });
   });
 

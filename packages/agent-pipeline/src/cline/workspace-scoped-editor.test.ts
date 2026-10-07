@@ -220,6 +220,40 @@ describe("workspace-scoped-editor insert_line recovery", () => {
     expect(mockInnerEditor.mock.calls[1][0].insert_line).toBe(3);
   });
 
+  it("retries at the no-blank-line EOF boundary for files ending with a newline", async () => {
+    const trailingFile = path.join(workspaceRoot, "trailing.txt");
+    const fh = await open(trailingFile, "w");
+    await fh.writeFile("line one\nline two\n");
+    await fh.close();
+    mockInnerEditor
+      .mockResolvedValueOnce({
+        success: false,
+        query: "edit:trailing.txt",
+        result: "",
+        error:
+          "Invalid insert_line: 5. insert_line must be a positive one-based boundary line in the range 1-4. Use 4 to append at EOF.",
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        query: "edit:trailing.txt",
+        result: "ok",
+        error: "",
+      });
+
+    const editor = await createWorkspaceScopedEditorExecutor(workspaceRoot);
+    const result = await editor(
+      { path: "trailing.txt", insert_line: 5, new_text: "appended\n" },
+      workspaceRoot,
+      {} as never,
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockInnerEditor).toHaveBeenCalledTimes(2);
+    // Cline's `appendAtEofLine` is 4, which would leave a stray blank line;
+    // the no-blank-line boundary is `line_count + 1` === 3.
+    expect(mockInnerEditor.mock.calls[1][0].insert_line).toBe(3);
+  });
+
   it("defers to Cline when the path is not a readable file", async () => {
     // access() succeeds on directories, so readFile is the first failing call.
     const dirPath = path.join(workspaceRoot, "dir.txt");
