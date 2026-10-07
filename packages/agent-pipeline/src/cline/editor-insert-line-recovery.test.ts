@@ -74,17 +74,21 @@ describe("editor-insert-line-recovery", () => {
   });
 
   describe("invalidInsertLineRecoveryMessage", () => {
-    it("steers toward re-read and EOF line", () => {
+    it("steers toward re-read and the line after the last read line", () => {
       const msg = invalidInsertLineRecoveryMessage("scripts/foo.mjs", 95, 92);
       expect(msg).toContain("1–92");
-      expect(msg).toContain("insert_line: 92");
+      // Reserving `maxLine` for the upper bound only keeps this message
+      // consistent with FILE_EDIT_SYSTEM_HINT, which tells the model to append
+      // at `line_count + 1`; `maxLine` itself adds a blank line on files that
+      // end with a newline.
+      expect(msg).toContain("line_count + 1");
       expect(msg).toContain("re-read");
     });
 
     it("reports Cline's bound for an empty existing file", () => {
       const msg = invalidInsertLineRecoveryMessage("empty.txt", 5, 2);
       expect(msg).toContain("1–2");
-      expect(msg).toContain("insert_line: 2");
+      expect(msg).toContain("line_count + 1");
     });
   });
 });

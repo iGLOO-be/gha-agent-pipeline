@@ -80,5 +80,5 @@ export function invalidInsertLineRecoveryMessage(
   attempted: number,
   maxLine: number,
 ): string {
-  return `${filePath}: \`insert_line\` ${attempted} is out of range. Valid boundary lines are 1–${maxLine} on the current file (re-read the file before inserting). Use \`insert_line: ${maxLine}\` to append at EOF. Do not reuse a stale line number after earlier inserts.`;
+  return `${filePath}: \`insert_line\` ${attempted} is out of range. Valid boundary lines are 1–${maxLine} on the current file (re-read the file before inserting). To append at EOF, use the line after the last one you read (\`line_count + 1\`); never reuse a stale line number after earlier inserts.`;
 }

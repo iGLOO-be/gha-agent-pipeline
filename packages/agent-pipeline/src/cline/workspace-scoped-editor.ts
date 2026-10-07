@@ -55,30 +55,32 @@ function editorFailureResult(displayPath: string, error: string) {
   };
 }
 
-async function resolveInsertLineForExistingFile(
+/**
+ * Pre-flight guard for `insert_line` on an existing file: returns a recovery
+ * message when the value is stale for the current contents, or `null` when the
+ * value can be handed to Cline unchanged.
+ *
+ * This only *validates*; it never rewrites `insert_line`, so a request that
+ * Cline would accept is never turned into a different (wrong-position) insert,
+ * and the SDK-error retry path below stays reachable for the classic
+ * off-by-one (`maxLine + 1`).
+ */
+async function recoveryForStaleInsertLine(
   resolvedPath: string,
   displayPath: string,
   insertLine: number,
-): Promise<{ ok: true; insertLine: number } | { ok: false; recovery: string }> {
+): Promise<string | null> {
   const content = await readFile(resolvedPath, "utf8").catch(() => null);
   if (content === null) {
     // Directory, or file removed between access() and read(): let Cline own the
     // resulting error instead of throwing out of the executor.
-    return { ok: true, insertLine };
+    return null;
   }
   const maxLine = maxInsertLineForFile(content);
-  const resolvedInsertLine = resolveInsertLineForCline(insertLine, maxLine);
-  if (resolvedInsertLine !== null) {
-    return { ok: true, insertLine: resolvedInsertLine };
+  if (resolveInsertLineForCline(insertLine, maxLine) !== null) {
+    return null;
   }
-  return {
-    ok: false,
-    recovery: invalidInsertLineRecoveryMessage(
-      displayPath,
-      insertLine,
-      maxLine,
-    ),
-  };
+  return invalidInsertLineRecoveryMessage(displayPath, insertLine, maxLine);
 }
 
 function recoveryFromInvalidInsertLineToolError(
@@ -112,7 +114,8 @@ function shouldRetryInvalidInsertLineAtEof(toolError: string): number | null {
  *
  * - **Paths** — resolve `read_files` / `editor` paths against the checkout root.
  * - **Missing `old_text`** — clearer errors (`editor-old-text-recovery.ts`).
- * - **`insert_line` bounds** — Cline-derived clamp + recovery (`editor-insert-line-recovery.ts`).
+ * - **`insert_line` bounds** — Cline-derived bound validation + recovery
+ *   (`editor-insert-line-recovery.ts`).
  * - **6000-char tool args** — bypass + recovery (`editor-size-recovery.ts`); see
  *   that module’s file comment for background and when to remove the workaround.
  * - **Run friction** — record non-fatal editor failures for phase summaries.
@@ -156,19 +159,14 @@ export async function createWorkspaceScopedEditorExecutor(
       return editorFailureResult(displayPath, recovery);
     }
 
-    let editorInput = normalizedInput;
     if (fileExists && hasInsertLine) {
-      const insertLine = normalizedInput.insert_line as number;
-      const resolved = await resolveInsertLineForExistingFile(
+      const recovery = await recoveryForStaleInsertLine(
         resolvedPath,
         displayPath,
-        insertLine,
+        normalizedInput.insert_line as number,
       );
-      if (!resolved.ok) {
-        return editorFailureResult(displayPath, resolved.recovery);
-      }
-      if (resolved.insertLine !== insertLine) {
-        editorInput = { ...normalizedInput, insert_line: resolved.insertLine };
+      if (recovery) {
+        return editorFailureResult(displayPath, recovery);
       }
     }
 
@@ -193,25 +191,25 @@ export async function createWorkspaceScopedEditorExecutor(
     }
 
     try {
-      const result = await inner(editorInput, cwd, context);
+      const result = await inner(normalizedInput, cwd, context);
       const toolError = editorResultError(result);
       if (toolError) {
         if (isEditorInputTooLargeError(toolError)) {
           const existsAfter = await pathExists(resolvedPath);
-          if (isOversizedNewFileEditorWrite(editorInput, existsAfter)) {
+          if (isOversizedNewFileEditorWrite(normalizedInput, existsAfter)) {
             await writeNewFileBypassingEditorLimit(
               resolvedPath,
-              editorInput.new_text,
+              normalizedInput.new_text,
             );
             return editorBypassSuccessResult(
               displayPath,
-              editorInput.new_text.length,
+              normalizedInput.new_text.length,
             );
           }
 
           const recovery = oversizedEditorRecoveryMessage(
             displayPath,
-            editorInput,
+            normalizedInput,
           );
           recordOversizedEditorRunFriction(recovery, resolvedPath);
           if (result && typeof result === "object") {
@@ -223,7 +221,7 @@ export async function createWorkspaceScopedEditorExecutor(
         if (isMissingOldTextEditorError(toolError)) {
           const recovery = missingOldTextRecoveryMessage(
             displayPath,
-            editorInput.old_text,
+            normalizedInput.old_text,
           );
           if (result && typeof result === "object") {
             return { ...result, error: recovery };
@@ -235,7 +233,7 @@ export async function createWorkspaceScopedEditorExecutor(
           const retryLine = shouldRetryInvalidInsertLineAtEof(toolError);
           if (retryLine !== null) {
             const retryResult = await inner(
-              { ...editorInput, insert_line: retryLine },
+              { ...normalizedInput, insert_line: retryLine },
               cwd,
               context,
             );

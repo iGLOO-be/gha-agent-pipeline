@@ -184,7 +184,7 @@ describe("workspace-scoped-editor insert_line recovery", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("1–3");
-    expect(result.error).toContain("insert_line: 3");
+    expect(result.error).toContain("line_count + 1");
     expect(result.error).not.toContain(workspaceRoot);
     expect(mockInnerEditor).not.toHaveBeenCalled();
     expect(collector.noteCount).toBe(0);
