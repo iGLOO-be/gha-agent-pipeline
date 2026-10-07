@@ -204,7 +204,10 @@ Branch: ${branch}${extraArgsBlock}`;
       commit: () => commitAndPushBranch(branch, commitSubject),
       relaunchForHookFailure: async (hookLog, retryIndex) => {
         session = await runYoloSession(
-          formatCommitHookRetryPrompt(hookLog),
+          `${formatCommitHookRetryPrompt(hookLog)}
+
+Repository: ${env.GITHUB_REPOSITORY}
+Branch: ${branch}`,
           retryIndex,
         );
       },

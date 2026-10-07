@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitCommitError } from "./pr.js";
 import {
   formatCommitHookRetryPrompt,
@@ -10,6 +10,10 @@ import {
 } from "./commit-hook-retry.js";
 
 describe("commit-hook-retry", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe("getCommitHookRetryMaxPasses", () => {
     it("defaults to 2", () => {
       vi.stubEnv("AGENT_COMMIT_HOOK_MAX_PASSES", "");

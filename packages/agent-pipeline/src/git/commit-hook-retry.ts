@@ -32,8 +32,8 @@ export function stripAnsi(text: string): string {
   return text.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
-export function isCommitHookFailure(hookOutput: string): boolean {
-  const normalized = stripAnsi(hookOutput);
+export function isCommitHookFailure(commitOutput: string): boolean {
+  const normalized = stripAnsi(commitOutput);
   return HOOK_FAILURE_MARKERS.some((pattern) => pattern.test(normalized));
 }
 
@@ -48,7 +48,7 @@ export function shouldRetryCommitHookFailure(
   if (!(error instanceof GitCommitError)) {
     return false;
   }
-  return isCommitHookFailure(error.hookOutput);
+  return isCommitHookFailure(error.commitOutput);
 }
 
 export function formatCommitHookRetryPrompt(hookLog: string): string {
@@ -83,10 +83,17 @@ export async function runCommitWithHookRetry<T>(options: {
       return await commit();
     } catch (error) {
       if (!shouldRetryCommitHookFailure(error, attempt, maxPasses)) {
+        if (error instanceof GitCommitError) {
+          console.warn(
+            "git commit failed but the output did not match known hook-failure patterns. " +
+              "The commit-hook-retry feature will not apply. Raw output:\n" +
+              error.commitOutput,
+          );
+        }
         throw error;
       }
       const hookLog =
-        error instanceof GitCommitError ? error.hookOutput : String(error);
+        error instanceof GitCommitError ? error.commitOutput : String(error);
       console.warn(
         `Git commit hooks failed (attempt ${attempt + 1}/${maxPasses}); relaunching agent to fix.`,
       );

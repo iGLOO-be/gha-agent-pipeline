@@ -141,7 +141,10 @@ Branch: ${branch}${extraArgsBlock}`;
       },
       relaunchForHookFailure: async (hookLog, retryIndex) => {
         session = await runImplementSession(
-          formatCommitHookRetryPrompt(hookLog),
+          `${formatCommitHookRetryPrompt(hookLog)}
+
+Repository: ${env.GITHUB_REPOSITORY}
+Branch: ${branch}`,
           retryIndex,
         );
       },
