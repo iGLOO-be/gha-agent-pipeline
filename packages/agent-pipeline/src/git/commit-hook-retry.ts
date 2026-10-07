@@ -34,6 +34,11 @@ const NON_HOOK_FAILURE_MARKERS = [
   /unable to write new index file/i,
   /index\.lock/i,
   /gpg failed to sign/i,
+  /permission denied/i,
+  /read-only file system/i,
+  /no space left on device/i,
+  /unable to create .*COMMIT_EDITMSG/i,
+  /failed to write commit object/i,
 ];
 
 /** Total commit attempts (includes the first try after a session). Default 2 = one hook-fix relaunch. */
@@ -76,6 +81,12 @@ export function isCommitHookFailureLike(
 ): boolean {
   if (isCommitHookFailure(commitOutput)) {
     return true;
+  }
+  // Empty output means no hook diagnostic was produced (e.g. the hook was killed
+  // by a signal); relaunching the agent would spend a full session on a prompt
+  // with nothing actionable in it.
+  if (commitOutput.trim() === "") {
+    return false;
   }
   return hooksInstalled && !isKnownNonHookGitFailure(commitOutput);
 }

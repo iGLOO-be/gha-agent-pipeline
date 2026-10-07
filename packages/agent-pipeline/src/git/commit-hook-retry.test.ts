@@ -82,6 +82,24 @@ describe("commit-hook-retry", () => {
         isCommitHookFailureLike("fatal: cannot do a partial commit", true),
       ).toBe(false);
     });
+
+    it("never treats empty output as a hook failure", () => {
+      expect(isCommitHookFailureLike("", true)).toBe(false);
+      expect(isCommitHookFailureLike("  \n\t", true)).toBe(false);
+    });
+
+    it("rejects permission/disk git errors when hooks are installed", () => {
+      const permission =
+        "fatal: Unable to create '/repo/.git/COMMIT_EDITMSG': Permission denied";
+      expect(isKnownNonHookGitFailure(permission)).toBe(true);
+      expect(isCommitHookFailureLike(permission, true)).toBe(false);
+      expect(
+        isCommitHookFailureLike("fatal: failed to write commit object", true),
+      ).toBe(false);
+      expect(
+        isCommitHookFailureLike("fatal: No space left on device", true),
+      ).toBe(false);
+    });
   });
 
   describe("hasInstalledCommitHooks", () => {
