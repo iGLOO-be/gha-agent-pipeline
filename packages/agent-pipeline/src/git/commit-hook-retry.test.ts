@@ -96,5 +96,43 @@ describe("commit-hook-retry", () => {
         }),
       ).rejects.toThrow(/git commit failed/);
     });
+
+    it("only warns about unmatched patterns, not exhausted hook retries", async () => {
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const warnedAboutNoMatch = () =>
+        warn.mock.calls.some((args) =>
+          String(args[0]).includes("did not match known hook-failure patterns"),
+        );
+
+      try {
+        // Matched marker + exhausted budget → no heuristic-gap warning.
+        await expect(
+          runCommitWithHookRetry({
+            maxPasses: 2,
+            commit: async () => {
+              throw new GitCommitError("Failed to run tasks for staged files!");
+            },
+            relaunchForHookFailure: async () => undefined,
+          }),
+        ).rejects.toThrow(/git commit failed/);
+        expect(warnedAboutNoMatch()).toBe(false);
+
+        // Unmatched output → heuristic-gap warning.
+        await expect(
+          runCommitWithHookRetry({
+            maxPasses: 1,
+            commit: async () => {
+              throw new GitCommitError("fatal: cannot do a partial commit");
+            },
+            relaunchForHookFailure: async () => undefined,
+          }),
+        ).rejects.toThrow(/git commit failed/);
+        expect(warnedAboutNoMatch()).toBe(true);
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });

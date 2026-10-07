@@ -54,7 +54,9 @@ import {
   formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
   formatRunMetricsMarkdown,
+  mergeSessionMetrics,
   type PhaseReport,
+  type SessionMetricsSource,
 } from "./phase-report.js";
 import type { AgentSessionResult } from "./runtime.js";
 import type { RunFrictionCollector } from "./run-friction.js";
@@ -95,7 +97,7 @@ async function postYoloIssueComment(
     riskJustification: string;
     prLine: string;
     phaseReport: PhaseReport | undefined;
-    session: AgentSessionResult;
+    session: SessionMetricsSource;
     runFriction: RunFrictionCollector;
   },
 ): Promise<void> {
@@ -194,26 +196,37 @@ Branch: ${branch}${extraArgsBlock}`;
         prompt,
       });
 
-    let session = await runYoloSession(yoloInitialPrompt);
+    const sessions: AgentSessionResult[] = [];
+    sessions.push(await runYoloSession(yoloInitialPrompt));
 
     const commitSubject = `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
     const hookMaxPasses = getCommitHookRetryMaxPasses();
+
+    // Emit the friction summary before the commit/push so an exhausted
+    // commit-hook retry (which throws before the post-commit summaries) still
+    // records its diagnostics in the step summary.
+    appendRunFrictionStepSummary(runFriction, "yolo");
 
     const pushResult = await runCommitWithHookRetry({
       maxPasses: hookMaxPasses,
       commit: () => commitAndPushBranch(branch, commitSubject),
       relaunchForHookFailure: async (hookLog, retryIndex) => {
-        session = await runYoloSession(
-          `${formatCommitHookRetryPrompt(hookLog)}
+        sessions.push(
+          await runYoloSession(
+            `${formatCommitHookRetryPrompt(hookLog)}
 
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${branch}`,
-          retryIndex,
+            retryIndex,
+          ),
         );
       },
     });
 
-    appendRunFrictionStepSummary(runFriction, "yolo");
+    // Aggregate every session of this phase (initial + hook retries); the last
+    // session carries the agent output used for the risk assessment.
+    const metrics = mergeSessionMetrics(sessions);
+    const lastSession = sessions[sessions.length - 1];
 
     const phaseReport = phaseReportTracker.report;
     const phaseReportMarkdown = phaseReport
@@ -222,7 +235,7 @@ Branch: ${branch}`,
 
     const { riskLevel, riskJustification } = resolveYoloRiskAssessment(
       phaseReport,
-      session.outputText,
+      lastSession?.outputText ?? "",
     );
 
     if (pushResult.status === "noChanges") {
@@ -236,7 +249,7 @@ Branch: ${branch}`,
         riskJustification,
         prLine,
         phaseReport,
-        session,
+        session: metrics,
         runFriction,
       });
 
@@ -269,7 +282,7 @@ Branch: ${branch}`,
 
     const comments = await readComments(octokit, owner, repo, env.ISSUE_NUMBER);
 
-    const usageSection = formatRunMetricsMarkdown(session, {
+    const usageSection = formatRunMetricsMarkdown(metrics, {
       collapsible: true,
     });
 
@@ -322,7 +335,7 @@ Branch: ${branch}`,
       riskJustification,
       prLine: `Pull request [#${pr.number}](${pr.url}) created.`,
       phaseReport,
-      session,
+      session: metrics,
       runFriction,
     });
 

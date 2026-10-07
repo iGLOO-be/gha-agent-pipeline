@@ -28,6 +28,7 @@ import {
   createRunFrictionCollector,
 } from "./run-friction.js";
 import { runAgentSession } from "./runtime.js";
+import type { AgentSessionResult } from "./runtime.js";
 import {
   clearAgentResumeLabels,
   createOctokit,
@@ -51,6 +52,7 @@ import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
+  mergeSessionMetrics,
   resolveAgentCommitMessage,
 } from "./phase-report.js";
 import { chainCodeReviewAfterReviewFix } from "./code-review-chain.js";
@@ -249,6 +251,8 @@ export async function runFixPhase(
     const runFriction = createRunFrictionCollector();
     const maxPasses = getUpstreamDriftMaxPasses();
     const hookMaxPasses = getCommitHookRetryMaxPasses();
+    // Sessions of every pass and hook retry, so run metrics report the whole run.
+    const sessions: AgentSessionResult[] = [];
 
     for (let pass = 0; pass < maxPasses; pass++) {
       if (pass > 0) {
@@ -391,19 +395,21 @@ Head SHA: ${headSha}
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
       });
+      sessions.push(session);
 
       const buildFixComment = (body: string): string => {
+        const metrics = mergeSessionMetrics(sessions);
         const completion = formatPhaseCompletionMarkdown({
           phase: entry,
           statusLine: body,
           phaseReport: phaseReportTracker.report,
-          sessionUsage: session.usage,
-          sessionId: session.sessionId,
-          modelId: session.modelId,
-          servedModelIds: session.servedModelIds,
-          openRouterCostUsd: session.openRouterCostUsd,
-          iterations: session.iterations,
-          toolCallsCount: session.toolCallsCount,
+          sessionUsage: metrics.usage,
+          sessionId: metrics.sessionId,
+          modelId: metrics.modelId,
+          servedModelIds: metrics.servedModelIds,
+          openRouterCostUsd: metrics.openRouterCostUsd,
+          iterations: metrics.iterations,
+          toolCallsCount: metrics.toolCallsCount,
           runFriction,
         });
         return `<!-- ${fixCommentMarker(entry)} -->\n${completion}`;
@@ -450,6 +456,7 @@ Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}
 PR #${env.PR_NUMBER}`,
           });
+          sessions.push(session);
         },
       });
 

@@ -6,6 +6,7 @@ import {
   formatPhaseReportForPr,
   formatPhaseReportForComment,
   formatPhaseCompletionMarkdown,
+  mergeSessionMetrics,
   normalizeAgentCommitMessage,
   resolveAgentCommitMessage,
   SUBMIT_PHASE_REPORT_TOOL_NAME,
@@ -449,6 +450,73 @@ describe("phase-report", () => {
       expect(output).toContain("</details>");
       expect(output).toContain("#### Run metrics");
       expect(output).not.toMatch(/^### Run metrics$/m);
+    });
+  });
+
+  describe("mergeSessionMetrics", () => {
+    it("returns an empty source for no sessions", () => {
+      expect(mergeSessionMetrics([])).toEqual({});
+    });
+
+    it("sums usage, cost, iterations and tool calls across sessions", () => {
+      const merged = mergeSessionMetrics([
+        {
+          sessionId: "sess-1",
+          modelId: "deepseek/v3",
+          usage: {
+            inputTokens: 100,
+            outputTokens: 10,
+            cacheReadTokens: 5,
+            cacheWriteTokens: 1,
+            totalCost: 0.001,
+          },
+          openRouterCostUsd: 0.002,
+          iterations: 2,
+          toolCallsCount: 3,
+          servedModelIds: ["a"],
+        },
+        {
+          sessionId: "sess-2",
+          modelId: "deepseek/v3",
+          usage: {
+            inputTokens: 200,
+            outputTokens: 20,
+            cacheReadTokens: 10,
+            cacheWriteTokens: 2,
+            totalCost: 0.003,
+          },
+          openRouterCostUsd: 0.004,
+          iterations: 4,
+          toolCallsCount: 5,
+          servedModelIds: ["a", "b"],
+        },
+      ]);
+
+      expect(merged.sessionId).toBe("sess-2");
+      expect(merged.modelId).toBe("deepseek/v3");
+      expect(merged.usage).toEqual({
+        inputTokens: 300,
+        outputTokens: 30,
+        cacheReadTokens: 15,
+        cacheWriteTokens: 3,
+        totalCost: 0.004,
+      });
+      expect(merged.openRouterCostUsd).toBeCloseTo(0.006);
+      expect(merged.iterations).toBe(6);
+      expect(merged.toolCallsCount).toBe(8);
+      expect(merged.servedModelIds).toEqual(["a", "b"]);
+    });
+
+    it("ignores sessions without usage and derived counters", () => {
+      const merged = mergeSessionMetrics([
+        { sessionId: "sess-1", modelId: "m" },
+        { sessionId: "sess-2", modelId: "m", iterations: 2 },
+      ]);
+
+      expect(merged.sessionId).toBe("sess-2");
+      expect(merged.usage).toBeUndefined();
+      expect(merged.iterations).toBe(2);
+      expect(merged.openRouterCostUsd).toBeUndefined();
     });
   });
 });

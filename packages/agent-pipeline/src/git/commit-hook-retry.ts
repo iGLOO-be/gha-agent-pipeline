@@ -83,7 +83,13 @@ export async function runCommitWithHookRetry<T>(options: {
       return await commit();
     } catch (error) {
       if (!shouldRetryCommitHookFailure(error, attempt, maxPasses)) {
-        if (error instanceof GitCommitError) {
+        // Only flag the heuristic gap when the output really matched nothing;
+        // when a marker matched but the retry budget is exhausted the reason is
+        // the pass limit, not the detection heuristic.
+        if (
+          error instanceof GitCommitError &&
+          !isCommitHookFailure(error.commitOutput)
+        ) {
           console.warn(
             "git commit failed but the output did not match known hook-failure patterns. " +
               "The commit-hook-retry feature will not apply. Raw output:\n" +

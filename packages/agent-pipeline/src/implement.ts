@@ -22,6 +22,7 @@ import {
   createRunFrictionCollector,
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
+import type { AgentSessionResult } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
   addLabelToIssue,
@@ -43,6 +44,7 @@ import {
   formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
   formatRunMetricsMarkdown,
+  mergeSessionMetrics,
 } from "./phase-report.js";
 import { chainCodeReviewAfterImplement } from "./code-review-chain.js";
 import {
@@ -122,13 +124,19 @@ Branch: ${branch}${extraArgsBlock}`;
         prompt,
       });
 
-    let session = await runImplementSession(implementInitialPrompt);
+    const sessions: AgentSessionResult[] = [];
+    sessions.push(await runImplementSession(implementInitialPrompt));
 
     const commitSubject =
       cmd.resolved.git?.commit_subject ??
       `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
 
     const hookMaxPasses = getCommitHookRetryMaxPasses();
+
+    // Emit the friction summary before the commit/push so an exhausted
+    // commit-hook retry (which throws before the post-commit summaries) still
+    // records its diagnostics in the step summary.
+    appendRunFrictionStepSummary(runFriction, "implement");
 
     await runCommitWithHookRetry({
       maxPasses: hookMaxPasses,
@@ -140,17 +148,20 @@ Branch: ${branch}${extraArgsBlock}`;
         await pushBranch(branch);
       },
       relaunchForHookFailure: async (hookLog, retryIndex) => {
-        session = await runImplementSession(
-          `${formatCommitHookRetryPrompt(hookLog)}
+        sessions.push(
+          await runImplementSession(
+            `${formatCommitHookRetryPrompt(hookLog)}
 
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${branch}`,
-          retryIndex,
+            retryIndex,
+          ),
         );
       },
     });
 
-    appendRunFrictionStepSummary(runFriction, "implement");
+    // Aggregate every session of this phase (initial + hook retries).
+    const metrics = mergeSessionMetrics(sessions);
 
     const phaseReport = phaseReportTracker.report;
     const phaseReportMarkdown = phaseReport
@@ -162,7 +173,7 @@ Branch: ${branch}`,
       return;
     }
 
-    const usageSection = formatRunMetricsMarkdown(session, {
+    const usageSection = formatRunMetricsMarkdown(metrics, {
       collapsible: true,
     });
 
@@ -201,13 +212,13 @@ Branch: ${branch}`,
       formatPhaseCompletionMarkdown({
         phase: "implement",
         phaseReport,
-        sessionUsage: session.usage,
-        sessionId: session.sessionId,
-        modelId: session.modelId,
-        servedModelIds: session.servedModelIds,
-        openRouterCostUsd: session.openRouterCostUsd,
-        iterations: session.iterations,
-        toolCallsCount: session.toolCallsCount,
+        sessionUsage: metrics.usage,
+        sessionId: metrics.sessionId,
+        modelId: metrics.modelId,
+        servedModelIds: metrics.servedModelIds,
+        openRouterCostUsd: metrics.openRouterCostUsd,
+        iterations: metrics.iterations,
+        toolCallsCount: metrics.toolCallsCount,
         runFriction,
       }),
     ].join("\n\n");
