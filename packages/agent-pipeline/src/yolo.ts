@@ -42,6 +42,7 @@ import {
   readIssue,
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
+import { gitStatusPorcelainExcludingPipelineCheckoutCommand } from "./git/worktree-excludes.js";
 import { runShell } from "./tools/shell.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
@@ -215,15 +216,18 @@ Branch: ${branch}${extraArgsBlock}`,
     );
 
     if (phaseReport?.summary) {
-      // Compare against the working tree (no `..HEAD`) so uncommitted agent
-      // edits — the common case, since the agent is told not to commit — are
-      // included and do not trigger a false-positive warning.
-      const diffStat = await runShell(
-        `git diff --stat origin/${config.git.base_branch}`,
+      // `git status --porcelain` is untracked-aware (unlike `git diff`), and the
+      // pathspec excludes runner-internal artifacts, so it reflects only real
+      // changes produced by the agent (staged, unstaged or brand-new files).
+      const worktreeStatus = await runShell(
+        gitStatusPorcelainExcludingPipelineCheckoutCommand(),
       );
-      if (diffStat.exitCode === 0 && diffStat.stdout.trim() === "") {
+      if (
+        worktreeStatus.exitCode === 0 &&
+        worktreeStatus.stdout.trim() === ""
+      ) {
         console.warn(
-          `yolo: submitPhaseReport was called but origin/${config.git.base_branch} has no diff`,
+          `yolo: submitPhaseReport was called but the working tree has no changes vs origin/${config.git.base_branch}`,
         );
       }
     }
