@@ -415,6 +415,7 @@ Branch: ${env.AGENT_BRANCH}`,
             ? syncCommitSubject(entry, config.git.base_branch, env.PR_NUMBER)
             : defaultCommitSubject(entry, env.PR_NUMBER),
         ),
+        { baseBranch: config.git.base_branch },
       );
 
       // Only the first pass can legitimately complete with "already synced".

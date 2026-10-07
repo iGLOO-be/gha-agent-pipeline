@@ -106,16 +106,45 @@ export type CommitAndPushResult =
 export async function commitAndPushBranch(
   branch: string,
   message: string,
+  options?: { baseBranch?: string },
 ): Promise<CommitAndPushResult> {
+  const baseBranch = options?.baseBranch ?? loadAgentConfig().git.base_branch;
+
   const committed = await commitAll(message);
 
-  const aheadResult = await runShell(
-    `git rev-list --count origin/${branch}..HEAD`,
-  );
+  const remoteRef = `origin/${branch}`;
+  const remoteBranchExists =
+    (await runShell(`git rev-parse --verify --quiet ${remoteRef}`)).exitCode ===
+    0;
+  const range = remoteBranchExists
+    ? `${remoteRef}..HEAD`
+    : `origin/${baseBranch}..HEAD`;
+
+  const aheadResult = await runShell(`git rev-list --count ${range}`);
   let ahead = 0;
-  if (aheadResult.exitCode === 0) {
+  const revListExit = aheadResult.exitCode;
+  if (revListExit === 0) {
     ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
+  } else {
+    const porcelain = await runShell("git status --porcelain");
+    const dirty =
+      porcelain.exitCode === 0 && porcelain.stdout.trim().length > 0;
+    if (committed || dirty) {
+      throw new Error(
+        `commitAndPushBranch: could not count commits ahead (range=${range}, rev-list exit ${revListExit}). ` +
+          `Committed=${committed}, working tree dirty=${dirty}. ` +
+          `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref). ` +
+          `stderr: ${aheadResult.stderr.trim()}`,
+      );
+    }
+    throw new Error(
+      `commitAndPushBranch: git rev-list --count failed for range ${range} (exit ${revListExit}): ${aheadResult.stderr.trim()}`,
+    );
   }
+
+  console.log(
+    `commitAndPushBranch: committed=${committed} ahead=${ahead} range=${range} remoteExists=${remoteBranchExists} revListExit=${revListExit}`,
+  );
 
   if (committed || ahead > 0) {
     await pushBranch(branch);

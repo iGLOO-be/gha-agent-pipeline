@@ -23,6 +23,7 @@ vi.mock("../session-retry.js", () => ({
 
 import {
   commitAll,
+  commitAndPushBranch,
   getPushMaxAttempts,
   getPushRetryBaseDelayMs,
   pushBranch,
@@ -122,6 +123,87 @@ describe("commitAll", () => {
     expect(runGit(worktree, "git show -s --pretty=%s HEAD").trim()).toBe(
       "fix: merge main into feature",
     );
+  });
+});
+
+describe("commitAndPushBranch", () => {
+  let parentDir: string;
+  let worktree: string;
+  let bareRemote: string;
+  let previousCwd: string;
+
+  beforeEach(() => {
+    previousCwd = process.cwd();
+    parentDir = mkdtempSync(join(tmpdir(), "agent-commit-push-"));
+    bareRemote = join(parentDir, "origin.git");
+    runGit(parentDir, `git init --bare -b main ${bareRemote}`);
+    worktree = join(parentDir, "repo");
+    runGit(parentDir, `git clone ${bareRemote} repo`);
+    process.chdir(worktree);
+    runGit(worktree, "git config user.email test@example.com");
+    runGit(worktree, "git config user.name test");
+    writeFileSync(join(worktree, "base.txt"), "base\n");
+    runGit(worktree, "git add base.txt && git commit -m base");
+    runGit(worktree, "git push -u origin main");
+  });
+
+  afterEach(() => {
+    process.chdir(previousCwd);
+    rmSync(parentDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("pushes when the feature branch is ahead of base but not on origin yet", async () => {
+    runGit(worktree, "git checkout -b agent/issue-1");
+    writeFileSync(join(worktree, "feature.txt"), "work\n");
+    runGit(worktree, 'git add feature.txt && git commit -m "agent pre-commit"');
+
+    const result = await commitAndPushBranch(
+      "agent/issue-1",
+      "feat: runner commit",
+      { baseBranch: "main" },
+    );
+
+    expect(result).toEqual({ status: "pushed", commitsAhead: 1 });
+    runGit(worktree, "git rev-parse --verify origin/agent/issue-1");
+  });
+
+  it("returns noChanges when origin branch exists and HEAD matches", async () => {
+    runGit(worktree, "git checkout -b synced");
+    writeFileSync(join(worktree, "synced.txt"), "x\n");
+    runGit(worktree, "git add synced.txt && git commit -m synced");
+    runGit(worktree, "git push -u origin synced");
+    runGit(worktree, "git checkout synced");
+
+    const result = await commitAndPushBranch("synced", "feat: noop", {
+      baseBranch: "main",
+    });
+    expect(result).toEqual({ status: "noChanges" });
+  });
+
+  it("throws instead of noChanges when rev-list fails but the tree is dirty", async () => {
+    runGit(worktree, "git checkout -b dirty-branch");
+    writeFileSync(join(worktree, "dirty.txt"), "uncommitted\n");
+
+    const { runShell: originalRunShell } =
+      await vi.importActual<typeof import("../tools/shell.js")>(
+        "../tools/shell.js",
+      );
+    vi.spyOn(shell, "runShell").mockImplementation(async (command: string) => {
+      if (command.startsWith("git rev-list --count")) {
+        return makeShellResult({
+          exitCode: 128,
+          stderr: "fatal: ambiguous argument",
+        });
+      }
+      return originalRunShell(command);
+    });
+
+    await expect(
+      commitAndPushBranch("dirty-branch", "feat: should fail", {
+        baseBranch: "missing-on-origin",
+      }),
+    ).rejects.toThrow(/could not count commits ahead/);
   });
 });
 

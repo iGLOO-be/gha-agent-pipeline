@@ -42,6 +42,7 @@ import {
   readIssue,
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
+import { runShell } from "./tools/shell.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   appendSubmitPhaseReportTool,
@@ -197,16 +198,32 @@ Branch: ${branch}${extraArgsBlock}`,
       session.outputText,
     );
 
+    if (phaseReport?.summary) {
+      const diffStat = await runShell(
+        `git diff --stat origin/${config.git.base_branch}..HEAD`,
+      );
+      if (diffStat.exitCode === 0 && diffStat.stdout.trim() === "") {
+        console.warn(
+          `yolo: submitPhaseReport was called but origin/${config.git.base_branch}..HEAD has no diff`,
+        );
+      }
+    }
+
     const pushResult = await commitAndPushBranch(
       branch,
       `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`,
+      { baseBranch: config.git.base_branch },
     );
 
     if (pushResult.status === "noChanges") {
       const existingPr = await findOpenPullRequestForBranch(branch);
-      const prLine = existingPr
-        ? `No new commit was needed: the branch \`${branch}\` already contains the intended changes. Open pull request [#${existingPr.number}](${existingPr.url}).`
-        : `No new commit was needed: the branch \`${branch}\` already matches the working tree (no open PR found for this head).`;
+      if (!existingPr) {
+        throw new Error(
+          `No changes detected and no open pull request exists for branch ${branch}.`,
+        );
+      }
+
+      const prLine = `No new commits were needed; work is already tracked in pull request [#${existingPr.number}](${existingPr.url}).`;
 
       await postYoloIssueComment(octokit, owner, repo, env.ISSUE_NUMBER, {
         riskLevel,
@@ -217,30 +234,33 @@ Branch: ${branch}${extraArgsBlock}`,
         runFriction,
       });
 
-      if (existingPr) {
-        try {
-          await manageRiskLabels(
-            octokit,
-            owner,
-            repo,
-            env.ISSUE_NUMBER,
-            riskLevel,
-          );
-          await manageRiskLabels(
-            octokit,
-            owner,
-            repo,
-            existingPr.number,
-            riskLevel,
-          );
-        } catch (error) {
-          console.warn("Failed to manage risk labels:", error);
-        }
+      try {
+        await manageRiskLabels(
+          octokit,
+          owner,
+          repo,
+          env.ISSUE_NUMBER,
+          riskLevel,
+        );
+        await manageRiskLabels(
+          octokit,
+          owner,
+          repo,
+          existingPr.number,
+          riskLevel,
+        );
+      } catch (error) {
+        console.warn("Failed to manage risk labels:", error);
       }
 
       console.log(
-        `\nYolo completed with no changes on branch ${branch}${existingPr ? ` (PR #${existingPr.number})` : ""}`,
+        `\nYolo completed with no changes on branch ${branch} (PR #${existingPr.number})`,
       );
+      return;
+    }
+
+    if (cmd.resolved.git?.skip_pr) {
+      console.log("\nSkipping PR creation (commands.git.skip_pr).");
       return;
     }
 
