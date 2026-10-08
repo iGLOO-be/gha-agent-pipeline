@@ -42,12 +42,6 @@ import {
   readIssue,
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
-import { gitStatusPorcelainExcludingPipelineCheckoutCommand } from "./git/worktree-excludes.js";
-import {
-  commitsAheadOfBaseCommand,
-  shouldWarnNoYoloChanges,
-} from "./git/worktree-status.js";
-import { runShell } from "./tools/shell.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   appendSubmitPhaseReportTool,
@@ -219,24 +213,6 @@ Branch: ${branch}${extraArgsBlock}`,
       session.outputText,
     );
 
-    if (phaseReport?.summary) {
-      const worktreeStatus = await runShell(
-        gitStatusPorcelainExcludingPipelineCheckoutCommand(),
-      );
-      // `git status --porcelain` only compares the index/worktree to HEAD, so a
-      // session that committed its own work shows a clean tree while still
-      // being ahead of the base branch. Count the commits ahead too, otherwise
-      // the warning below would fire on every already-committed re-run.
-      const ahead = await runShell(
-        commitsAheadOfBaseCommand(config.git.base_branch),
-      );
-      if (shouldWarnNoYoloChanges(worktreeStatus, ahead)) {
-        console.warn(
-          `yolo: submitPhaseReport was called but there are no changes vs origin/${config.git.base_branch} (clean working tree, no commits ahead)`,
-        );
-      }
-    }
-
     const pushResult = await commitAndPushBranch(
       branch,
       `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`,
@@ -244,14 +220,29 @@ Branch: ${branch}${extraArgsBlock}`,
     );
 
     if (pushResult.status === "noChanges") {
-      const existingPr = await findOpenPullRequestForBranch(branch);
-      if (!existingPr) {
+      if (phaseReport?.summary) {
+        // commitAndPushBranch already established there is nothing to push, so
+        // this reuses that single source of truth instead of re-running probes.
+        console.warn(
+          `yolo: submitPhaseReport was called but there are no changes vs origin/${config.git.base_branch}.`,
+        );
+      }
+
+      const skipPr = cmd.resolved.git?.skip_pr === true;
+      // With skip_pr the runner never opens a PR, so an absent PR is expected;
+      // only fail the run when a PR was expected but none exists.
+      const existingPr = skipPr
+        ? null
+        : await findOpenPullRequestForBranch(branch);
+      if (!existingPr && !skipPr) {
         throw new Error(
           `No changes detected and no open pull request exists for branch ${branch}.`,
         );
       }
 
-      const prLine = `No new commits were needed; work is already tracked in pull request [#${existingPr.number}](${existingPr.url}).`;
+      const prLine = existingPr
+        ? `No new commits were needed; work is already tracked in pull request [#${existingPr.number}](${existingPr.url}).`
+        : `No new commits were needed; the branch \`${branch}\` already contains the intended changes (PR creation skipped).`;
 
       await postYoloIssueComment(octokit, owner, repo, env.ISSUE_NUMBER, {
         riskLevel,
@@ -262,17 +253,21 @@ Branch: ${branch}${extraArgsBlock}`,
         runFriction,
       });
 
-      await applyYoloRiskLabels(
-        octokit,
-        owner,
-        repo,
-        env.ISSUE_NUMBER,
-        existingPr.number,
-        riskLevel,
-      );
+      if (existingPr) {
+        await applyYoloRiskLabels(
+          octokit,
+          owner,
+          repo,
+          env.ISSUE_NUMBER,
+          existingPr.number,
+          riskLevel,
+        );
+      }
 
       console.log(
-        `\nYolo completed with no changes on branch ${branch} (PR #${existingPr.number})`,
+        existingPr
+          ? `\nYolo completed with no changes on branch ${branch} (PR #${existingPr.number})`
+          : `\nYolo completed with no changes on branch ${branch} (PR creation skipped)`,
       );
       return;
     }

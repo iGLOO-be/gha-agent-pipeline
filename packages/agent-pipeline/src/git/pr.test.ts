@@ -204,7 +204,7 @@ describe("commitAndPushBranch", () => {
       commitAndPushBranch("dirty-branch", "feat: should fail", {
         baseBranch: "missing-on-origin",
       }),
-    ).rejects.toThrow(/git rev-list --count failed/);
+    ).rejects.toThrow(/git rev-list --count failed.*committed=true/);
   });
 
   it("ignores untracked excluded artifacts (nothing to commit) and surfaces the rev-list failure", async () => {
@@ -232,7 +232,7 @@ describe("commitAndPushBranch", () => {
       commitAndPushBranch("excluded-only", "feat: should fail", {
         baseBranch: "missing-on-origin",
       }),
-    ).rejects.toThrow(/git rev-list --count failed/);
+    ).rejects.toThrow(/git rev-list --count failed.*committed=false/);
   });
 });
 

@@ -8,7 +8,11 @@ import {
   gitAddAllExcludingPipelineCheckoutCommand,
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
-import { revListRangeAheadOfBase } from "./worktree-status.js";
+
+/** `git rev-list` range between the remote base branch and HEAD. */
+function revListRangeAheadOfBase(baseBranch: string): string {
+  return `origin/${baseBranch}..HEAD`;
+}
 
 async function isMergeInProgress(): Promise<boolean> {
   const mergeHead = await runShell("git rev-parse -q --verify MERGE_HEAD");

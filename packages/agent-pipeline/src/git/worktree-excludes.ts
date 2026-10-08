@@ -14,14 +14,8 @@ export function gitAddAllExcludingPipelineCheckoutCommand(): string {
 }
 
 /**
- * Report the working-tree status while ignoring untracked excluded artifacts
- * (pipeline checkout, local agent state), so diagnostics reflect real changes.
+ * Unstage/remove the pipeline checkout if it was picked up by a plain `git add -A`.
  */
-export function gitStatusPorcelainExcludingPipelineCheckoutCommand(): string {
-  return `git status --porcelain -- . ${excludedWorktreePathspecs()}`;
-}
-
-/** Unstage/remove the pipeline checkout if it was picked up by a plain `git add -A`. */
 export function unstagePipelineCheckoutCommand(): string {
   const dirs = [PIPELINE_GHA_CHECKOUT_DIR, AGENT_STATE_DIR];
   const unstaging = dirs
