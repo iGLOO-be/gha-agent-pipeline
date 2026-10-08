@@ -24,6 +24,7 @@ vi.mock("../session-retry.js", () => ({
 import {
   commitAll,
   commitAndPushBranch,
+  findOpenPullRequestForBranch,
   getPushMaxAttempts,
   getPushRetryBaseDelayMs,
   pushBranch,
@@ -181,7 +182,7 @@ describe("commitAndPushBranch", () => {
     expect(result).toEqual({ status: "noChanges" });
   });
 
-  it("throws instead of noChanges when rev-list fails but the tree is dirty", async () => {
+  it("throws instead of noChanges when rev-list fails and a commit was created", async () => {
     runGit(worktree, "git checkout -b dirty-branch");
     writeFileSync(join(worktree, "dirty.txt"), "uncommitted\n");
 
@@ -393,6 +394,51 @@ describe("pushBranch", () => {
       );
       expect(runShellSpy).toHaveBeenCalledTimes(1);
       expect(mockSleep).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("findOpenPullRequestForBranch", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("returns null when no open PR is found", async () => {
+      vi.spyOn(shell, "runGh").mockResolvedValue(
+        makeShellResult({ exitCode: 0, stdout: "[]" }),
+      );
+
+      const result = await findOpenPullRequestForBranch("feat/nonexistent");
+      expect(result).toBeNull();
+    });
+
+    it("returns PR info when an open PR exists", async () => {
+      vi.spyOn(shell, "runGh").mockResolvedValue(
+        makeShellResult({
+          exitCode: 0,
+          stdout: JSON.stringify([
+            { number: 42, url: "https://github.com/org/repo/pull/42" },
+          ]),
+        }),
+      );
+
+      const result = await findOpenPullRequestForBranch("feat/existing");
+      expect(result).toEqual({
+        number: 42,
+        url: "https://github.com/org/repo/pull/42",
+      });
+    });
+
+    it("throws when gh pr list fails", async () => {
+      vi.spyOn(shell, "runGh").mockResolvedValue(
+        makeShellResult({
+          exitCode: 1,
+          stderr: "network error: could not connect to GitHub",
+        }),
+      );
+
+      await expect(findOpenPullRequestForBranch("feat/error")).rejects.toThrow(
+        /findOpenPullRequestForBranch: gh pr list failed \(exit 1\)/,
+      );
     });
   });
 });

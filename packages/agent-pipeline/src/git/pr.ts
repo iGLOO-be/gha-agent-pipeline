@@ -6,7 +6,6 @@ import { sleep } from "../session-retry.js";
 import { runGh, runShell } from "../tools/shell.js";
 import {
   gitAddAllExcludingPipelineCheckoutCommand,
-  gitStatusPorcelainExcludingPipelineCheckoutCommand,
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
 
@@ -127,17 +126,12 @@ export async function commitAndPushBranch(
   if (revListExit === 0) {
     ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
   } else {
-    // Ignore untracked excluded artifacts (pipeline checkout, agent state) so
-    // the diagnostic reflects real working-tree changes only.
-    const porcelain = await runShell(
-      gitStatusPorcelainExcludingPipelineCheckoutCommand(),
-    );
-    const dirty =
-      porcelain.exitCode === 0 && porcelain.stdout.trim().length > 0;
-    if (committed || dirty) {
+    // commitAll already staged/committed everything using the same pathspec
+    // exclusions; if committed is true there are real changes that need pushing.
+    if (committed) {
       throw new Error(
         `commitAndPushBranch: could not count commits ahead (range=${range}, rev-list exit ${revListExit}). ` +
-          `Committed=${committed}, working tree dirty=${dirty}. ` +
+          `Committed=${committed}. ` +
           `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref). ` +
           `stderr: ${aheadResult.stderr.trim()}`,
       );
@@ -209,7 +203,9 @@ export async function findOpenPullRequestForBranch(
     `gh pr list --head ${JSON.stringify(branch)} --state open --json number,url --limit 1`,
   );
   if (result.exitCode !== 0) {
-    return null;
+    throw new Error(
+      `findOpenPullRequestForBranch: gh pr list failed (exit ${result.exitCode}): ${result.stderr.trim()}`,
+    );
   }
   const trimmed = result.stdout.trim();
   if (!trimmed || trimmed === "[]") {
