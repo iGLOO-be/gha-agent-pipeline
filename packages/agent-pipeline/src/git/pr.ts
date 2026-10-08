@@ -125,34 +125,40 @@ export async function commitAndPushBranch(
   const committed = await commitAll(message);
 
   const remoteRef = `origin/${branch}`;
-  const remoteBranchExists =
+  const remoteRefExists =
     (await runShell(`git rev-parse --verify --quiet ${remoteRef}`)).exitCode ===
     0;
-  const range = remoteBranchExists
+  const range = remoteRefExists
     ? `${remoteRef}..HEAD`
     : revListRangeAheadOfBase(baseBranch);
 
   const aheadResult = await runShell(`git rev-list --count ${range}`);
-  let ahead = 0;
-  const revListExit = aheadResult.exitCode;
-  if (revListExit === 0) {
-    ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
-  } else {
+  if (aheadResult.exitCode !== 0) {
     throw new Error(
-      `commitAndPushBranch: git rev-list --count failed for range ${range} (exit ${revListExit}, committed=${committed}): ${aheadResult.stderr.trim()}. ` +
-        `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref).`,
+      `commitAndPushBranch: git rev-list --count failed for range ${range} (exit ${aheadResult.exitCode}, committed=${committed}): ${aheadResult.stderr.trim()}. ` +
+        `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref). ` +
+        `Aborting before push so the unresolvable range is surfaced; any commit created in this run was not pushed.`,
     );
   }
+  // ahead was measured after commitAll, so any commit created in this run is already included in ahead.
+  const ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
 
   console.log(
-    `commitAndPushBranch: committed=${committed} ahead=${ahead} range=${range} remoteExists=${remoteBranchExists} revListExit=${revListExit}`,
+    `commitAndPushBranch: committed=${committed} ahead=${ahead} range=${range} remoteExists=${remoteRefExists}`,
   );
 
   if (committed || ahead > 0) {
     await pushBranch(branch);
-    // ahead was measured after commitAll, so any commit created in this run is already included in ahead.
     return { status: "pushed", commitsAhead: ahead };
   }
+
+  // Nothing to push from this run. A missing local `origin/<branch>` ref does not
+  // prove the branch is absent from the remote — the ref only appears after a
+  // fetch of that branch — so ask the remote before reporting "never pushed".
+  const remoteBranchExists =
+    remoteRefExists ||
+    (await runShell(`git ls-remote --exit-code --heads origin ${branch}`))
+      .exitCode === 0;
 
   return { status: "noChanges", remoteBranchExists };
 }

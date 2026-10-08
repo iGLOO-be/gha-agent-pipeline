@@ -538,7 +538,7 @@ ${RUN_FRICTION_SYSTEM_HINT}
 
 ${SUBMIT_PHASE_REPORT_PROMPT}
 
-Do not run \`git commit\`, \`git push\`, or open a PR yourself. The runner commits, pushes, and opens the PR after you finish.
+Do not run \`git commit\`, \`git push\`, or open a PR yourself. The runner commits and pushes after you finish, and opens the PR unless \`git.skip_pr\` is set.
 
 When you call \`submitPhaseReport\`, you **must** include \`riskLevel\` (\`low\` | \`medium\` | \`high\`) and \`riskJustification\` (one paragraph). The runner applies agent-risk-* labels from these fields — do not add a separate risk block in chat output.`;
 

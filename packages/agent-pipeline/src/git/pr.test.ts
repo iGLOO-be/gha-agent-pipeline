@@ -192,6 +192,23 @@ describe("commitAndPushBranch", () => {
     expect(result).toEqual({ status: "noChanges", remoteBranchExists: false });
   });
 
+  it("detects an already-pushed branch when the local remote-tracking ref is missing", async () => {
+    runGit(worktree, "git checkout -b pushed-elsewhere");
+    writeFileSync(join(worktree, "pushed.txt"), "x\n");
+    runGit(worktree, "git add pushed.txt && git commit -m pushed");
+    runGit(worktree, "git push -u origin pushed-elsewhere");
+    runGit(worktree, "git checkout main");
+    runGit(worktree, "git branch -D pushed-elsewhere");
+    runGit(worktree, "git update-ref -d refs/remotes/origin/pushed-elsewhere");
+    runGit(worktree, "git checkout -b pushed-elsewhere origin/main");
+
+    const result = await commitAndPushBranch("pushed-elsewhere", "feat: noop", {
+      baseBranch: "main",
+    });
+
+    expect(result).toEqual({ status: "noChanges", remoteBranchExists: true });
+  });
+
   it("throws instead of noChanges when rev-list fails and a commit was created", async () => {
     runGit(worktree, "git checkout -b dirty-branch");
     writeFileSync(join(worktree, "dirty.txt"), "uncommitted\n");
@@ -406,49 +423,49 @@ describe("pushBranch", () => {
       expect(mockSleep).not.toHaveBeenCalled();
     });
   });
+});
 
-  describe("findOpenPullRequestForBranch", () => {
-    afterEach(() => {
-      vi.restoreAllMocks();
+describe("findOpenPullRequestForBranch", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns null when no open PR is found", async () => {
+    vi.spyOn(shell, "runGh").mockResolvedValue(
+      makeShellResult({ exitCode: 0, stdout: "[]" }),
+    );
+
+    const result = await findOpenPullRequestForBranch("feat/nonexistent");
+    expect(result).toBeNull();
+  });
+
+  it("returns PR info when an open PR exists", async () => {
+    vi.spyOn(shell, "runGh").mockResolvedValue(
+      makeShellResult({
+        exitCode: 0,
+        stdout: JSON.stringify([
+          { number: 42, url: "https://github.com/org/repo/pull/42" },
+        ]),
+      }),
+    );
+
+    const result = await findOpenPullRequestForBranch("feat/existing");
+    expect(result).toEqual({
+      number: 42,
+      url: "https://github.com/org/repo/pull/42",
     });
+  });
 
-    it("returns null when no open PR is found", async () => {
-      vi.spyOn(shell, "runGh").mockResolvedValue(
-        makeShellResult({ exitCode: 0, stdout: "[]" }),
-      );
+  it("throws when gh pr list fails", async () => {
+    vi.spyOn(shell, "runGh").mockResolvedValue(
+      makeShellResult({
+        exitCode: 1,
+        stderr: "network error: could not connect to GitHub",
+      }),
+    );
 
-      const result = await findOpenPullRequestForBranch("feat/nonexistent");
-      expect(result).toBeNull();
-    });
-
-    it("returns PR info when an open PR exists", async () => {
-      vi.spyOn(shell, "runGh").mockResolvedValue(
-        makeShellResult({
-          exitCode: 0,
-          stdout: JSON.stringify([
-            { number: 42, url: "https://github.com/org/repo/pull/42" },
-          ]),
-        }),
-      );
-
-      const result = await findOpenPullRequestForBranch("feat/existing");
-      expect(result).toEqual({
-        number: 42,
-        url: "https://github.com/org/repo/pull/42",
-      });
-    });
-
-    it("throws when gh pr list fails", async () => {
-      vi.spyOn(shell, "runGh").mockResolvedValue(
-        makeShellResult({
-          exitCode: 1,
-          stderr: "network error: could not connect to GitHub",
-        }),
-      );
-
-      await expect(findOpenPullRequestForBranch("feat/error")).rejects.toThrow(
-        /findOpenPullRequestForBranch: gh pr list failed \(exit 1\)/,
-      );
-    });
+    await expect(findOpenPullRequestForBranch("feat/error")).rejects.toThrow(
+      /findOpenPullRequestForBranch: gh pr list failed \(exit 1\)/,
+    );
   });
 });
