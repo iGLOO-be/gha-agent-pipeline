@@ -252,8 +252,9 @@ export async function runCommitWithHookRetryForPhase<T>(options: {
         relaunchSession(buildRelaunchPrompt(hookLog), retryIndex),
     });
   } catch (error) {
-    // An exhausted commit-hook retry throws before the post-commit summaries,
-    // so record friction now to keep the failure's diagnostics.
+    // Any failure here (exhausted hook retry, non-hook commit/push error, or a
+    // failed relaunch session) throws before the post-commit summaries run, so
+    // record friction now to keep the failure's diagnostics.
     appendRunFrictionStepSummary(runFriction, phase);
     throw error;
   }
