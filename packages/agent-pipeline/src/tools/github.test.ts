@@ -1270,5 +1270,34 @@ describe("tools/github", () => {
         review_instructions: "recheck",
       });
     });
+
+    it("truncates manual review-fix feedback for workflow_dispatch", async () => {
+      let dispatched: Record<string, unknown> | undefined;
+      const octokit = {
+        repos: {
+          get: async () => ({ data: { default_branch: "main" } }),
+        },
+        actions: {
+          createWorkflowDispatch: async (args: Record<string, unknown>) => {
+            dispatched = args;
+          },
+        },
+      } as unknown as Parameters<typeof dispatchAgentPhaseWorkflow>[0];
+
+      const longFeedback = "z".repeat(20_000);
+      await dispatchAgentPhaseWorkflow(octokit, "owner", "repo", {
+        phase: "review-fix",
+        commentId: 1,
+        issueNumber: 2,
+        prNumber: 3,
+        headRef: "fix/branch",
+        reviewFeedback: longFeedback,
+      });
+
+      const feedback = (dispatched?.inputs as Record<string, string>)
+        .review_feedback;
+      expect(feedback.length).toBeLessThan(longFeedback.length);
+      expect(feedback).toContain("truncated");
+    });
   });
 });

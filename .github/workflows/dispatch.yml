@@ -86,6 +86,10 @@ jobs:
               unknownCommandReason
             } = require('./_gha-agent-pipeline-dispatch/.github/scripts/format-unknown-agent-command.cjs')
             const { RESERVED } = require('./_gha-agent-pipeline-dispatch/.github/scripts/command-constants.cjs')
+            const {
+              REVIEW_FIX_TRIGGER_MAX_CHARS,
+              truncateReviewFixFeedbackForDispatch
+            } = require('./_gha-agent-pipeline-dispatch/.github/scripts/truncate-review-fix-feedback.cjs')
             const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR']
             const owner = context.repo.owner
             const repo = context.repo.repo
@@ -190,8 +194,16 @@ jobs:
               headRef,
               reviewFeedback,
               reactionTarget,
-              chainCodeReview
+              chainCodeReview,
+              sourceUrl
             }) {
+              const truncatedFeedback = truncateReviewFixFeedbackForDispatch(
+                reviewFeedback,
+                {
+                  maxChars: REVIEW_FIX_TRIGGER_MAX_CHARS,
+                  ...(sourceUrl ? { sourceUrl } : {})
+                }
+              )
               await fetch(
                 `https://api.github.com/repos/${owner}/${repo}/actions/workflows/agent-phase.yml/dispatches`,
                 {
@@ -209,7 +221,7 @@ jobs:
                       pr_number: String(prNumber),
                       issue_number: String(issueNumber),
                       head_ref: headRef,
-                      review_feedback: reviewFeedback,
+                      review_feedback: truncatedFeedback,
                       reaction_target: reactionTarget,
                       ...(chainCodeReview ? { chain_code_review: 'true' } : {})
                     }
@@ -221,98 +233,6 @@ jobs:
                   throw new Error(`Workflow dispatch failed (${res.status}): ${text}`)
                 }
               })
-            }
-
-            function isAutomatedReviewAuthor(login) {
-              if (!login) return true
-              const lower = String(login).toLowerCase()
-              if (lower === 'github-actions[bot]') return true
-              return lower.endsWith('[bot]')
-            }
-
-            function formatReviewCommentsForDispatch(comments) {
-              return comments
-                .map((c) => {
-                  const author = c.user?.login ?? 'unknown'
-                  const line = c.line != null ? `:${c.line}` : ''
-                  const body = (c.body || '').trim()
-                  return `- ${c.path}${line} (id=${c.id}, ${author}): ${body}`
-                })
-                .join('\n')
-            }
-
-            function isBareReviewFixFeedback(feedback) {
-              if (/#discussion_r\d/i.test(feedback)) return false
-              const stripped = feedback.replace(/\/agent\s+fix/gi, '').trim()
-              return stripped.length === 0
-            }
-
-            async function appendLatestPrReviewBody(prNumber, feedback) {
-              if (!isBareReviewFixFeedback(feedback)) return feedback
-              try {
-                const reviews = await github.paginate(github.rest.pulls.listReviews, {
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  per_page: 100
-                })
-                const agentMarker = '<!-- agent-code-review -->'
-                const sorted = [...reviews].sort(
-                  (a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0)
-                )
-                const agentReview = sorted.find(
-                  (r) => (r.body || '').includes(agentMarker) && r.commit_id
-                )
-                const pick =
-                  agentReview ||
-                  sorted.find((r) => (r.body || '').trim().length > 0)
-                if (!pick?.body?.trim()) return feedback
-                const maxChars = 4000
-                const body = pick.body.trim()
-                const truncated =
-                  body.length > maxChars
-                    ? body.slice(0, maxChars) + `\n…(truncated ${body.length - maxChars} characters)`
-                    : body
-                return (
-                  feedback +
-                  '\n\n--- PR review ---\n' +
-                  truncated
-                )
-              } catch (error) {
-                core.warning(`Could not load PR reviews for dispatch: ${error.message}`)
-                return feedback
-              }
-            }
-
-            async function appendPrReviewComments(prNumber, feedback) {
-              if (!isBareReviewFixFeedback(feedback)) return feedback
-              let result = await appendLatestPrReviewBody(prNumber, feedback)
-              try {
-                const all = await github.paginate(github.rest.pulls.listReviewComments, {
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  per_page: 100
-                })
-                if (all.length === 0) return result
-                return (
-                  result +
-                  '\n\n--- Review line comments ---\n' +
-                  formatReviewCommentsForDispatch(all)
-                )
-              } catch (error) {
-                core.warning(`Could not load PR review comments for dispatch: ${error.message}`)
-                return result
-              }
-            }
-
-            function appendReviewLineComments(feedback, reviewComments) {
-              if (!reviewComments || reviewComments.length === 0) return feedback
-              return (
-                feedback +
-                '\n\n--- Review line comments ---\n' +
-                formatReviewCommentsForDispatch(reviewComments)
-              )
             }
 
             async function getBranchPrefix() {
@@ -499,17 +419,12 @@ jobs:
                   const rawFeedback = body.replace(/\/agent\s+fix/gi, '').trim() || body
                   const chainCodeReview = wantsChainCodeReviewFromSlash(rawFeedback, 'review-fix')
                   const feedback = stripChainCodeReviewSlashFlags(rawFeedback)
-                  const reviewFeedback = await appendPrReviewComments(
-                    resolved.prNumber,
-                    feedback
-                  )
-
                   await dispatchReviewFix({
                     commentId,
                     prNumber: resolved.prNumber,
                     issueNumber: resolved.issueNumber,
                     headRef: resolved.headRef,
-                    reviewFeedback,
+                    reviewFeedback: feedback,
                     reactionTarget: 'issue_comment',
                     chainCodeReview
                   })
@@ -722,15 +637,14 @@ jobs:
                 core.warning(`Could not add eyes reaction to review: ${error.message}`)
               }
 
-              const reviewFeedback = appendReviewLineComments(feedback, reviewComments)
-
               await dispatchReviewFix({
                 commentId: review.id,
                 prNumber: resolved.prNumber,
                 issueNumber: resolved.issueNumber,
                 headRef: resolved.headRef,
-                reviewFeedback,
+                reviewFeedback: feedback,
                 reactionTarget: 'pull_request_review',
-                chainCodeReview
+                chainCodeReview,
+                sourceUrl: review.html_url
               })
             }
