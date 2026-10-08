@@ -9,6 +9,11 @@ import {
   prepareCommandRuntime,
 } from "./command-runtime.js";
 import { branchName, createAndCheckoutBranch } from "./git/branch.js";
+import {
+  formatCommitHookRetryPrompt,
+  getCommitHookRetryMaxPasses,
+  runCommitWithHookRetryForPhase,
+} from "./git/commit-hook-retry.js";
 import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
 import { reportPhaseFailure } from "./report-failure.js";
@@ -17,6 +22,7 @@ import {
   createRunFrictionCollector,
 } from "./run-friction.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
+import type { AgentSessionResult } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
 import {
   addLabelToIssue,
@@ -38,6 +44,7 @@ import {
   formatPhaseCompletionMarkdown,
   formatPhaseReportForPr,
   formatRunMetricsMarkdown,
+  mergeSessionMetrics,
 } from "./phase-report.js";
 import { chainCodeReviewAfterImplement } from "./code-review-chain.js";
 import {
@@ -88,20 +95,7 @@ async function main() {
       ? `\n\nAdditional instructions:\n${userArgs}`
       : "";
 
-    const session = await runAgentSession({
-      phase: cmd.runtimePhase,
-      modelId: cmd.modelId,
-      systemPrompt: cmd.systemPrompt,
-      tools,
-      runFriction,
-      sessionMetadata: {
-        phase: cmd.runtimePhase,
-        commandId: cmd.commandId,
-        issueNumber: env.ISSUE_NUMBER,
-        repository: env.GITHUB_REPOSITORY,
-        branch,
-      },
-      prompt: `Implement issue #${env.ISSUE_NUMBER}: ${issue.title}
+    const implementInitialPrompt = `Implement issue #${env.ISSUE_NUMBER}: ${issue.title}
 
 Issue body:
 ${issue.body ?? "(empty)"}
@@ -110,33 +104,79 @@ Approved plan:
 ${plan ?? "(no plan comment — proceed from issue only)"}
 
 Repository: ${env.GITHUB_REPOSITORY}
-Branch: ${branch}${extraArgsBlock}`,
-    });
+Branch: ${branch}${extraArgsBlock}`;
 
-    appendRunFrictionStepSummary(runFriction, "implement");
+    const runImplementSession = (prompt: string, commitHookRetry?: number) =>
+      runAgentSession({
+        phase: cmd.runtimePhase,
+        modelId: cmd.modelId,
+        systemPrompt: cmd.systemPrompt,
+        tools,
+        runFriction,
+        sessionMetadata: {
+          phase: cmd.runtimePhase,
+          commandId: cmd.commandId,
+          issueNumber: env.ISSUE_NUMBER,
+          repository: env.GITHUB_REPOSITORY,
+          branch,
+          ...(commitHookRetry != null ? { commitHookRetry } : {}),
+        },
+        prompt,
+      });
 
-    const phaseReport = phaseReportTracker.report;
-    const phaseReportMarkdown = phaseReport
-      ? formatPhaseReportForPr(phaseReport)
-      : undefined;
+    const sessions: AgentSessionResult[] = [];
+    sessions.push(await runImplementSession(implementInitialPrompt));
+    // Snapshot the implementation summary: a hook-retry relaunch session may
+    // submit a report about the hook fix only, which would otherwise overwrite
+    // the report the runner was asked to publish.
+    const initialPhaseReport = phaseReportTracker.report;
 
     const commitSubject =
       cmd.resolved.git?.commit_subject ??
       `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
 
-    const committed = await commitAll(commitSubject);
-    if (!committed) {
-      throw new Error("No changes were made by the implement agent.");
-    }
+    const hookMaxPasses = getCommitHookRetryMaxPasses();
 
-    await pushBranch(branch);
+    await runCommitWithHookRetryForPhase({
+      phase: "implement",
+      maxPasses: hookMaxPasses,
+      commit: async () => {
+        const committed = await commitAll(commitSubject);
+        if (!committed) {
+          throw new Error("No changes were made by the implement agent.");
+        }
+        await pushBranch(branch);
+      },
+      buildRelaunchPrompt: (hookLog) =>
+        `${formatCommitHookRetryPrompt(hookLog)}
+
+Repository: ${env.GITHUB_REPOSITORY}
+Branch: ${branch}`,
+      relaunchSession: async (prompt, retryIndex) => {
+        sessions.push(await runImplementSession(prompt, retryIndex));
+      },
+      runFriction,
+    });
+
+    // On the success path the summary is written after the commit so friction
+    // collected by hook-retry sessions is included (exhaustion is covered by the
+    // wrapper, which appends before rethrowing).
+    appendRunFrictionStepSummary(runFriction, "implement");
+
+    // Aggregate every session of this phase (initial + hook retries).
+    const metrics = mergeSessionMetrics(sessions);
+
+    const phaseReport = initialPhaseReport ?? phaseReportTracker.report;
+    const phaseReportMarkdown = phaseReport
+      ? formatPhaseReportForPr(phaseReport)
+      : undefined;
 
     if (cmd.resolved.git?.skip_pr) {
       console.log("\nSkipping PR creation (commands.git.skip_pr).");
       return;
     }
 
-    const usageSection = formatRunMetricsMarkdown(session, {
+    const usageSection = formatRunMetricsMarkdown(metrics, {
       collapsible: true,
     });
 
@@ -175,13 +215,13 @@ Branch: ${branch}${extraArgsBlock}`,
       formatPhaseCompletionMarkdown({
         phase: "implement",
         phaseReport,
-        sessionUsage: session.usage,
-        sessionId: session.sessionId,
-        modelId: session.modelId,
-        servedModelIds: session.servedModelIds,
-        openRouterCostUsd: session.openRouterCostUsd,
-        iterations: session.iterations,
-        toolCallsCount: session.toolCallsCount,
+        sessionUsage: metrics.usage,
+        sessionId: metrics.sessionId,
+        modelId: metrics.modelId,
+        servedModelIds: metrics.servedModelIds,
+        openRouterCostUsd: metrics.openRouterCostUsd,
+        iterations: metrics.iterations,
+        toolCallsCount: metrics.toolCallsCount,
         runFriction,
       }),
     ].join("\n\n");

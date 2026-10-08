@@ -312,6 +312,80 @@ export interface FormatRunMetricsOptions {
 }
 
 /**
+ * Merge several sessions of the same phase into a single metrics source.
+ *
+ * Commit-hook retries can run more than one session per phase. Reporting only
+ * the last session undercounts the tokens/cost/iterations for the run that
+ * actually happened, so cumulative fields are summed while identity fields
+ * (session id, model id) come from the last session.
+ */
+export function mergeSessionMetrics(
+  sessions: readonly SessionMetricsSource[],
+): SessionMetricsSource {
+  const last = sessions[sessions.length - 1];
+  if (!last) {
+    return {};
+  }
+
+  const merged: SessionMetricsSource = { ...last };
+
+  const usages = sessions
+    .map((session) => session.usage)
+    .filter((usage): usage is SessionAccumulatedUsage => Boolean(usage));
+  if (usages.length > 0) {
+    merged.usage = usages.reduce<SessionAccumulatedUsage>(
+      (total, usage) => ({
+        inputTokens: total.inputTokens + usage.inputTokens,
+        outputTokens: total.outputTokens + usage.outputTokens,
+        cacheReadTokens: total.cacheReadTokens + usage.cacheReadTokens,
+        cacheWriteTokens: total.cacheWriteTokens + usage.cacheWriteTokens,
+        totalCost: total.totalCost + usage.totalCost,
+      }),
+      {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalCost: 0,
+      },
+    );
+  }
+
+  const costs = sessions
+    .map((session) => session.openRouterCostUsd)
+    .filter((cost): cost is number => typeof cost === "number");
+  if (costs.length > 0) {
+    merged.openRouterCostUsd = costs.reduce((total, cost) => total + cost, 0);
+  }
+
+  const iterations = sessions
+    .map((session) => session.iterations)
+    .filter((value): value is number => typeof value === "number");
+  if (iterations.length > 0) {
+    merged.iterations = iterations.reduce((total, value) => total + value, 0);
+  }
+
+  const toolCalls = sessions
+    .map((session) => session.toolCallsCount)
+    .filter((value): value is number => typeof value === "number");
+  if (toolCalls.length > 0) {
+    merged.toolCallsCount = toolCalls.reduce(
+      (total, value) => total + value,
+      0,
+    );
+  }
+
+  const servedModelIds = [
+    ...new Set(sessions.flatMap((session) => session.servedModelIds ?? [])),
+  ];
+  if (servedModelIds.length > 0) {
+    merged.servedModelIds = servedModelIds;
+  }
+
+  return merged;
+}
+
+/**
  * Canonical run metrics formatter shared by every agent command.
  * Returns the markdown block (or null when usage is unavailable).
  */

@@ -1,3 +1,4 @@
+import { readClampedEnvInt } from "./env.js";
 import {
   PullRequestStillConflictingError,
   type PullRequestMergeState,
@@ -6,21 +7,13 @@ import {
 export { PullRequestStillConflictingError };
 export type { PullRequestMergeState };
 
-const DEFAULT_MAX_PASSES = 2;
-const MIN_MAX_PASSES = 1;
-const MAX_MAX_PASSES = 3;
-
 /** Total agent passes when upstream may drift during a long fix session (includes the first pass). */
 export function getUpstreamDriftMaxPasses(): number {
-  const raw = process.env.AGENT_UPSTREAM_DRIFT_MAX_PASSES;
-  if (!raw) {
-    return DEFAULT_MAX_PASSES;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_MAX_PASSES;
-  }
-  return Math.min(MAX_MAX_PASSES, Math.max(MIN_MAX_PASSES, parsed));
+  return readClampedEnvInt("AGENT_UPSTREAM_DRIFT_MAX_PASSES", {
+    fallback: 2,
+    min: 1,
+    max: 3,
+  });
 }
 
 export function isUpstreamDriftAfterPush(
