@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -324,6 +324,45 @@ describe("commit-hook-retry", () => {
 
       expect(result).toBe("pushed");
       expect(prompts).toEqual(["retry prompt:husky - pre-commit hook failed"]);
+    });
+
+    it("records friction before rethrowing an exhausted retry", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "commit-hook-retry-"));
+      const summaryPath = join(dir, "summary.md");
+      writeFileSync(summaryPath, "");
+      vi.stubEnv("GITHUB_ACTIONS", "true");
+      vi.stubEnv("AGENT_LOG_GHA", "");
+      vi.stubEnv("GITHUB_STEP_SUMMARY", summaryPath);
+      try {
+        const runFriction = createRunFrictionCollector();
+        runFriction.record({
+          source: "runtime",
+          category: "tool_error",
+          summary: "editor: boom",
+        });
+
+        await expect(
+          runCommitWithHookRetryForPhase({
+            phase: "implement",
+            maxPasses: 1,
+            commit: async () => {
+              throw new GitCommitError("husky - pre-commit hook failed");
+            },
+            buildRelaunchPrompt: () => "retry prompt",
+            relaunchSession: async () => undefined,
+            runFriction,
+          }),
+        ).rejects.toThrow(/git commit failed/);
+
+        // The exhausted retry throws before the post-commit summaries, so the
+        // wrapper must have written the friction section itself.
+        expect(readFileSync(summaryPath, "utf8")).toContain(
+          "Run friction (implement)",
+        );
+      } finally {
+        vi.unstubAllEnvs();
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 });

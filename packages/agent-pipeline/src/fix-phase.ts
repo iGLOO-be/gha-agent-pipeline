@@ -329,7 +329,7 @@ export async function runFixPhase(
 `
           : "";
 
-      let session = await runAgentSession({
+      const session = await runAgentSession({
         phase: cmd.runtimePhase,
         modelId: cmd.modelId,
         systemPrompt: cmd.systemPrompt,
@@ -446,7 +446,7 @@ Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}
 PR #${env.PR_NUMBER}`,
           relaunchSession: async (prompt, retryIndex) => {
-            session = await runAgentSession({
+            const hookSession = await runAgentSession({
               phase: cmd.runtimePhase,
               modelId: cmd.modelId,
               systemPrompt: cmd.systemPrompt,
@@ -464,7 +464,7 @@ PR #${env.PR_NUMBER}`,
               },
               prompt,
             });
-            sessions.push(session);
+            sessions.push(hookSession);
           },
           runFriction,
         });
