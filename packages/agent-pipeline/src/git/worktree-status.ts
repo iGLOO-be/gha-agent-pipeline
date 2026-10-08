@@ -29,7 +29,12 @@ export function shouldWarnNoYoloChanges(
   return cleanTree && commitsAhead === 0;
 }
 
+/** `git rev-list` range between remote base branch and HEAD. */
+export function revListRangeAheadOfBase(baseBranch: string): string {
+  return `origin/${baseBranch}..HEAD`;
+}
+
 /** `git rev-list --count` command used to count commits ahead of the base branch. */
 export function commitsAheadOfBaseCommand(baseBranch: string): string {
-  return `git rev-list --count origin/${baseBranch}..HEAD`;
+  return `git rev-list --count ${revListRangeAheadOfBase(baseBranch)}`;
 }

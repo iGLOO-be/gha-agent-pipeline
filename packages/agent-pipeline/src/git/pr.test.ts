@@ -204,10 +204,10 @@ describe("commitAndPushBranch", () => {
       commitAndPushBranch("dirty-branch", "feat: should fail", {
         baseBranch: "missing-on-origin",
       }),
-    ).rejects.toThrow(/could not count commits ahead/);
+    ).rejects.toThrow(/git rev-list --count failed/);
   });
 
-  it("treats untracked excluded artifacts as a clean tree when rev-list fails", async () => {
+  it("ignores untracked excluded artifacts (nothing to commit) and surfaces the rev-list failure", async () => {
     runGit(worktree, "git checkout -b excluded-only");
     mkdirSync(join(worktree, PIPELINE_GHA_CHECKOUT_DIR), { recursive: true });
     writeFileSync(join(worktree, PIPELINE_GHA_CHECKOUT_DIR, "junk.txt"), "x\n");

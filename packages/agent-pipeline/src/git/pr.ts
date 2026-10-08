@@ -8,6 +8,7 @@ import {
   gitAddAllExcludingPipelineCheckoutCommand,
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
+import { revListRangeAheadOfBase } from "./worktree-status.js";
 
 async function isMergeInProgress(): Promise<boolean> {
   const mergeHead = await runShell("git rev-parse -q --verify MERGE_HEAD");
@@ -118,7 +119,7 @@ export async function commitAndPushBranch(
     0;
   const range = remoteBranchExists
     ? `${remoteRef}..HEAD`
-    : `origin/${baseBranch}..HEAD`;
+    : revListRangeAheadOfBase(baseBranch);
 
   const aheadResult = await runShell(`git rev-list --count ${range}`);
   let ahead = 0;
@@ -126,18 +127,9 @@ export async function commitAndPushBranch(
   if (revListExit === 0) {
     ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
   } else {
-    // commitAll already staged/committed everything using the same pathspec
-    // exclusions; if committed is true there are real changes that need pushing.
-    if (committed) {
-      throw new Error(
-        `commitAndPushBranch: could not count commits ahead (range=${range}, rev-list exit ${revListExit}). ` +
-          `Committed=${committed}. ` +
-          `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref). ` +
-          `stderr: ${aheadResult.stderr.trim()}`,
-      );
-    }
     throw new Error(
-      `commitAndPushBranch: git rev-list --count failed for range ${range} (exit ${revListExit}): ${aheadResult.stderr.trim()}`,
+      `commitAndPushBranch: git rev-list --count failed for range ${range} (exit ${revListExit}, committed=${committed}): ${aheadResult.stderr.trim()}. ` +
+        `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref).`,
     );
   }
 
@@ -147,7 +139,8 @@ export async function commitAndPushBranch(
 
   if (committed || ahead > 0) {
     await pushBranch(branch);
-    return { status: "pushed", commitsAhead: ahead + (committed ? 1 : 0) };
+    // ahead was measured after commitAll, so any commit created in this run is already included in ahead.
+    return { status: "pushed", commitsAhead: ahead };
   }
 
   return { status: "noChanges" };
