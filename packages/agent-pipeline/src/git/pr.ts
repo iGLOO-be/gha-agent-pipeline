@@ -106,7 +106,14 @@ export async function pushBranch(branch: string): Promise<void> {
 }
 
 export type CommitAndPushResult =
-  { status: "pushed"; commitsAhead: number } | { status: "noChanges" };
+  | { status: "pushed"; commitsAhead: number }
+  /**
+   * Nothing was committed and nothing is ahead of the probed range.
+   * `remoteBranchExists` distinguishes a legitimate re-run whose branch is
+   * already pushed (`true`) from a session that produced nothing at all
+   * (`false`, i.e. the branch does not exist on the remote either).
+   */
+  | { status: "noChanges"; remoteBranchExists: boolean };
 
 export async function commitAndPushBranch(
   branch: string,
@@ -147,7 +154,7 @@ export async function commitAndPushBranch(
     return { status: "pushed", commitsAhead: ahead };
   }
 
-  return { status: "noChanges" };
+  return { status: "noChanges", remoteBranchExists };
 }
 
 export async function createPullRequest(

@@ -179,7 +179,17 @@ describe("commitAndPushBranch", () => {
     const result = await commitAndPushBranch("synced", "feat: noop", {
       baseBranch: "main",
     });
-    expect(result).toEqual({ status: "noChanges" });
+    expect(result).toEqual({ status: "noChanges", remoteBranchExists: true });
+  });
+
+  it("returns noChanges with remoteBranchExists=false when the branch was never pushed", async () => {
+    runGit(worktree, "git checkout -b never-pushed");
+
+    const result = await commitAndPushBranch("never-pushed", "feat: noop", {
+      baseBranch: "main",
+    });
+
+    expect(result).toEqual({ status: "noChanges", remoteBranchExists: false });
   });
 
   it("throws instead of noChanges when rev-list fails and a commit was created", async () => {
