@@ -3,6 +3,11 @@ import {
   detectMergeRiskLevelWord,
   INLINE_REVIEW_TAG_LINE,
 } from "../code-review-display.js";
+import {
+  REVIEW_FIX_CHAINED_FEEDBACK_MAX_CHARS,
+  REVIEW_FIX_TRIGGER_MAX_CHARS,
+  truncateReviewFixFeedbackForDispatch,
+} from "../review-fix-dispatch-feedback.js";
 
 export function createOctokit(token: string): Octokit {
   return new Octokit({ auth: token });
@@ -783,7 +788,14 @@ export async function dispatchAgentPhaseWorkflow(
   };
 
   if (input.reviewFeedback != null && input.reviewFeedback !== "") {
-    inputs.review_feedback = input.reviewFeedback;
+    const maxChars =
+      input.reviewLoopActive === true
+        ? REVIEW_FIX_CHAINED_FEEDBACK_MAX_CHARS
+        : REVIEW_FIX_TRIGGER_MAX_CHARS;
+    inputs.review_feedback = truncateReviewFixFeedbackForDispatch(
+      input.reviewFeedback,
+      { maxChars },
+    );
   }
   if (input.reactionTarget) {
     inputs.reaction_target = input.reactionTarget;

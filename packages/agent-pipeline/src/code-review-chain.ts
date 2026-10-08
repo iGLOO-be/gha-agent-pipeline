@@ -6,7 +6,7 @@ import { dispatchPhaseFromEnv } from "./phase-dispatch.js";
  * Slash flags (`--recheck` / `+code-review` / `--code-review`) are detected and
  * stripped in the workflow (`dispatch.yml`), which sets `chain_code_review`.
  * The runtime only reads the env + config signals, so review-fix here must not
- * re-parse `REVIEW_FEEDBACK` (it also contains appended review bodies/comments).
+ * re-parse `REVIEW_FEEDBACK` for slash flags (review context is loaded at runtime).
  */
 export function shouldChainCodeReviewAfterReviewFix(
   config: AgentConfig,

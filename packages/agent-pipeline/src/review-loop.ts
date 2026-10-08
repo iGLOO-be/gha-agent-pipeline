@@ -3,7 +3,13 @@ import type { AgentConfig } from "./config.js";
 import type { PhaseDispatchFailureReason } from "./phase-dispatch.js";
 import { dispatchPhaseFromEnv } from "./phase-dispatch.js";
 import type { ReviewTracker } from "./tools/index.js";
+import {
+  REVIEW_FIX_CHAINED_FEEDBACK_MAX_CHARS,
+  truncateReviewFixFeedbackForDispatch,
+} from "./review-fix-dispatch-feedback.js";
 import { listReviewCommentsForReview, postComment } from "./tools/github.js";
+
+export { REVIEW_FIX_FEEDBACK_MAX_CHARS } from "./review-fix-dispatch-feedback.js";
 
 export function isReviewLoopEnabled(config: AgentConfig): boolean {
   return config.review_loop?.enabled === true;
@@ -116,12 +122,6 @@ export async function startReviewLoopAfterImplement(
   }
 }
 
-/**
- * `workflow_dispatch` inputs have a per-value size ceiling (64 KB in practice);
- * the review body plus every inline comment easily exceeds it. Truncate before
- * dispatch so a large review cannot make the loop end silently.
- */
-export const REVIEW_FIX_FEEDBACK_MAX_CHARS = 60_000;
 const REVIEW_FIX_BODY_MAX_CHARS = 20_000;
 const REVIEW_FIX_INLINE_COMMENT_MAX_CHARS = 4_000;
 
@@ -186,16 +186,10 @@ export async function buildChainedReviewFixFeedback(
   }
 
   const feedback = parts.join("\n");
-  if (feedback.length <= REVIEW_FIX_FEEDBACK_MAX_CHARS) {
-    return feedback;
-  }
-
-  const reviewUrl = review.htmlUrl ? ` (${review.htmlUrl})` : "";
-  const note = `\n…(review feedback truncated to fit the workflow_dispatch input limit; read the posted review${reviewUrl} for the full text)`;
-  const head = `${header.join("\n")}\n`;
-  const budget = REVIEW_FIX_FEEDBACK_MAX_CHARS - head.length - note.length;
-  const rest = parts.slice(header.length).join("\n");
-  return `${head}${rest.slice(0, Math.max(0, budget))}${note}`;
+  return truncateReviewFixFeedbackForDispatch(feedback, {
+    maxChars: REVIEW_FIX_CHAINED_FEEDBACK_MAX_CHARS,
+    sourceUrl: review.htmlUrl,
+  });
 }
 
 /**

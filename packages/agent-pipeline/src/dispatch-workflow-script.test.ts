@@ -79,6 +79,11 @@ describe("dispatch workflow inline script", () => {
     expect(yaml).not.toContain(
       "require('./.github/scripts/parse-agent-commands.cjs')",
     );
+    expect(yaml).toContain(
+      "require('./_gha-agent-pipeline-dispatch/.github/scripts/truncate-review-fix-feedback.cjs')",
+    );
+    expect(yaml).not.toContain("appendPrReviewComments");
+    expect(yaml).not.toContain("appendReviewLineComments");
   });
 
   it("only awaits functions defined in the same script (or github-script globals)", () => {
