@@ -129,12 +129,14 @@ async function applyYoloRiskLabels(
   owner: string,
   repo: string,
   issueNumber: number,
-  prNumber: number,
+  prNumber: number | undefined,
   riskLevel: RiskLevel,
 ): Promise<void> {
   try {
     await manageRiskLabels(octokit, owner, repo, issueNumber, riskLevel);
-    await manageRiskLabels(octokit, owner, repo, prNumber, riskLevel);
+    if (prNumber !== undefined) {
+      await manageRiskLabels(octokit, owner, repo, prNumber, riskLevel);
+    }
   } catch (error) {
     console.warn("Failed to manage risk labels:", error);
   }
@@ -220,14 +222,6 @@ Branch: ${branch}${extraArgsBlock}`,
     );
 
     if (pushResult.status === "noChanges") {
-      if (phaseReport?.summary) {
-        // commitAndPushBranch already established there is nothing to push, so
-        // this reuses that single source of truth instead of re-running probes.
-        console.warn(
-          `yolo: submitPhaseReport was called but there are no changes vs origin/${config.git.base_branch}.`,
-        );
-      }
-
       const skipPr = cmd.resolved.git?.skip_pr === true;
       // With skip_pr the runner never opens a PR, so an absent PR is expected;
       // only fail the run when a PR was expected but none exists.
@@ -235,6 +229,11 @@ Branch: ${branch}${extraArgsBlock}`,
         ? null
         : await findOpenPullRequestForBranch(branch);
       if (!existingPr && !skipPr) {
+        if (phaseReport?.summary) {
+          console.warn(
+            `yolo: submitPhaseReport was called but nothing is ahead of origin/${branch} or origin/${config.git.base_branch}.`,
+          );
+        }
         throw new Error(
           `No changes detected and no open pull request exists for branch ${branch}.`,
         );
@@ -253,16 +252,14 @@ Branch: ${branch}${extraArgsBlock}`,
         runFriction,
       });
 
-      if (existingPr) {
-        await applyYoloRiskLabels(
-          octokit,
-          owner,
-          repo,
-          env.ISSUE_NUMBER,
-          existingPr.number,
-          riskLevel,
-        );
-      }
+      await applyYoloRiskLabels(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        existingPr?.number,
+        riskLevel,
+      );
 
       console.log(
         existingPr
@@ -273,7 +270,26 @@ Branch: ${branch}${extraArgsBlock}`,
     }
 
     if (cmd.resolved.git?.skip_pr) {
-      console.log("\nSkipping PR creation (commands.git.skip_pr).");
+      // No PR is created, so the issue comment is the only durable record of
+      // this run. Post it (and the issue risk labels) before returning.
+      await postYoloIssueComment(octokit, owner, repo, env.ISSUE_NUMBER, {
+        riskLevel,
+        riskJustification,
+        prLine: `Branch \`${branch}\` was committed and pushed (PR creation skipped).`,
+        phaseReport,
+        session,
+        runFriction,
+      });
+      await applyYoloRiskLabels(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        undefined,
+        riskLevel,
+      );
+
+      console.log(`\nSkipping PR creation (commands.git.skip_pr).`);
       return;
     }
 

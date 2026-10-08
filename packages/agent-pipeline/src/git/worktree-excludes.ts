@@ -4,7 +4,7 @@ import { AGENT_STATE_DIR } from "../state/cache.js";
 export const PIPELINE_GHA_CHECKOUT_DIR = "gha-agent-pipeline";
 
 /** Pathspecs excluding the pipeline checkout and local agent runner state. */
-export function excludedWorktreePathspecs(): string {
+function excludedWorktreePathspecs(): string {
   return `':!${PIPELINE_GHA_CHECKOUT_DIR}' ':!${AGENT_STATE_DIR}'`;
 }
 
