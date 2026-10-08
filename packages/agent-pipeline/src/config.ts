@@ -522,8 +522,8 @@ const yoloPromptBody = `Implement the GitHub issue using the instructions in the
 
 CRITICAL — completion rule:
 - You MUST end every run by calling submitPhaseReport with summary, riskLevel, and riskJustification.
-- Do not finish by replying in chat or summarizing in text.
-- A run that does not call submitPhaseReport is a failure.
+- Do not finish by replying in chat or summarizing in text. The runner needs
+  \`riskLevel\` and \`riskJustification\` to apply the agent-risk-* labels.
 
 Workflow:
 1. Read the issue and existing comments if needed.
@@ -536,7 +536,7 @@ ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
 
-${SUBMIT_PHASE_REPORT_PROMPT}
+Use \`###\` headings or lower only; never emit top-level \`##\` headings — the runner provides the structural heading. Do not emit \`### Run metrics\` or \`### Run friction\` sections; those are injected automatically by the runner.
 
 Do not run \`git commit\`, \`git push\`, or open a PR yourself. The runner commits and pushes after you finish, and opens the PR unless \`git.skip_pr\` is set.
 

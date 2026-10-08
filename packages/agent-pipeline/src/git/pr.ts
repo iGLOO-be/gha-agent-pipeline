@@ -33,9 +33,22 @@ export async function commitAll(message: string): Promise<boolean> {
 
   const commit = await runShell(`git commit -m ${JSON.stringify(message)}`);
   if (commit.exitCode !== 0) {
-    throw new Error(`git commit failed: ${commit.stderr}`);
+    const output = [commit.stderr, commit.stdout].filter(Boolean).join("\n");
+    throw new GitCommitError(output);
   }
   return true;
+}
+
+export class GitCommitError extends Error {
+  /** Raw combined stdout+stderr of the failed `git commit`. */
+  readonly commitOutput: string;
+
+  constructor(commitOutput: string) {
+    const trimmed = commitOutput.trim();
+    super(`git commit failed: ${trimmed}`);
+    this.name = "GitCommitError";
+    this.commitOutput = commitOutput;
+  }
 }
 
 const NETWORK_ERROR_PATTERN =
@@ -155,10 +168,21 @@ export async function commitAndPushBranch(
   // Nothing to push from this run. A missing local `origin/<branch>` ref does not
   // prove the branch is absent from the remote — the ref only appears after a
   // fetch of that branch — so ask the remote before reporting "never pushed".
-  const remoteBranchExists =
-    remoteRefExists ||
-    (await runShell(`git ls-remote --exit-code --heads origin ${branch}`))
-      .exitCode === 0;
+  let remoteBranchExists = remoteRefExists;
+  if (!remoteRefExists) {
+    const probe = await runShell(
+      `git ls-remote --exit-code --heads origin ${JSON.stringify(branch)}`,
+    );
+    // `ls-remote --exit-code` uses exit code 2 for "no matching refs"; any other
+    // non-zero code means the probe itself failed (network/auth/DNS), which is
+    // not evidence that the branch is absent.
+    remoteBranchExists = probe.exitCode === 0;
+    if (probe.exitCode !== 0 && probe.exitCode !== 2) {
+      console.warn(
+        `commitAndPushBranch: git ls-remote failed for ${branch} (exit ${probe.exitCode}): ${probe.stderr.trim()}. Assuming the branch is not on the remote.`,
+      );
+    }
+  }
 
   return { status: "noChanges", remoteBranchExists };
 }

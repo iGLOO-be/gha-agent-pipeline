@@ -10,7 +10,12 @@ import {
   applyCommandGithubTools,
   prepareCommandRuntime,
 } from "./command-runtime.js";
-import { commitAndPushBranch } from "./git/pr.js";
+import {
+  formatCommitHookRetryPrompt,
+  getCommitHookRetryMaxPasses,
+  runCommitWithHookRetryForPhase,
+} from "./git/commit-hook-retry.js";
+import { commitAndPushBranch, type CommitAndPushResult } from "./git/pr.js";
 import {
   assertLocalMergeResolved,
   prepareResolvedMergeForCommit,
@@ -23,6 +28,7 @@ import {
   createRunFrictionCollector,
 } from "./run-friction.js";
 import { runAgentSession } from "./runtime.js";
+import type { AgentSessionResult } from "./runtime.js";
 import {
   clearAgentResumeLabels,
   createOctokit,
@@ -46,6 +52,7 @@ import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
 import {
   createPhaseReportTracker,
   formatPhaseCompletionMarkdown,
+  mergeSessionMetrics,
   resolveAgentCommitMessage,
 } from "./phase-report.js";
 import { chainCodeReviewAfterReviewFix } from "./code-review-chain.js";
@@ -243,6 +250,9 @@ export async function runFixPhase(
 
     const runFriction = createRunFrictionCollector();
     const maxPasses = getUpstreamDriftMaxPasses();
+    const hookMaxPasses = getCommitHookRetryMaxPasses();
+    // Sessions of every pass and hook retry, so run metrics report the whole run.
+    const sessions: AgentSessionResult[] = [];
 
     for (let pass = 0; pass < maxPasses; pass++) {
       if (pass > 0) {
@@ -385,38 +395,80 @@ Head SHA: ${headSha}
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${env.AGENT_BRANCH}`,
       });
-
-      const phaseReport = phaseReportTracker.report;
+      sessions.push(session);
+      // Snapshot the first session's report: a hook-retry relaunch session is a
+      // fresh session that may submit a report about the hook fix only, which
+      // would otherwise overwrite the summary the runner was asked to publish.
+      const initialPhaseReport = phaseReportTracker.report;
 
       const buildFixComment = (body: string): string => {
+        const metrics = mergeSessionMetrics(sessions);
         const completion = formatPhaseCompletionMarkdown({
           phase: entry,
           statusLine: body,
-          phaseReport,
-          sessionUsage: session.usage,
-          sessionId: session.sessionId,
-          modelId: session.modelId,
-          servedModelIds: session.servedModelIds,
-          openRouterCostUsd: session.openRouterCostUsd,
-          iterations: session.iterations,
-          toolCallsCount: session.toolCallsCount,
+          phaseReport: initialPhaseReport ?? phaseReportTracker.report,
+          sessionUsage: metrics.usage,
+          sessionId: metrics.sessionId,
+          modelId: metrics.modelId,
+          servedModelIds: metrics.servedModelIds,
+          openRouterCostUsd: metrics.openRouterCostUsd,
+          iterations: metrics.iterations,
+          toolCallsCount: metrics.toolCallsCount,
           runFriction,
         });
         return `<!-- ${fixCommentMarker(entry)} -->\n${completion}`;
       };
 
-      await prepareResolvedMergeForCommit();
+      const pushResult: CommitAndPushResult =
+        await runCommitWithHookRetryForPhase({
+          phase: entry,
+          maxPasses: hookMaxPasses,
+          commit: async () => {
+            await prepareResolvedMergeForCommit();
+            return commitAndPushBranch(
+              env.AGENT_BRANCH,
+              resolveAgentCommitMessage(
+                initialPhaseReport ?? phaseReportTracker.report,
+                pass > 0
+                  ? syncCommitSubject(
+                      entry,
+                      config.git.base_branch,
+                      env.PR_NUMBER,
+                    )
+                  : defaultCommitSubject(entry, env.PR_NUMBER),
+              ),
+              { baseBranch: config.git.base_branch },
+            );
+          },
+          buildRelaunchPrompt: (hookLog) =>
+            `${formatCommitHookRetryPrompt(hookLog)}
 
-      const pushResult = await commitAndPushBranch(
-        env.AGENT_BRANCH,
-        resolveAgentCommitMessage(
-          phaseReport,
-          pass > 0
-            ? syncCommitSubject(entry, config.git.base_branch, env.PR_NUMBER)
-            : defaultCommitSubject(entry, env.PR_NUMBER),
-        ),
-        { baseBranch: config.git.base_branch },
-      );
+Repository: ${env.GITHUB_REPOSITORY}
+Branch: ${env.AGENT_BRANCH}
+PR #${env.PR_NUMBER}`,
+          relaunchSession: async (prompt, retryIndex) => {
+            const hookSession = await runAgentSession({
+              phase: cmd.runtimePhase,
+              modelId: cmd.modelId,
+              systemPrompt: cmd.systemPrompt,
+              tools,
+              runFriction,
+              sessionMetadata: {
+                phase: cmd.runtimePhase,
+                commandId: cmd.commandId,
+                issueNumber: env.ISSUE_NUMBER,
+                prNumber: env.PR_NUMBER,
+                headSha,
+                repository: env.GITHUB_REPOSITORY,
+                upstreamDriftPass: pass,
+                commitHookRetry: retryIndex,
+              },
+              prompt,
+            });
+            sessions.push(hookSession);
+          },
+          runFriction,
+        });
 
       // Only the first pass can legitimately complete with "already synced".
       // On a drift-retry pass the branch was already pushed, so we must still
