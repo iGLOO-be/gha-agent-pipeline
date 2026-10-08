@@ -464,12 +464,15 @@ Workflow:
 
 Do not modify files. submitPlan is the only valid way to finish.`;
 
+const PHASE_REPORT_FORMAT_HINT =
+  "Use `###` headings or lower only; never emit top-level `##` headings — the runner provides the structural heading. Do not emit `### Run metrics` or `### Run friction` sections; those are injected automatically by the runner.";
+
 const SUBMIT_PHASE_REPORT_PROMPT = `
 After you have finished all edits, call \`submitPhaseReport\` with a concise human-readable summary.  
 If the repo contains an \`AGENTS.md\` with an **"Agent phase report"** (or **"Agent PR summary"**) section, follow its instructions. Otherwise summarize: what changed, which files were touched, and how to test your work.  
 The report is optional but encouraged.
 
-Use \`###\` headings or lower only; never emit top-level \`##\` headings — the runner provides the structural heading. Do not emit \`### Run metrics\` or \`### Run friction\` sections; those are injected automatically by the runner.`;
+${PHASE_REPORT_FORMAT_HINT}`;
 const implementPromptBody = `Implement the GitHub issue using the provided plan.
 
 Workflow:
@@ -536,7 +539,7 @@ ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
 
-Use \`###\` headings or lower only; never emit top-level \`##\` headings — the runner provides the structural heading. Do not emit \`### Run metrics\` or \`### Run friction\` sections; those are injected automatically by the runner.
+${PHASE_REPORT_FORMAT_HINT}
 
 Do not run \`git commit\`, \`git push\`, or open a PR yourself. The runner commits and pushes after you finish, and opens the PR unless \`git.skip_pr\` is set.
 

@@ -304,7 +304,7 @@ Branch: ${branch}`,
       return;
     }
 
-    if (cmd.resolved.git?.skip_pr) {
+    if (cmd.resolved.git?.skip_pr === true) {
       // No PR is created, so the issue comment is the only durable record of
       // this run. Post it (and the issue risk labels) before returning.
       await finishYoloRun(

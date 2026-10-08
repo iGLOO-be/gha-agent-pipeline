@@ -9,11 +9,6 @@ import {
   unstagePipelineCheckoutCommand,
 } from "./worktree-excludes.js";
 
-/** `git rev-list` range between the remote base branch and HEAD. */
-function revListRangeAheadOfBase(baseBranch: string): string {
-  return `origin/${baseBranch}..HEAD`;
-}
-
 async function isMergeInProgress(): Promise<boolean> {
   const mergeHead = await runShell("git rev-parse -q --verify MERGE_HEAD");
   return mergeHead.exitCode === 0;
@@ -131,9 +126,9 @@ export type CommitAndPushResult =
 export async function commitAndPushBranch(
   branch: string,
   message: string,
-  options?: { baseBranch?: string },
+  options: { baseBranch: string },
 ): Promise<CommitAndPushResult> {
-  const baseBranch = options?.baseBranch ?? loadAgentConfig().git.base_branch;
+  const baseBranch = options.baseBranch;
 
   const committed = await commitAll(message);
 
@@ -141,9 +136,7 @@ export async function commitAndPushBranch(
   const remoteRefExists =
     (await runShell(`git rev-parse --verify --quiet ${remoteRef}`)).exitCode ===
     0;
-  const range = remoteRefExists
-    ? `${remoteRef}..HEAD`
-    : revListRangeAheadOfBase(baseBranch);
+  const range = `${remoteRefExists ? remoteRef : `origin/${baseBranch}`}..HEAD`;
 
   const aheadResult = await runShell(`git rev-list --count ${range}`);
   if (aheadResult.exitCode !== 0) {
