@@ -131,6 +131,7 @@ async function main() {
   const env = loadAgentEnv();
   const config = loadAgentConfig();
   const cmd = prepareCommandRuntime("yolo", YOLO_MODEL, config);
+  const skipPr = cmd.resolved.git?.skip_pr === true;
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -264,7 +265,6 @@ Branch: ${branch}`,
     };
 
     if (pushResult.status === "noChanges") {
-      const skipPr = cmd.resolved.git?.skip_pr === true;
       // With skip_pr the runner never opens a PR, so an absent PR is expected;
       // there, the only signal that the session produced nothing is that the
       // branch was never pushed either. Without skip_pr, an absent open PR is
@@ -304,7 +304,7 @@ Branch: ${branch}`,
       return;
     }
 
-    if (cmd.resolved.git?.skip_pr === true) {
+    if (skipPr) {
       // No PR is created, so the issue comment is the only durable record of
       // this run. Post it (and the issue risk labels) before returning.
       await finishYoloRun(

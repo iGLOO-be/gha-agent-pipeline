@@ -467,9 +467,12 @@ Do not modify files. submitPlan is the only valid way to finish.`;
 const PHASE_REPORT_FORMAT_HINT =
   "Use `###` headings or lower only; never emit top-level `##` headings — the runner provides the structural heading. Do not emit `### Run metrics` or `### Run friction` sections; those are injected automatically by the runner.";
 
+const PHASE_REPORT_AGENTS_MD_HINT =
+  'If the repo contains an `AGENTS.md` with an **"Agent phase report"** (or **"Agent PR summary"**) section, follow its instructions.';
+
 const SUBMIT_PHASE_REPORT_PROMPT = `
 After you have finished all edits, call \`submitPhaseReport\` with a concise human-readable summary.  
-If the repo contains an \`AGENTS.md\` with an **"Agent phase report"** (or **"Agent PR summary"**) section, follow its instructions. Otherwise summarize: what changed, which files were touched, and how to test your work.  
+${PHASE_REPORT_AGENTS_MD_HINT} Otherwise summarize: what changed, which files were touched, and how to test your work.  
 The report is optional but encouraged.
 
 ${PHASE_REPORT_FORMAT_HINT}`;
@@ -527,6 +530,7 @@ CRITICAL — completion rule:
 - You MUST end every run by calling submitPhaseReport with summary, riskLevel, and riskJustification.
 - Do not finish by replying in chat or summarizing in text. The runner needs
   \`riskLevel\` and \`riskJustification\` to apply the agent-risk-* labels.
+- ${PHASE_REPORT_AGENTS_MD_HINT}
 
 Workflow:
 1. Read the issue and existing comments if needed.
