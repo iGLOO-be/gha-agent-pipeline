@@ -1,10 +1,7 @@
 import { readdir } from "node:fs/promises";
+import { readClampedEnvInt } from "../env.js";
 import { runShell } from "../tools/shell.js";
 import { GitCommitError } from "./pr.js";
-
-const DEFAULT_MAX_PASSES = 2;
-const MIN_MAX_PASSES = 1;
-const MAX_MAX_PASSES = 3;
 
 const HOOK_FAILURE_MARKERS = [
   /lint-staged/i,
@@ -34,7 +31,10 @@ const NON_HOOK_FAILURE_MARKERS = [
   /unable to write new index file/i,
   /index\.lock/i,
   /gpg failed to sign/i,
-  /permission denied/i,
+  // Git-specific form only: a bare "permission denied" can legitimately appear
+  // inside the log of an unrecognized hook runner that exited non-zero, and
+  // matching it would suppress the relaunch this feature exists for.
+  /fatal: unable to (create|write)[^\n]*permission denied/i,
   /read-only file system/i,
   /no space left on device/i,
   /unable to create .*COMMIT_EDITMSG/i,
@@ -43,15 +43,11 @@ const NON_HOOK_FAILURE_MARKERS = [
 
 /** Total commit attempts (includes the first try after a session). Default 2 = one hook-fix relaunch. */
 export function getCommitHookRetryMaxPasses(): number {
-  const raw = process.env.AGENT_COMMIT_HOOK_MAX_PASSES;
-  if (!raw) {
-    return DEFAULT_MAX_PASSES;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_MAX_PASSES;
-  }
-  return Math.min(MAX_MAX_PASSES, Math.max(MIN_MAX_PASSES, parsed));
+  return readClampedEnvInt("AGENT_COMMIT_HOOK_MAX_PASSES", {
+    fallback: 2,
+    min: 1,
+    max: 3,
+  });
 }
 
 export function stripAnsi(text: string): string {

@@ -133,32 +133,38 @@ Branch: ${branch}${extraArgsBlock}`;
 
     const hookMaxPasses = getCommitHookRetryMaxPasses();
 
-    // Emit the friction summary before the commit/push so an exhausted
-    // commit-hook retry (which throws before the post-commit summaries) still
-    // records its diagnostics in the step summary.
-    appendRunFrictionStepSummary(runFriction, "implement");
-
-    await runCommitWithHookRetry({
-      maxPasses: hookMaxPasses,
-      commit: async () => {
-        const committed = await commitAll(commitSubject);
-        if (!committed) {
-          throw new Error("No changes were made by the implement agent.");
-        }
-        await pushBranch(branch);
-      },
-      relaunchForHookFailure: async (hookLog, retryIndex) => {
-        sessions.push(
-          await runImplementSession(
-            `${formatCommitHookRetryPrompt(hookLog)}
+    try {
+      await runCommitWithHookRetry({
+        maxPasses: hookMaxPasses,
+        commit: async () => {
+          const committed = await commitAll(commitSubject);
+          if (!committed) {
+            throw new Error("No changes were made by the implement agent.");
+          }
+          await pushBranch(branch);
+        },
+        relaunchForHookFailure: async (hookLog, retryIndex) => {
+          sessions.push(
+            await runImplementSession(
+              `${formatCommitHookRetryPrompt(hookLog)}
 
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${branch}`,
-            retryIndex,
-          ),
-        );
-      },
-    });
+              retryIndex,
+            ),
+          );
+        },
+      });
+    } catch (error) {
+      // An exhausted commit-hook retry throws before the post-commit summaries,
+      // so record friction now to keep the failure's diagnostics.
+      appendRunFrictionStepSummary(runFriction, "implement");
+      throw error;
+    }
+
+    // On the success path the summary is written after the commit so friction
+    // collected by hook-retry sessions is included.
+    appendRunFrictionStepSummary(runFriction, "implement");
 
     // Aggregate every session of this phase (initial + hook retries).
     const metrics = mergeSessionMetrics(sessions);

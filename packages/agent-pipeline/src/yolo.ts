@@ -19,6 +19,7 @@ import {
   runCommitWithHookRetry,
 } from "./git/commit-hook-retry.js";
 import {
+  type CommitAndPushResult,
   commitAndPushBranch,
   createPullRequest,
   findOpenPullRequestForBranch,
@@ -178,26 +179,33 @@ Branch: ${branch}${extraArgsBlock}`;
     const commitSubject = `feat: implement issue #${env.ISSUE_NUMBER} — ${issue.title}`;
     const hookMaxPasses = getCommitHookRetryMaxPasses();
 
-    // Emit the friction summary before the commit/push so an exhausted
-    // commit-hook retry (which throws before the post-commit summaries) still
-    // records its diagnostics in the step summary.
-    appendRunFrictionStepSummary(runFriction, "yolo");
-
-    const pushResult = await runCommitWithHookRetry({
-      maxPasses: hookMaxPasses,
-      commit: () => commitAndPushBranch(branch, commitSubject),
-      relaunchForHookFailure: async (hookLog, retryIndex) => {
-        sessions.push(
-          await runYoloSession(
-            `${formatCommitHookRetryPrompt(hookLog)}
+    let pushResult: CommitAndPushResult;
+    try {
+      pushResult = await runCommitWithHookRetry({
+        maxPasses: hookMaxPasses,
+        commit: () => commitAndPushBranch(branch, commitSubject),
+        relaunchForHookFailure: async (hookLog, retryIndex) => {
+          sessions.push(
+            await runYoloSession(
+              `${formatCommitHookRetryPrompt(hookLog)}
 
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${branch}`,
-            retryIndex,
-          ),
-        );
-      },
-    });
+              retryIndex,
+            ),
+          );
+        },
+      });
+    } catch (error) {
+      // An exhausted commit-hook retry throws before the post-commit summaries,
+      // so record friction now to keep the failure's diagnostics.
+      appendRunFrictionStepSummary(runFriction, "yolo");
+      throw error;
+    }
+
+    // On the success path the summary is written after the commit so friction
+    // collected by hook-retry sessions is included.
+    appendRunFrictionStepSummary(runFriction, "yolo");
 
     // Aggregate every session of this phase (initial + hook retries).
     const metrics = mergeSessionMetrics(sessions);

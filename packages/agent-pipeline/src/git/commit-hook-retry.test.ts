@@ -100,6 +100,16 @@ describe("commit-hook-retry", () => {
         isCommitHookFailureLike("fatal: No space left on device", true),
       ).toBe(false);
     });
+
+    it("still treats hook output mentioning permission denied as a hook failure", () => {
+      // A custom hook runner may print "permission denied" while the hook is
+      // what exited non-zero; only the git-specific `fatal: unable to ...`
+      // form should short-circuit the installed-hooks fallback.
+      const hookLog =
+        "- hook id: check-perms\n- exit code: 1\nchmod: permission denied";
+      expect(isKnownNonHookGitFailure(hookLog)).toBe(false);
+      expect(isCommitHookFailureLike(hookLog, true)).toBe(true);
+    });
   });
 
   describe("hasInstalledCommitHooks", () => {
