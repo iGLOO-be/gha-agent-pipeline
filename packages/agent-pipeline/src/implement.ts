@@ -14,7 +14,7 @@ import {
   getCommitHookRetryMaxPasses,
   runCommitWithHookRetryForPhase,
 } from "./git/commit-hook-retry.js";
-import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
+import { commitAndPushBranch, createPullRequest } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import {
@@ -141,11 +141,12 @@ Branch: ${branch}${extraArgsBlock}`;
       phase: "implement",
       maxPasses: hookMaxPasses,
       commit: async () => {
-        const committed = await commitAll(commitSubject);
-        if (!committed) {
+        const pushResult = await commitAndPushBranch(branch, commitSubject, {
+          baseBranch: config.git.base_branch,
+        });
+        if (pushResult.status === "noChanges") {
           throw new Error("No changes were made by the implement agent.");
         }
-        await pushBranch(branch);
       },
       buildRelaunchPrompt: (hookLog) =>
         `${formatCommitHookRetryPrompt(hookLog)}

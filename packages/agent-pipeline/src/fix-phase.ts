@@ -437,6 +437,7 @@ Branch: ${env.AGENT_BRANCH}`,
                     )
                   : defaultCommitSubject(entry, env.PR_NUMBER),
               ),
+              { baseBranch: config.git.base_branch },
             );
           },
           buildRelaunchPrompt: (hookLog) =>

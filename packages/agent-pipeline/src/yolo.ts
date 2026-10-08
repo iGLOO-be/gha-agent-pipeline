@@ -23,6 +23,7 @@ import {
   createPullRequest,
   findOpenPullRequestForBranch,
 } from "./git/pr.js";
+import { shouldFailNoChanges } from "./git/push-outcome.js";
 import { buildAgentPrBody } from "./pr-body.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import {
@@ -43,6 +44,7 @@ import {
   prependAgentMarker,
   readComments,
   readIssue,
+  type RiskLevel,
 } from "./tools/github.js";
 import { createAgentTools } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
@@ -107,10 +109,29 @@ async function postYoloIssueComment(
   );
 }
 
+async function applyYoloRiskLabels(
+  octokit: ReturnType<typeof createOctokit>,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  prNumber: number | undefined,
+  riskLevel: RiskLevel,
+): Promise<void> {
+  try {
+    await manageRiskLabels(octokit, owner, repo, issueNumber, riskLevel);
+    if (prNumber !== undefined) {
+      await manageRiskLabels(octokit, owner, repo, prNumber, riskLevel);
+    }
+  } catch (error) {
+    console.warn("Failed to manage risk labels:", error);
+  }
+}
+
 async function main() {
   const env = loadAgentEnv();
   const config = loadAgentConfig();
   const cmd = prepareCommandRuntime("yolo", YOLO_MODEL, config);
+  const skipPr = cmd.resolved.git?.skip_pr === true;
   const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
   const octokit = createOctokit(env.GITHUB_TOKEN);
 
@@ -185,7 +206,10 @@ Branch: ${branch}${extraArgsBlock}`;
     const pushResult = await runCommitWithHookRetryForPhase({
       phase: "yolo",
       maxPasses: hookMaxPasses,
-      commit: () => commitAndPushBranch(branch, commitSubject),
+      commit: () =>
+        commitAndPushBranch(branch, commitSubject, {
+          baseBranch: config.git.base_branch,
+        }),
       buildRelaunchPrompt: (hookLog) =>
         `${formatCommitHookRetryPrompt(hookLog)}
 
@@ -215,12 +239,13 @@ Branch: ${branch}`,
       resolveYoloRiskSourceOutput(sessions),
     );
 
-    if (pushResult.status === "noChanges") {
-      const existingPr = await findOpenPullRequestForBranch(branch);
-      const prLine = existingPr
-        ? `No new commit was needed: the branch \`${branch}\` already contains the intended changes. Open pull request [#${existingPr.number}](${existingPr.url}).`
-        : `No new commit was needed: the branch \`${branch}\` already matches the working tree (no open PR found for this head).`;
-
+    // Single end-of-run record: post the issue comment and apply risk labels.
+    // Used by the noChanges, skip_pr and PR-created exit paths so they cannot
+    // drift apart.
+    const finishYoloRun = async (
+      prLine: string,
+      prNumber: number | undefined,
+    ): Promise<void> => {
       await postYoloIssueComment(octokit, owner, repo, env.ISSUE_NUMBER, {
         riskLevel,
         riskJustification,
@@ -229,31 +254,65 @@ Branch: ${branch}`,
         session: metrics,
         runFriction,
       });
+      await applyYoloRiskLabels(
+        octokit,
+        owner,
+        repo,
+        env.ISSUE_NUMBER,
+        prNumber,
+        riskLevel,
+      );
+    };
 
-      if (existingPr) {
-        try {
-          await manageRiskLabels(
-            octokit,
-            owner,
-            repo,
-            env.ISSUE_NUMBER,
-            riskLevel,
+    if (pushResult.status === "noChanges") {
+      // With skip_pr the runner never opens a PR, so an absent PR is expected;
+      // there, the only signal that the session produced nothing is that the
+      // branch was never pushed either. Without skip_pr, an absent open PR is
+      // itself a failure.
+      const existingPr = skipPr
+        ? null
+        : await findOpenPullRequestForBranch(branch);
+      const failed = shouldFailNoChanges({
+        skipPr,
+        remoteBranchExists: pushResult.remoteBranchExists,
+        hasOpenPullRequest: existingPr !== null,
+      });
+      if (failed) {
+        if (phaseReport?.summary) {
+          console.warn(
+            `yolo: submitPhaseReport was called but nothing is ahead of origin/${branch} or origin/${config.git.base_branch}.`,
           );
-          await manageRiskLabels(
-            octokit,
-            owner,
-            repo,
-            existingPr.number,
-            riskLevel,
-          );
-        } catch (error) {
-          console.warn("Failed to manage risk labels:", error);
         }
+        throw new Error(
+          skipPr
+            ? `No changes detected: nothing is ahead of origin/${config.git.base_branch} and branch ${branch} was never pushed.`
+            : `No changes detected and no open pull request exists for branch ${branch}.`,
+        );
       }
 
+      const prLine = existingPr
+        ? `No new commits were needed; work is already tracked in pull request [#${existingPr.number}](${existingPr.url}).`
+        : `No new commits were needed; the branch \`${branch}\` already contains the intended changes (PR creation skipped).`;
+
+      await finishYoloRun(prLine, existingPr?.number);
+
       console.log(
-        `\nYolo completed with no changes on branch ${branch}${existingPr ? ` (PR #${existingPr.number})` : ""}`,
+        existingPr
+          ? `\nYolo completed with no changes on branch ${branch} (PR #${existingPr.number})`
+          : `\nYolo completed with no changes on branch ${branch} (PR creation skipped)`,
       );
+      return;
+    }
+
+    if (skipPr) {
+      // No PR is created, so the issue comment is the only durable record of
+      // this run. Post it (and the issue risk labels) before returning.
+      await finishYoloRun(
+        `Branch \`${branch}\` was committed and pushed (PR creation skipped).`,
+        undefined,
+      );
+
+      console.log(`\nSkipping PR creation (commands.git.skip_pr).`);
       return;
     }
 
@@ -307,21 +366,10 @@ Branch: ${branch}`,
       console.warn("Failed to add agent-waiting-human label:", error);
     }
 
-    await postYoloIssueComment(octokit, owner, repo, env.ISSUE_NUMBER, {
-      riskLevel,
-      riskJustification,
-      prLine: `Pull request [#${pr.number}](${pr.url}) created.`,
-      phaseReport,
-      session: metrics,
-      runFriction,
-    });
-
-    try {
-      await manageRiskLabels(octokit, owner, repo, env.ISSUE_NUMBER, riskLevel);
-      await manageRiskLabels(octokit, owner, repo, pr.number, riskLevel);
-    } catch (error) {
-      console.warn("Failed to manage risk labels:", error);
-    }
+    await finishYoloRun(
+      `Pull request [#${pr.number}](${pr.url}) created.`,
+      pr.number,
+    );
 
     console.log(`\nPR created: ${pr.url}`);
   } catch (error) {

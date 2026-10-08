@@ -23,6 +23,8 @@ vi.mock("../session-retry.js", () => ({
 
 import {
   commitAll,
+  commitAndPushBranch,
+  findOpenPullRequestForBranch,
   getPushMaxAttempts,
   getPushRetryBaseDelayMs,
   pushBranch,
@@ -122,6 +124,142 @@ describe("commitAll", () => {
     expect(runGit(worktree, "git show -s --pretty=%s HEAD").trim()).toBe(
       "fix: merge main into feature",
     );
+  });
+});
+
+describe("commitAndPushBranch", () => {
+  let parentDir: string;
+  let worktree: string;
+  let bareRemote: string;
+  let previousCwd: string;
+
+  beforeEach(() => {
+    previousCwd = process.cwd();
+    parentDir = mkdtempSync(join(tmpdir(), "agent-commit-push-"));
+    bareRemote = join(parentDir, "origin.git");
+    runGit(parentDir, `git init --bare -b main ${bareRemote}`);
+    worktree = join(parentDir, "repo");
+    runGit(parentDir, `git clone ${bareRemote} repo`);
+    process.chdir(worktree);
+    runGit(worktree, "git config user.email test@example.com");
+    runGit(worktree, "git config user.name test");
+    writeFileSync(join(worktree, "base.txt"), "base\n");
+    runGit(worktree, "git add base.txt && git commit -m base");
+    runGit(worktree, "git push -u origin main");
+  });
+
+  afterEach(() => {
+    process.chdir(previousCwd);
+    rmSync(parentDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("pushes when the feature branch is ahead of base but not on origin yet", async () => {
+    runGit(worktree, "git checkout -b agent/issue-1");
+    writeFileSync(join(worktree, "feature.txt"), "work\n");
+    runGit(worktree, 'git add feature.txt && git commit -m "agent pre-commit"');
+
+    const result = await commitAndPushBranch(
+      "agent/issue-1",
+      "feat: runner commit",
+      { baseBranch: "main" },
+    );
+
+    expect(result).toEqual({ status: "pushed", commitsAhead: 1 });
+    runGit(worktree, "git rev-parse --verify origin/agent/issue-1");
+  });
+
+  it("returns noChanges when origin branch exists and HEAD matches", async () => {
+    runGit(worktree, "git checkout -b synced");
+    writeFileSync(join(worktree, "synced.txt"), "x\n");
+    runGit(worktree, "git add synced.txt && git commit -m synced");
+    runGit(worktree, "git push -u origin synced");
+    runGit(worktree, "git checkout synced");
+
+    const result = await commitAndPushBranch("synced", "feat: noop", {
+      baseBranch: "main",
+    });
+    expect(result).toEqual({ status: "noChanges", remoteBranchExists: true });
+  });
+
+  it("returns noChanges with remoteBranchExists=false when the branch was never pushed", async () => {
+    runGit(worktree, "git checkout -b never-pushed");
+
+    const result = await commitAndPushBranch("never-pushed", "feat: noop", {
+      baseBranch: "main",
+    });
+
+    expect(result).toEqual({ status: "noChanges", remoteBranchExists: false });
+  });
+
+  it("detects an already-pushed branch when the local remote-tracking ref is missing", async () => {
+    runGit(worktree, "git checkout -b pushed-elsewhere");
+    writeFileSync(join(worktree, "pushed.txt"), "x\n");
+    runGit(worktree, "git add pushed.txt && git commit -m pushed");
+    runGit(worktree, "git push -u origin pushed-elsewhere");
+    runGit(worktree, "git checkout main");
+    runGit(worktree, "git branch -D pushed-elsewhere");
+    runGit(worktree, "git update-ref -d refs/remotes/origin/pushed-elsewhere");
+    runGit(worktree, "git checkout -b pushed-elsewhere origin/main");
+
+    const result = await commitAndPushBranch("pushed-elsewhere", "feat: noop", {
+      baseBranch: "main",
+    });
+
+    expect(result).toEqual({ status: "noChanges", remoteBranchExists: true });
+  });
+
+  it("throws instead of noChanges when rev-list fails and a commit was created", async () => {
+    runGit(worktree, "git checkout -b dirty-branch");
+    writeFileSync(join(worktree, "dirty.txt"), "uncommitted\n");
+
+    const { runShell: originalRunShell } =
+      await vi.importActual<typeof import("../tools/shell.js")>(
+        "../tools/shell.js",
+      );
+    vi.spyOn(shell, "runShell").mockImplementation(async (command: string) => {
+      if (command.startsWith("git rev-list --count")) {
+        return makeShellResult({
+          exitCode: 128,
+          stderr: "fatal: ambiguous argument",
+        });
+      }
+      return originalRunShell(command);
+    });
+
+    await expect(
+      commitAndPushBranch("dirty-branch", "feat: should fail", {
+        baseBranch: "missing-on-origin",
+      }),
+    ).rejects.toThrow(/git rev-list --count failed.*committed=true/);
+  });
+
+  it("ignores untracked excluded artifacts (nothing to commit) and surfaces the rev-list failure", async () => {
+    runGit(worktree, "git checkout -b excluded-only");
+    mkdirSync(join(worktree, PIPELINE_GHA_CHECKOUT_DIR), { recursive: true });
+    writeFileSync(join(worktree, PIPELINE_GHA_CHECKOUT_DIR, "junk.txt"), "x\n");
+    mkdirSync(join(worktree, AGENT_STATE_DIR), { recursive: true });
+    writeFileSync(join(worktree, AGENT_STATE_DIR, "ci-round"), "1\n");
+
+    const { runShell: originalRunShell } =
+      await vi.importActual<typeof import("../tools/shell.js")>(
+        "../tools/shell.js",
+      );
+    vi.spyOn(shell, "runShell").mockImplementation(async (command: string) => {
+      if (command.startsWith("git rev-list --count")) {
+        return makeShellResult({
+          exitCode: 128,
+          stderr: "fatal: ambiguous argument",
+        });
+      }
+      return originalRunShell(command);
+    });
+
+    await expect(
+      commitAndPushBranch("excluded-only", "feat: should fail", {
+        baseBranch: "missing-on-origin",
+      }),
+    ).rejects.toThrow(/git rev-list --count failed.*committed=false/);
   });
 });
 
@@ -284,5 +422,50 @@ describe("pushBranch", () => {
       expect(runShellSpy).toHaveBeenCalledTimes(1);
       expect(mockSleep).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("findOpenPullRequestForBranch", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns null when no open PR is found", async () => {
+    vi.spyOn(shell, "runGh").mockResolvedValue(
+      makeShellResult({ exitCode: 0, stdout: "[]" }),
+    );
+
+    const result = await findOpenPullRequestForBranch("feat/nonexistent");
+    expect(result).toBeNull();
+  });
+
+  it("returns PR info when an open PR exists", async () => {
+    vi.spyOn(shell, "runGh").mockResolvedValue(
+      makeShellResult({
+        exitCode: 0,
+        stdout: JSON.stringify([
+          { number: 42, url: "https://github.com/org/repo/pull/42" },
+        ]),
+      }),
+    );
+
+    const result = await findOpenPullRequestForBranch("feat/existing");
+    expect(result).toEqual({
+      number: 42,
+      url: "https://github.com/org/repo/pull/42",
+    });
+  });
+
+  it("throws when gh pr list fails", async () => {
+    vi.spyOn(shell, "runGh").mockResolvedValue(
+      makeShellResult({
+        exitCode: 1,
+        stderr: "network error: could not connect to GitHub",
+      }),
+    );
+
+    await expect(findOpenPullRequestForBranch("feat/error")).rejects.toThrow(
+      /findOpenPullRequestForBranch: gh pr list failed \(exit 1\)/,
+    );
   });
 });

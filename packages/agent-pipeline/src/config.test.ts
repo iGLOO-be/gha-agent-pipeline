@@ -591,6 +591,9 @@ describe("config", () => {
       const prompt = buildPhaseSystemPrompt("yolo", config);
       expect(prompt).toContain("submitPhaseReport");
       expect(prompt).toContain("Agent phase report");
+      expect(prompt).toContain("headings or lower");
+      expect(prompt).toContain("CRITICAL — completion rule");
+      expect(prompt).toContain("git commit");
     });
 
     it("includes submitPhaseReport in ci-fix prompt", () => {

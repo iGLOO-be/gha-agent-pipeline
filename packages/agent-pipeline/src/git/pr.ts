@@ -114,28 +114,70 @@ export async function pushBranch(branch: string): Promise<void> {
 }
 
 export type CommitAndPushResult =
-  { status: "pushed"; commitsAhead: number } | { status: "noChanges" };
+  | { status: "pushed"; commitsAhead: number }
+  /**
+   * Nothing was committed and nothing is ahead of the probed range.
+   * `remoteBranchExists` distinguishes a legitimate re-run whose branch is
+   * already pushed (`true`) from a session that produced nothing at all
+   * (`false`, i.e. the branch does not exist on the remote either).
+   */
+  | { status: "noChanges"; remoteBranchExists: boolean };
 
 export async function commitAndPushBranch(
   branch: string,
   message: string,
+  options: { baseBranch: string },
 ): Promise<CommitAndPushResult> {
+  const baseBranch = options.baseBranch;
+
   const committed = await commitAll(message);
 
-  const aheadResult = await runShell(
-    `git rev-list --count origin/${branch}..HEAD`,
-  );
-  let ahead = 0;
-  if (aheadResult.exitCode === 0) {
-    ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
+  const remoteRef = `origin/${branch}`;
+  const remoteRefExists =
+    (await runShell(`git rev-parse --verify --quiet ${remoteRef}`)).exitCode ===
+    0;
+  const range = `${remoteRefExists ? remoteRef : `origin/${baseBranch}`}..HEAD`;
+
+  const aheadResult = await runShell(`git rev-list --count ${range}`);
+  if (aheadResult.exitCode !== 0) {
+    throw new Error(
+      `commitAndPushBranch: git rev-list --count failed for range ${range} (exit ${aheadResult.exitCode}, committed=${committed}): ${aheadResult.stderr.trim()}. ` +
+        `Ensure origin/${baseBranch} is fetched (not a shallow clone missing the ref). ` +
+        `Aborting before push so the unresolvable range is surfaced; any commit created in this run was not pushed.`,
+    );
   }
+  // ahead was measured after commitAll, so any commit created in this run is already included in ahead.
+  const ahead = parseInt(aheadResult.stdout.trim(), 10) || 0;
+
+  console.log(
+    `commitAndPushBranch: committed=${committed} ahead=${ahead} range=${range} remoteExists=${remoteRefExists}`,
+  );
 
   if (committed || ahead > 0) {
     await pushBranch(branch);
-    return { status: "pushed", commitsAhead: ahead + (committed ? 1 : 0) };
+    return { status: "pushed", commitsAhead: ahead };
   }
 
-  return { status: "noChanges" };
+  // Nothing to push from this run. A missing local `origin/<branch>` ref does not
+  // prove the branch is absent from the remote — the ref only appears after a
+  // fetch of that branch — so ask the remote before reporting "never pushed".
+  let remoteBranchExists = remoteRefExists;
+  if (!remoteRefExists) {
+    const probe = await runShell(
+      `git ls-remote --exit-code --heads origin ${JSON.stringify(branch)}`,
+    );
+    // `ls-remote --exit-code` uses exit code 2 for "no matching refs"; any other
+    // non-zero code means the probe itself failed (network/auth/DNS), which is
+    // not evidence that the branch is absent.
+    remoteBranchExists = probe.exitCode === 0;
+    if (probe.exitCode !== 0 && probe.exitCode !== 2) {
+      console.warn(
+        `commitAndPushBranch: git ls-remote failed for ${branch} (exit ${probe.exitCode}): ${probe.stderr.trim()}. Assuming the branch is not on the remote.`,
+      );
+    }
+  }
+
+  return { status: "noChanges", remoteBranchExists };
 }
 
 export async function createPullRequest(
@@ -188,7 +230,9 @@ export async function findOpenPullRequestForBranch(
     `gh pr list --head ${JSON.stringify(branch)} --state open --json number,url --limit 1`,
   );
   if (result.exitCode !== 0) {
-    return null;
+    throw new Error(
+      `findOpenPullRequestForBranch: gh pr list failed (exit ${result.exitCode}): ${result.stderr.trim()}`,
+    );
   }
   const trimmed = result.stdout.trim();
   if (!trimmed || trimmed === "[]") {

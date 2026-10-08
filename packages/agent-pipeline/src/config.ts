@@ -464,12 +464,18 @@ Workflow:
 
 Do not modify files. submitPlan is the only valid way to finish.`;
 
+const PHASE_REPORT_FORMAT_HINT =
+  "Use `###` headings or lower only; never emit top-level `##` headings — the runner provides the structural heading. Do not emit `### Run metrics` or `### Run friction` sections; those are injected automatically by the runner.";
+
+const PHASE_REPORT_AGENTS_MD_HINT =
+  'If the repo contains an `AGENTS.md` with an **"Agent phase report"** (or **"Agent PR summary"**) section, follow its instructions.';
+
 const SUBMIT_PHASE_REPORT_PROMPT = `
 After you have finished all edits, call \`submitPhaseReport\` with a concise human-readable summary.  
-If the repo contains an \`AGENTS.md\` with an **"Agent phase report"** (or **"Agent PR summary"**) section, follow its instructions. Otherwise summarize: what changed, which files were touched, and how to test your work.  
+${PHASE_REPORT_AGENTS_MD_HINT} Otherwise summarize: what changed, which files were touched, and how to test your work.  
 The report is optional but encouraged.
 
-Use \`###\` headings or lower only; never emit top-level \`##\` headings — the runner provides the structural heading. Do not emit \`### Run metrics\` or \`### Run friction\` sections; those are injected automatically by the runner.`;
+${PHASE_REPORT_FORMAT_HINT}`;
 const implementPromptBody = `Implement the GitHub issue using the provided plan.
 
 Workflow:
@@ -520,6 +526,12 @@ Do not commit or push. The runner will handle git operations after you finish.`;
 
 const yoloPromptBody = `Implement the GitHub issue using the instructions in the issue description.
 
+CRITICAL — completion rule:
+- You MUST end every run by calling submitPhaseReport with summary, riskLevel, and riskJustification.
+- Do not finish by replying in chat or summarizing in text. The runner needs
+  \`riskLevel\` and \`riskJustification\` to apply the agent-risk-* labels.
+- ${PHASE_REPORT_AGENTS_MD_HINT}
+
 Workflow:
 1. Read the issue and existing comments if needed.
 2. Use list_files, read_files, search_codebase, editor, and apply_patch to inspect and modify files.
@@ -531,9 +543,9 @@ ${FILE_EDIT_SYSTEM_HINT}
 
 ${RUN_FRICTION_SYSTEM_HINT}
 
-${SUBMIT_PHASE_REPORT_PROMPT}
+${PHASE_REPORT_FORMAT_HINT}
 
-Do not commit, push, or open a PR yourself. The runner will handle git operations after you finish.
+Do not run \`git commit\`, \`git push\`, or open a PR yourself. The runner commits and pushes after you finish, and opens the PR unless \`git.skip_pr\` is set.
 
 When you call \`submitPhaseReport\`, you **must** include \`riskLevel\` (\`low\` | \`medium\` | \`high\`) and \`riskJustification\` (one paragraph). The runner applies agent-risk-* labels from these fields — do not add a separate risk block in chat output.`;
 
