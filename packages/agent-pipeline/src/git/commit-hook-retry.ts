@@ -1,5 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { readClampedEnvInt } from "../env.js";
+import {
+  appendRunFrictionStepSummary,
+  type RunFrictionCollector,
+} from "../run-friction.js";
 import { runShell } from "../tools/shell.js";
 import { GitCommitError } from "./pr.js";
 
@@ -178,10 +182,16 @@ export async function runCommitWithHookRetry<T>(options: {
       ) {
         // Only flag the heuristic gap when nothing matched at all; when a marker
         // (or the installed-hooks fallback) matched but the retry budget is
-        // exhausted the reason is the pass limit, not the detection heuristic.
+        // exhausted the reason is the pass limit, not the detection heuristic,
+        // and a recognized non-hook git error means the heuristic worked as
+        // designed rather than that a gap exists.
         if (
           error instanceof GitCommitError &&
-          !isCommitHookFailureLike(error.commitOutput, hooksInstalledForFailure)
+          !isCommitHookFailureLike(
+            error.commitOutput,
+            hooksInstalledForFailure,
+          ) &&
+          !isKnownNonHookGitFailure(error.commitOutput)
         ) {
           console.warn(
             "git commit failed but the output did not match known hook-failure patterns. " +
@@ -201,4 +211,50 @@ export async function runCommitWithHookRetry<T>(options: {
   }
 
   throw new Error("runCommitWithHookRetry: exhausted passes without returning");
+}
+
+/**
+ * Per-phase wrapper around {@link runCommitWithHookRetry} that owns the two
+ * behaviours every phase needs and used to duplicate: building the relaunch
+ * prompt (hook log + `Repository:`/`Branch:` orientation trailer) and emitting
+ * the run-friction step summary when the retry budget is exhausted before the
+ * post-commit success paths could write it.
+ *
+ * Keep the relaunch contract in one place so a future change (extra context in
+ * the prompt, new friction bookkeeping) does not have to be repeated in
+ * implement, yolo and fix-phase.
+ */
+export async function runCommitWithHookRetryForPhase<T>(options: {
+  /** Phase name used for the run-friction step summary. */
+  phase: string;
+  maxPasses: number;
+  commit: () => Promise<T>;
+  /** Build the prompt for the relaunch session from the failed commit output. */
+  buildRelaunchPrompt: (hookLog: string) => string;
+  /** Run one extra agent session; called once per hook retry. */
+  relaunchSession: (prompt: string, retryIndex: number) => Promise<void>;
+  runFriction: RunFrictionCollector;
+}): Promise<T> {
+  const {
+    phase,
+    maxPasses,
+    commit,
+    buildRelaunchPrompt,
+    relaunchSession,
+    runFriction,
+  } = options;
+
+  try {
+    return await runCommitWithHookRetry({
+      maxPasses,
+      commit,
+      relaunchForHookFailure: (hookLog, retryIndex) =>
+        relaunchSession(buildRelaunchPrompt(hookLog), retryIndex),
+    });
+  } catch (error) {
+    // An exhausted commit-hook retry throws before the post-commit summaries,
+    // so record friction now to keep the failure's diagnostics.
+    appendRunFrictionStepSummary(runFriction, phase);
+    throw error;
+  }
 }

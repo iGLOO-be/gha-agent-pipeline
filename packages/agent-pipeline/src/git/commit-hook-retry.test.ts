@@ -24,9 +24,11 @@ import {
   isCommitHookFailureLike,
   isKnownNonHookGitFailure,
   runCommitWithHookRetry,
+  runCommitWithHookRetryForPhase,
   shouldRetryCommitHookFailure,
   stripAnsi,
 } from "./commit-hook-retry.js";
+import { createRunFrictionCollector } from "../run-friction.js";
 
 describe("commit-hook-retry", () => {
   beforeEach(() => {
@@ -246,7 +248,7 @@ describe("commit-hook-retry", () => {
       ).rejects.toThrow(/git commit failed/);
     });
 
-    it("only warns about unmatched patterns, not exhausted hook retries", async () => {
+    it("only warns about unmatched patterns, not exhausted or known non-hook failures", async () => {
       const warn = vi
         .spyOn(console, "warn")
         .mockImplementation(() => undefined);
@@ -268,7 +270,8 @@ describe("commit-hook-retry", () => {
         ).rejects.toThrow(/git commit failed/);
         expect(warnedAboutNoMatch()).toBe(false);
 
-        // Unmatched output → heuristic-gap warning.
+        // Known non-hook git error → the heuristic worked as designed, so no
+        // heuristic-gap warning either.
         await expect(
           runCommitWithHookRetry({
             maxPasses: 1,
@@ -278,10 +281,49 @@ describe("commit-hook-retry", () => {
             relaunchForHookFailure: async () => undefined,
           }),
         ).rejects.toThrow(/git commit failed/);
+        expect(warnedAboutNoMatch()).toBe(false);
+
+        // Unmatched, not a known non-hook error, hooks not installed → gap.
+        warn.mockClear();
+        await expect(
+          runCommitWithHookRetry({
+            maxPasses: 1,
+            commit: async () => {
+              throw new GitCommitError("- hook id: eslint\n- exit code: 1");
+            },
+            relaunchForHookFailure: async () => undefined,
+          }),
+        ).rejects.toThrow(/git commit failed/);
         expect(warnedAboutNoMatch()).toBe(true);
       } finally {
         warn.mockRestore();
       }
+    });
+  });
+
+  describe("runCommitWithHookRetryForPhase", () => {
+    it("relaunches through the prompt builder and returns the commit result", async () => {
+      const prompts: string[] = [];
+      let calls = 0;
+      const result = await runCommitWithHookRetryForPhase({
+        phase: "implement",
+        maxPasses: 2,
+        commit: async () => {
+          calls += 1;
+          if (calls === 1) {
+            throw new GitCommitError("husky - pre-commit hook failed");
+          }
+          return "pushed";
+        },
+        buildRelaunchPrompt: (hookLog) => `retry prompt:${hookLog}`,
+        relaunchSession: async (prompt) => {
+          prompts.push(prompt);
+        },
+        runFriction: createRunFrictionCollector(),
+      });
+
+      expect(result).toBe("pushed");
+      expect(prompts).toEqual(["retry prompt:husky - pre-commit hook failed"]);
     });
   });
 });

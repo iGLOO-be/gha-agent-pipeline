@@ -12,7 +12,7 @@ import { branchName, createAndCheckoutBranch } from "./git/branch.js";
 import {
   formatCommitHookRetryPrompt,
   getCommitHookRetryMaxPasses,
-  runCommitWithHookRetry,
+  runCommitWithHookRetryForPhase,
 } from "./git/commit-hook-retry.js";
 import { commitAll, createPullRequest, pushBranch } from "./git/pr.js";
 import { buildAgentPrBody } from "./pr-body.js";
@@ -126,6 +126,10 @@ Branch: ${branch}${extraArgsBlock}`;
 
     const sessions: AgentSessionResult[] = [];
     sessions.push(await runImplementSession(implementInitialPrompt));
+    // Snapshot the implementation summary: a hook-retry relaunch session may
+    // submit a report about the hook fix only, which would otherwise overwrite
+    // the report the runner was asked to publish.
+    const initialPhaseReport = phaseReportTracker.report;
 
     const commitSubject =
       cmd.resolved.git?.commit_subject ??
@@ -133,43 +137,36 @@ Branch: ${branch}${extraArgsBlock}`;
 
     const hookMaxPasses = getCommitHookRetryMaxPasses();
 
-    try {
-      await runCommitWithHookRetry({
-        maxPasses: hookMaxPasses,
-        commit: async () => {
-          const committed = await commitAll(commitSubject);
-          if (!committed) {
-            throw new Error("No changes were made by the implement agent.");
-          }
-          await pushBranch(branch);
-        },
-        relaunchForHookFailure: async (hookLog, retryIndex) => {
-          sessions.push(
-            await runImplementSession(
-              `${formatCommitHookRetryPrompt(hookLog)}
+    await runCommitWithHookRetryForPhase({
+      phase: "implement",
+      maxPasses: hookMaxPasses,
+      commit: async () => {
+        const committed = await commitAll(commitSubject);
+        if (!committed) {
+          throw new Error("No changes were made by the implement agent.");
+        }
+        await pushBranch(branch);
+      },
+      buildRelaunchPrompt: (hookLog) =>
+        `${formatCommitHookRetryPrompt(hookLog)}
 
 Repository: ${env.GITHUB_REPOSITORY}
 Branch: ${branch}`,
-              retryIndex,
-            ),
-          );
-        },
-      });
-    } catch (error) {
-      // An exhausted commit-hook retry throws before the post-commit summaries,
-      // so record friction now to keep the failure's diagnostics.
-      appendRunFrictionStepSummary(runFriction, "implement");
-      throw error;
-    }
+      relaunchSession: async (prompt, retryIndex) => {
+        sessions.push(await runImplementSession(prompt, retryIndex));
+      },
+      runFriction,
+    });
 
     // On the success path the summary is written after the commit so friction
-    // collected by hook-retry sessions is included.
+    // collected by hook-retry sessions is included (exhaustion is covered by the
+    // wrapper, which appends before rethrowing).
     appendRunFrictionStepSummary(runFriction, "implement");
 
     // Aggregate every session of this phase (initial + hook retries).
     const metrics = mergeSessionMetrics(sessions);
 
-    const phaseReport = phaseReportTracker.report;
+    const phaseReport = initialPhaseReport ?? phaseReportTracker.report;
     const phaseReportMarkdown = phaseReport
       ? formatPhaseReportForPr(phaseReport)
       : undefined;
