@@ -1,0 +1,16 @@
+name: Agent on pull request opened
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+
+jobs:
+  pr-opened-review:
+    uses: ./.github/workflows/agent-pr-opened-review.yml
+    with:
+      runner: blacksmith-4vcpu-ubuntu-2404

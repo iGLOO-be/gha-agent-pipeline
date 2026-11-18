@@ -1,5 +1,7 @@
 import { buildRunUrl } from "./tools/github.js";
 
+export type AgentPrBodyOrigin = "implement" | "yolo";
+
 export interface BuildAgentPrBodyOptions {
   issueNumber: number;
   issueTitle: string;
@@ -9,6 +11,7 @@ export interface BuildAgentPrBodyOptions {
   riskLevel?: string | null;
   riskJustification?: string | null;
   phaseReportMarkdown?: string | null;
+  origin: AgentPrBodyOrigin;
 }
 
 export function buildAgentPrBody({
@@ -20,6 +23,7 @@ export function buildAgentPrBody({
   riskLevel,
   riskJustification,
   phaseReportMarkdown,
+  origin,
 }: BuildAgentPrBodyOptions): string {
   const runUrl = buildRunUrl();
 
@@ -27,6 +31,7 @@ export function buildAgentPrBody({
     `Closes #${issueNumber}`,
     "",
     "<!-- agent-pr -->",
+    ...(origin === "implement" ? ["<!-- agent-pr-implement -->"] : []),
     "## 🤖 Agent PR",
     "",
     `- **Issue:** [#${issueNumber} — ${issueTitle}](${issueUrl})`,

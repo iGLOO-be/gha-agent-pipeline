@@ -9,6 +9,7 @@ import {
   addLabelToIssue,
   AGENT_COMMENT_MARKERS,
   createPullRequestReview,
+  markPublishedCodeReview,
   createReplyForReviewComment,
   getPullRequestMergeState,
   postComment,
@@ -644,10 +645,7 @@ export async function createCodeReviewTools(
         ...comment,
         body: decorateInlineReviewCommentBody(comment.body),
       }));
-      const markedBody = prependAgentMarker(
-        displayBody,
-        AGENT_COMMENT_MARKERS.codeReview,
-      );
+      const markedBody = markPublishedCodeReview(displayBody);
       const posted = await createPullRequestReview(
         octokit,
         owner,

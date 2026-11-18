@@ -26,13 +26,12 @@ import {
   effectivePathFilters,
   partitionChangedFiles,
 } from "./review-path-filters.js";
-import {
-  formatReviewFileScopeMarkdown,
-  parseReviewBodyFromAgentOutput,
-} from "./review-prompt.js";
+import { formatReviewFileScopeMarkdown } from "./review-prompt.js";
+import { ensureReviewPosted } from "./code-review-publish.js";
 import { reportPhaseFailure } from "./report-failure.js";
 import { runAgentMain, runAgentSession } from "./runtime.js";
 import { runAgentPhase } from "./lifecycle.js";
+import { runCodeReviewPhase } from "./code-review-phase.js";
 import {
   appendRunFrictionStepSummary,
   createRunFrictionCollector,
@@ -43,14 +42,10 @@ import {
 } from "./code-review-labels.js";
 import { appendRunnerFooterToPostedReview } from "./code-review-completion.js";
 import {
-  AGENT_COMMENT_MARKERS,
   createOctokit,
-  createPullRequestReview,
   formatCommentsForPrompt,
-  prependAgentMarker,
   readComments,
   readIssue,
-  type PullRequestReviewEvent,
 } from "./tools/github.js";
 import { createCodeReviewTools, type ReviewTracker } from "./tools/index.js";
 import { withReportRunFrictionTool } from "./tools/run-friction-tool.js";
@@ -75,20 +70,6 @@ function loadStandardsSources(): string {
   return parts.length > 0
     ? parts.join("\n\n")
     : "(no documented standards files found)";
-}
-
-function parseReviewFromOutput(outputText: string): {
-  event: PullRequestReviewEvent;
-  body: string;
-} | null {
-  const body = parseReviewBodyFromAgentOutput(outputText);
-  if (!body) {
-    return null;
-  }
-  return {
-    event: "COMMENT",
-    body,
-  };
 }
 
 async function main() {
@@ -302,60 +283,33 @@ ${reviewDiff.diff || "(empty diff)"}
   }
 }
 
-async function ensureReviewPosted(
-  octokit: ReturnType<typeof createOctokit>,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  outputText: string,
-  review: ReviewTracker,
-) {
-  if (review.posted) {
-    return;
-  }
-
-  const parsed = parseReviewFromOutput(outputText);
-  if (!parsed) {
-    console.warn(
-      "Agent session ended without submitReview and no ## Standards section found in output.",
-    );
-    return;
-  }
-
-  const markedBody = prependAgentMarker(
-    parsed.body,
-    AGENT_COMMENT_MARKERS.codeReview,
-  );
-  const posted = await createPullRequestReview(octokit, owner, repo, prNumber, {
-    event: parsed.event,
-    body: markedBody,
-  });
-  review.posted = true;
-  review.id = posted.id;
-  review.body = markedBody;
-  review.htmlUrl = posted.html_url;
-  review.event = parsed.event;
-  console.log("Posted code review from agent output fallback.");
-}
-
 const env = loadCodeReviewEnv();
 const { owner, repo } = parseRepository(env.GITHUB_REPOSITORY);
 const octokit = createOctokit(env.GITHUB_TOKEN);
+const bootConfig = loadAgentConfig();
 const bootCmd = prepareCommandRuntime(
   "code-review",
   CODE_REVIEW_MODEL,
-  loadAgentConfig(),
+  bootConfig,
 );
 
 runAgentMain(() =>
-  runAgentPhase({
-    phase: bootCmd.runtimePhase,
-    displayLabel: bootCmd.displayLabel,
+  runCodeReviewPhase({
     octokit,
     owner,
     repo,
-    issueNumber: env.ISSUE_NUMBER,
     prNumber: env.PR_NUMBER,
-    main,
+    branchPrefix: bootConfig.git.branch_prefix,
+    start: () =>
+      runAgentPhase({
+        phase: bootCmd.runtimePhase,
+        displayLabel: bootCmd.displayLabel,
+        octokit,
+        owner,
+        repo,
+        issueNumber: env.ISSUE_NUMBER,
+        prNumber: env.PR_NUMBER,
+        main,
+      }),
   }),
 );

@@ -33,6 +33,7 @@ describe("pr-body", () => {
       issueNumber: 88,
       issueTitle: "Tests unitaires Vitest",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/88",
+      origin: "yolo",
     });
 
     expect(body).toContain("Closes #88");
@@ -52,6 +53,7 @@ describe("pr-body", () => {
       issueNumber: 1,
       issueTitle: "Issue",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+      origin: "yolo",
       planCommentUrl:
         "https://github.com/iGLOO-be/gha-agent-demo/issues/1#issuecomment-123",
     });
@@ -66,6 +68,7 @@ describe("pr-body", () => {
       issueNumber: 1,
       issueTitle: "Issue",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+      origin: "yolo",
       riskLevel: "medium",
       riskJustification: "touches agent prompts",
     });
@@ -82,6 +85,7 @@ describe("pr-body", () => {
       issueNumber: 1,
       issueTitle: "Issue",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+      origin: "yolo",
     });
 
     expect(body).toContain(
@@ -94,6 +98,7 @@ describe("pr-body", () => {
       issueNumber: 1,
       issueTitle: "Issue",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+      origin: "yolo",
       phaseReportMarkdown:
         "<!-- agent-phase-report -->\n\n### Implementation\n\nSummary text.",
     });
@@ -108,9 +113,35 @@ describe("pr-body", () => {
       issueNumber: 1,
       issueTitle: "Issue",
       issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/1",
+      origin: "yolo",
     });
 
     expect(body).not.toContain("<!-- agent-phase-report -->");
     expect(body).not.toContain("### Implementation\n");
+  });
+
+  it("includes the implement mark and the agent pull request mark for an implement pull request", () => {
+    const body = buildAgentPrBody({
+      issueNumber: 88,
+      issueTitle: "Tests unitaires Vitest",
+      issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/88",
+      origin: "implement",
+    });
+
+    expect(body).toContain("<!-- agent-pr-implement -->");
+    expect(body).not.toContain("<!-- agent-pr-opened -->");
+    expect(body).toContain("<!-- agent-pr -->");
+  });
+
+  it("omits the implement mark and keeps the agent pull request mark for a yolo pull request", () => {
+    const body = buildAgentPrBody({
+      issueNumber: 88,
+      issueTitle: "Tests unitaires Vitest",
+      issueUrl: "https://github.com/iGLOO-be/gha-agent-demo/issues/88",
+      origin: "yolo",
+    });
+
+    expect(body).not.toContain("agent-pr-implement");
+    expect(body).toContain("<!-- agent-pr -->");
   });
 });

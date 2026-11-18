@@ -42,6 +42,7 @@ export const AGENT_COMMENT_MARKERS = {
   ask: "agent-ask",
   askFailed: "agent-ask-failed",
   codeReview: "agent-code-review",
+  prOpenedReview: "agent-pr-opened-review",
   codeReviewFailed: "agent-code-review-failed",
   reviewFixReply: "agent-review-fix-reply",
 } as const;
@@ -63,6 +64,18 @@ export function prependAgentMarker(
   marker: AgentCommentMarker,
 ): string {
   return `${markerFor(marker)}\n${body}`;
+}
+
+/**
+ * Marks a published code review. A PR-opened review (`PR_OPENED_REVIEW=true`)
+ * also carries the once-only mark. Any other code review does not.
+ */
+export function markPublishedCodeReview(body: string): string {
+  const withOnceOnly =
+    process.env.PR_OPENED_REVIEW === "true"
+      ? prependAgentMarker(body, AGENT_COMMENT_MARKERS.prOpenedReview)
+      : body;
+  return prependAgentMarker(withOnceOnly, AGENT_COMMENT_MARKERS.codeReview);
 }
 
 export async function readIssue(

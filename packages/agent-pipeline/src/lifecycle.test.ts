@@ -325,6 +325,13 @@ describe("lifecycle", () => {
       expect(octokit._calls).toHaveLength(0);
     });
 
+    it("publishes no reaction when COMMENT_ID is empty", async () => {
+      process.env.COMMENT_ID = "";
+      const octokit = makeOctokit();
+      await reactToAgentTrigger(octokit as never, "owner", "repo", "success");
+      expect(octokit._calls).toHaveLength(0);
+    });
+
     it("warns and skips for unknown REACTION_TARGET", async () => {
       process.env.COMMENT_ID = "123";
       process.env.REACTION_TARGET = "unknown";

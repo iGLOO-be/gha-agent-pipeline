@@ -8,7 +8,7 @@ Reusable GitHub Actions agent library for [gha-agent-demo](https://github.com/iG
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Runtime            | `packages/agent-pipeline/` + `agent-pipeline` CLI                                                                                                                                                                                                                                               |
 | Config schema      | [`schema/agent.config.v1.schema.json`](./schema/agent.config.v1.schema.json)                                                                                                                                                                                                                    |
-| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml), [`agent-ci-fix.yml`](./.github/workflows/agent-ci-fix.yml), [`agent-ci-success.yml`](./.github/workflows/agent-ci-success.yml) (`workflow_call`)                                                                                            |
+| Reusable workflows | [`dispatch.yml`](./.github/workflows/dispatch.yml), [`agent-ci-fix.yml`](./.github/workflows/agent-ci-fix.yml), [`agent-ci-success.yml`](./.github/workflows/agent-ci-success.yml), [`agent-pr-opened-review.yml`](./.github/workflows/agent-pr-opened-review.yml) (`workflow_call`)            |
 | Composite actions  | **Public (post-setup):** `agent-phase-run`, `agent-ci-fix-run`. **Public (consumer wiring):** `get-pr-from-workflow-run`. **Public (pipeline install):** `install-agent-pipeline`. **Deprecated:** `run-agent-ci-fix`. **Internal:** `get-pr-from-check-suite`, legacy label/comment composites |
 
 **Consumer-owned (other repos):** checkout, `pnpm install`, GitHub App token, and `setup-pr-environment`. Slash phases use `agent-phase-run@ref`; CI loops use `agent-ci-fix-run@ref` (post-setup). The `get-pr-from-workflow-run` composite is public for consumer use in CI fix jobs. Do **not** copy library composites into consumer repos.
@@ -80,14 +80,36 @@ jobs:
           issue_number: ${{ inputs.issue_number }}
           pr_number: ${{ inputs.pr_number }}
           head_ref: ${{ inputs.head_ref }}
+          base_branch: ${{ inputs.base_branch }}
           review_feedback: ${{ inputs.review_feedback }}
           reaction_target: ${{ inputs.reaction_target }}
           chain_code_review: ${{ inputs.chain_code_review }}
           review_loop_active: ${{ inputs.review_loop_active }}
           review_loop_round: ${{ inputs.review_loop_round }}
+          pr_opened_review: ${{ inputs.pr_opened_review }}
           node_version: "24"
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+Declare optional `comment_id` (empty publishes no reaction), optional `base_branch` (default `main` when a slash dispatch omits it), and optional `pr_opened_review` on the consumer `agent-phase.yml`. Forward `base_branch` and `pr_opened_review` as in the excerpt. The composite sets `PR_OPENED_REVIEW` to the string `true` only when that input is `true`. An omitted input stays an ordinary code review.
+
+A consumer opts in by listening for `pull_request` `opened` and `ready_for_review` and calling the reusable gate with a runner label. The gate does not set up Node and does not receive the model secret or the App private key. It reads `git.branch_prefix` from `.github/agent.config.yml` on the default branch (`agent` when that file is missing or unreadable), then dispatches the phase workflow above.
+
+```yaml
+# .github/workflows/agent-on-pr-opened.yml (consumer)
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+jobs:
+  pr-opened-review:
+    uses: iGLOO-be/gha-agent-pipeline/.github/workflows/agent-pr-opened-review.yml@v0.3.5
+    with:
+      runner: ubuntu-latest
 ```
 
 **Environment setup is never provided by the library.** The consumer owns `setup-pr-environment` (or equivalent): checkout, package manager, Node version, GitHub App token scope, extra services. The library only provides post-setup orchestration through `agent-phase-run` (install pipeline, CLI run, failure fallback, `agent-working` cleanup). `OPENROUTER_API_KEY` is forwarded via the caller's step `env` (not through the composite).
@@ -454,15 +476,15 @@ openrouter:
 
 When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. If OpenRouter returns a Jev admission error (no models left in the pool for the request), the runtime starts a **new** session on the fixed phase slug when `fallback_to_phase_model_on_exhaustion` is true (default). End-of-phase usage tables list **Model (requested)** and **Served model(s)** (upstream slugs parsed from OpenRouter responses, including `openrouter_metadata` when enabled). When Cline’s aggregated `totalCost` is zero, **Estimated cost** falls back to the sum of OpenRouter `usage.cost` captured on the same HTTP responses. See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
 
-| Phase         | Required                                    | Optional / routing                                                                                                                     |
-| ------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `plan`        | `ISSUE_NUMBER`                              | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                         |
-| `implement`   | `ISSUE_NUMBER`                              | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                         |
-| `yolo`        | `ISSUE_NUMBER`                              | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`                                                 |
-| `review-fix`  | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH` | `REVIEW_FEEDBACK` (empty for bare `/agent fix`), `HEAD_SHA` (defaults to PR head), `COMMENT_ID`, `REACTION_TARGET`, `SUCCESS_REACTION` |
-| `ci-fix`      | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH` | `HEAD_SHA` (defaults to PR head), `REVIEW_FEEDBACK` (usually empty)                                                                    |
-| `ask`         | `ISSUE_NUMBER`, `QUESTION`                  | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                            |
-| `code-review` | `ISSUE_NUMBER`, `PR_NUMBER`                 | `REVIEW_INSTRUCTIONS`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                  |
+| Phase         | Required                                    | Optional / routing                                                                                                                               |
+| ------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `plan`        | `ISSUE_NUMBER`                              | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                                   |
+| `implement`   | `ISSUE_NUMBER`                              | `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                                   |
+| `yolo`        | `ISSUE_NUMBER`                              | `AGENT_BRANCH` (existing head branch via `head_ref`), `COMMENT_ID`, `SUCCESS_REACTION`                                                           |
+| `review-fix`  | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH` | `REVIEW_FEEDBACK` (empty for bare `/agent fix`), `HEAD_SHA` (defaults to PR head), `COMMENT_ID`, `REACTION_TARGET`, `SUCCESS_REACTION`           |
+| `ci-fix`      | `ISSUE_NUMBER`, `PR_NUMBER`, `AGENT_BRANCH` | `HEAD_SHA` (defaults to PR head), `REVIEW_FEEDBACK` (usually empty)                                                                              |
+| `ask`         | `ISSUE_NUMBER`, `QUESTION`                  | `PR_NUMBER`, `COMMENT_ID`, `SUCCESS_REACTION` (reaction on trigger comment)                                                                      |
+| `code-review` | `ISSUE_NUMBER`, `PR_NUMBER`                 | `REVIEW_INSTRUCTIONS`, `COMMENT_ID` (empty publishes no reaction), `PR_OPENED_REVIEW` (string `true` for a PR-opened review), `SUCCESS_REACTION` |
 
 Lifecycle actions (add/remove `agent-working`, post `<!-- agent-startup -->`, clear `agent-waiting-human`/`agent-failed`, react to trigger) run inside the TypeScript `runAgentPhase()` wrapper before and after the phase `main()`. The `agent-phase.yml` workflow must not repeat those steps (it only runs the CLI and keeps `always()` label cleanup as a safety net).
 

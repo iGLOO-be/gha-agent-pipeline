@@ -31,8 +31,9 @@ inputs:
     required: false
     default: ""
   comment_id:
-    description: Comment or review ID that triggered the workflow.
-    required: true
+    description: Comment or review ID that triggered the workflow. An empty value publishes no reaction.
+    required: false
+    default: ""
   issue_number:
     description: Issue number this run targets.
     required: true
@@ -70,6 +71,10 @@ inputs:
     description: Code-review round index within the review loop (0-based).
     required: false
     default: "0"
+  pr_opened_review:
+    description: When true, this code review is a PR-opened review. An omitted value stays an ordinary code review.
+    required: false
+    default: ""
   pipeline_ref:
     description: >
       Git ref of the pipeline library runtime to install. Defaults to the ref of
@@ -125,6 +130,7 @@ runs:
         REVIEW_FIX_CHAIN_CODE_REVIEW: ${{ steps.effective.outputs.phase == 'review-fix' && inputs.chain_code_review == 'true' && 'true' || '' }}
         IMPLEMENT_CHAIN_CODE_REVIEW: ${{ steps.effective.outputs.phase == 'implement' && inputs.chain_code_review == 'true' && 'true' || '' }}
         REVIEW_LOOP_ACTIVE: ${{ inputs.review_loop_active == 'true' && 'true' || '' }}
+        PR_OPENED_REVIEW: ${{ inputs.pr_opened_review == 'true' && 'true' || '' }}
         REVIEW_LOOP_ROUND: ${{ inputs.review_loop_round }}
         COMMENT_ID: ${{ inputs.comment_id }}
         REACTION_TARGET: ${{ inputs.reaction_target || 'issue_comment' }}
