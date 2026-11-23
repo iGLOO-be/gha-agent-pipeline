@@ -199,7 +199,7 @@ runs:
       run: ${{ steps.pipeline.outputs.bin }} ci-fix
 
     - name: Fallback failure comment
-      if: failure() && steps.run-agent.outcome != 'success'
+      if: (failure() || cancelled()) && steps.run-agent.outcome != 'success'
       uses: ./.github/actions/report-failure-fallback
       with:
         token: ${{ steps.setup.outputs.app_token || github.token }}
