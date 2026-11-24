@@ -10,12 +10,10 @@ git:
   merge_strategy: merge
 
 models:
-  # Fallback slug per phase when Jev Router pool lists are empty; also the default
-  # single candidate if jev_router is turned off.
   plan: deepseek/deepseek-v4-pro
-  implement: deepseek/deepseek-v4-pro
-  ci-fix: deepseek/deepseek-v4-pro
-  review-fix: deepseek/deepseek-v4-pro
+  implement: moonshotai/kimi-k2.7-code
+  ci-fix: moonshotai/kimi-k2.7-code
+  review-fix: moonshotai/kimi-k2.7-code
   ask: deepseek/deepseek-v4-pro
   code-review: deepseek/deepseek-v4-pro
 
@@ -23,16 +21,36 @@ openrouter:
   jev_router:
     enabled: true
     metadata: true
-    # Budget pool: Jev picks model + reasoning effort inside these patterns.
     models:
-      - deepseek/*
+      - deepseek/deepseek-v4-pro
+      - deepseek/deepseek-v4.1-flash*
+      - deepseek/deepseek-v4-flash*
       - google/*flash*
       - qwen/*coder*
-      - moonshotai/kimi-k2*
     excluded_models:
+      - deepseek/deepseek-v3*
+      - deepseek/deepseek-chat*
+      - deepseek/deepseek-r1*
       - anthropic/claude-opus*
+      - anthropic/claude-sonnet*
       - openai/o*
+      - openai/gpt-*
       - "*opus*"
+    phases:
+      plan:
+        enabled: true
+      ask:
+        enabled: true
+      code-review:
+        enabled: true
+      implement:
+        enabled: false
+      yolo:
+        enabled: false
+      ci-fix:
+        enabled: false
+      review-fix:
+        enabled: false
 
 prompts:
   plan:
@@ -77,7 +95,7 @@ implement:
 
 # Dogfood #107: automated implement → code-review ↔ review-fix (see README § Review loop).
 review_loop:
-  enabled: true
+  enabled: false
   max_rounds: 2
 
 commands:

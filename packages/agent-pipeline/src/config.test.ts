@@ -483,7 +483,7 @@ describe("config", () => {
   describe("model constants and env overrides", () => {
     it("exports config-driven model defaults", () => {
       expect(PLAN_MODEL).toBe("deepseek/deepseek-v4-pro");
-      expect(IMPLEMENT_MODEL).toBe("deepseek/deepseek-v4-pro");
+      expect(IMPLEMENT_MODEL).toBe("moonshotai/kimi-k2.7-code");
     });
 
     it("lets AGENT_MODEL_<PHASE> override the config default", () => {

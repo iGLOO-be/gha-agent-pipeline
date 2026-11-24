@@ -465,13 +465,37 @@ In `.github/agent.config.yml`, enable dynamic model selection via `typesafe/jev-
 openrouter:
   jev_router:
     enabled: true
-    models: ["anthropic/*", "google/*"]
-    excluded_models: ["anthropic/claude-opus*"]
+    metadata: true
+    models:
+      - deepseek/deepseek-v4-pro
+      - deepseek/deepseek-v4.1-flash*
+      - deepseek/deepseek-v4-flash*
+      - google/*flash*
+      - qwen/*coder*
+    excluded_models:
+      - deepseek/deepseek-v3*
+      - deepseek/deepseek-chat*
+      - deepseek/deepseek-r1*
+      - anthropic/claude-opus*
+      - anthropic/claude-sonnet*
+      - openai/o*
+      - openai/gpt-*
+      - "*opus*"
     phases:
       plan:
-        enabled: false # keep a fixed model for plan
-      implement:
         enabled: true
+      ask:
+        enabled: true
+      code-review:
+        enabled: true
+      implement:
+        enabled: false
+      yolo:
+        enabled: false
+      ci-fix:
+        enabled: false
+      review-fix:
+        enabled: false
 ```
 
 When Jev Router is active for a phase, the runtime sends `model: typesafe/jev-router` and injects the `jev-router` plugin pool. If you omit `models` / `allowed_models`, the phase’s `models.<phase>` slug (after `AGENT_MODEL_*` overrides) is the sole candidate. If OpenRouter returns a Jev admission error (no models left in the pool for the request), the runtime starts a **new** session on the fixed phase slug when `fallback_to_phase_model_on_exhaustion` is true (default). End-of-phase usage tables list **Model (requested)** and **Served model(s)** (upstream slugs parsed from OpenRouter responses, including `openrouter_metadata` when enabled). When Cline’s aggregated `totalCost` is zero, **Estimated cost** falls back to the sum of OpenRouter `usage.cost` captured on the same HTTP responses. See the [OpenRouter Jev Router guide](https://openrouter.ai/docs/guides/routing/routers/jev-router).
