@@ -138,7 +138,7 @@ runs:
       run: ${{ steps.pipeline.outputs.bin }} ${{ inputs.phase }}
 
     - name: Fallback failure comment
-      if: failure() && steps.run-agent.outcome != 'success'
+      if: (failure() || cancelled()) && steps.run-agent.outcome != 'success'
       uses: $/.github/actions/report-failure-fallback
       with:
         token: ${{ inputs.app_token || github.token }}

@@ -18,6 +18,7 @@ import {
   buildOpenRouterHttpHeaders,
   buildOpenRouterProviderConfig,
   getOpenRouterApiKey,
+  isOpenRouterRequestTimeoutMessage,
 } from "./llm/gateway.js";
 import {
   type JevRouterRequestContext,
@@ -329,6 +330,12 @@ async function runAgentSessionAttempt(
       if (isNonRetriableProviderError(lastProviderError?.message)) {
         console.warn(
           `[session] skipping in-session continue (non-retriable provider error)`,
+        );
+        break;
+      }
+      if (isOpenRouterRequestTimeoutMessage(lastProviderError?.message)) {
+        console.warn(
+          `[session] skipping in-session continue (OpenRouter request timeout); starting a new session on the next attempt`,
         );
         break;
       }

@@ -1,8 +1,8 @@
 name: Report agent failure fallback
 description: >
   Post a fallback failure comment and label when the agent TypeScript runner did
-  not have a chance to report (e.g. setup/install/OOM failure). This is a
-  last-resort step used with `if: failure()` in agent workflows. It deduplicates
+  not have a chance to report (e.g. setup/install/OOM or job timeout). This is a
+  last-resort step used with `if: failure() || cancelled()` in agent workflows. It deduplicates
   by the agent-failed-run marker so it does not double-post if the TS helper
   already commented.
 

@@ -6,8 +6,33 @@ import {
 
 export const OPENROUTER_PROVIDER_ID = "openrouter";
 
-/** Per-request timeout passed to Cline's OpenRouter handler (milliseconds). */
+/**
+ * Hard cap for one OpenRouter HTTP stream (milliseconds).
+ * Cline stores `timeoutMs` on the provider config but does not abort an
+ * OpenRouter body that stays open (SSE keepalives such as
+ * `: OPENROUTER PROCESSING` reset the socket idle timer). The fetch wrapper
+ * below enforces this deadline for the whole response, including the body.
+ */
 export const OPENROUTER_DEFAULT_REQUEST_TIMEOUT_MS = 600_000;
+
+export class OpenRouterRequestTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super(`OpenRouter request timed out after ${timeoutMs}ms`);
+    this.name = "TimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export function isOpenRouterRequestTimeoutMessage(
+  message?: string | null,
+): boolean {
+  if (!message?.trim()) {
+    return false;
+  }
+  return /OpenRouter request timed out after \d+ms/i.test(message);
+}
 
 export const OPENROUTER_METADATA_HEADER = "X-OpenRouter-Metadata";
 export const OPENROUTER_METADATA_ENABLED = "enabled";
@@ -72,19 +97,122 @@ export type OpenRouterProviderConfig = {
   fetch?: typeof fetch;
 };
 
+/**
+ * Aborts the OpenRouter request if headers or the response body are still
+ * in flight after `timeoutMs`. The timer stays armed until the body is
+ * finished or cancelled — `fetch` itself resolves as soon as headers arrive.
+ */
+export function createRequestTimeoutFetch(
+  timeoutMs: number,
+  baseFetch: typeof fetch = globalThis.fetch,
+): typeof fetch {
+  return async (input, init) => {
+    const timeoutError = new OpenRouterRequestTimeoutError(timeoutMs);
+    const timeoutController = new AbortController();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+    };
+
+    const timer = setTimeout(() => {
+      timeoutController.abort(timeoutError);
+      console.warn(`[openrouter] ${timeoutError.message}; aborting the stream`);
+      if (reader) {
+        void reader.cancel(timeoutError).catch(() => undefined);
+      }
+    }, timeoutMs);
+
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, timeoutController.signal])
+      : timeoutController.signal;
+
+    const onCallerAbort = () => {
+      finish();
+      if (reader) {
+        void reader.cancel(init?.signal?.reason).catch(() => undefined);
+      }
+    };
+    init?.signal?.addEventListener("abort", onCallerAbort, { once: true });
+
+    try {
+      const response = await baseFetch(input, { ...init, signal });
+      if (timeoutController.signal.aborted) {
+        finish();
+        throw timeoutError;
+      }
+      if (!response.body) {
+        finish();
+        return response;
+      }
+
+      reader = response.body.getReader();
+      const stream = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (timeoutController.signal.aborted) {
+            finish();
+            controller.error(timeoutError);
+            return;
+          }
+          try {
+            const { done, value } = await reader!.read();
+            if (timeoutController.signal.aborted) {
+              finish();
+              controller.error(timeoutError);
+              return;
+            }
+            if (done) {
+              finish();
+              controller.close();
+              return;
+            }
+            controller.enqueue(value);
+          } catch (error) {
+            finish();
+            controller.error(
+              timeoutController.signal.aborted ? timeoutError : error,
+            );
+          }
+        },
+        cancel(reason) {
+          finish();
+          return reader?.cancel(reason);
+        },
+      });
+
+      return new Response(stream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    } catch (error) {
+      finish();
+      if (timeoutController.signal.aborted) {
+        throw timeoutError;
+      }
+      throw error;
+    }
+  };
+}
+
 export function buildOpenRouterProviderConfig(
   jevContext?: JevRouterRequestContext,
 ): OpenRouterProviderConfig {
   const timeoutMs = getOpenRouterRequestTimeoutMs();
-  const config: OpenRouterProviderConfig = {
+  const innerFetch = jevContext
+    ? createJevRouterFetch(buildJevRouterPlugin(jevContext.pool), {
+        servedModels: jevContext.servedModels,
+        usageCost: jevContext.usageCost,
+      })
+    : globalThis.fetch;
+  return {
     providerId: OPENROUTER_PROVIDER_ID,
     timeoutMs,
+    fetch: createRequestTimeoutFetch(timeoutMs, innerFetch),
   };
-  if (jevContext) {
-    config.fetch = createJevRouterFetch(buildJevRouterPlugin(jevContext.pool), {
-      servedModels: jevContext.servedModels,
-      usageCost: jevContext.usageCost,
-    });
-  }
-  return config;
 }
